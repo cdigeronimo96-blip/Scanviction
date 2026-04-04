@@ -1006,14 +1006,20 @@ def render_sidebar():
 # ─────────────────────────────────────────────────────────────
 NAV_CSS = """
 <style>
-/* ── Logo button styled as plain text — no box ── */
+/* ── Logo button styled as plain text — no box, orange W ── */
 button[aria-label="StockWins"] {
-    background: transparent !important;
+    background: linear-gradient(90deg,
+        #e2e8f0 0%,    #e2e8f0 54%,
+        #f59e0b 54%,   #f59e0b 65%,
+        #e2e8f0 65%,   #e2e8f0 100%
+    ) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
     border: none !important;
     box-shadow: none !important;
-    color: #e2e8f0 !important;
     font-family: 'JetBrains Mono', monospace !important;
-    font-size: 19px !important;
+    font-size: 22px !important;
     font-weight: 700 !important;
     letter-spacing: -0.5px !important;
     padding: 4px 0 !important;
@@ -1021,12 +1027,18 @@ button[aria-label="StockWins"] {
     width: auto !important;
     justify-content: flex-start !important;
     outline: none !important;
-    text-decoration: none !important;
+    cursor: pointer !important;
 }
 button[aria-label="StockWins"]:hover {
-    background: transparent !important;
+    background: linear-gradient(90deg,
+        #cbd5e1 0%,    #cbd5e1 54%,
+        #fbbf24 54%,   #fbbf24 65%,
+        #cbd5e1 65%,   #cbd5e1 100%
+    ) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
     border: none !important;
-    color: #f59e0b !important;
 }
 /* ── Nav link buttons — subtle, consistent height ── */
 .sw-nav .stButton > button {
