@@ -1052,11 +1052,11 @@ NAV_CSS = """
     border: none !important;
     box-shadow: none !important;
 }
-/* ── Nav link buttons — subtle, consistent height ── */
+/* ── Nav link buttons — subtle, consistent height, compact ── */
 .sw-nav .stButton > button {
     font-size: 13px !important;
     font-weight: 500 !important;
-    padding: 6px 14px !important;
+    padding: 6px 12px !important;
     min-height: 38px !important;
     height: 38px !important;
     border: 1px solid rgba(255,255,255,0.15) !important;
@@ -1064,6 +1064,7 @@ NAV_CSS = """
     color: #a8bdd4 !important;
     border-radius: 7px !important;
     white-space: nowrap !important;
+    width: 100% !important;
 }
 .sw-nav .stButton > button:hover {
     border-color: rgba(37,99,235,0.5) !important;
@@ -1158,8 +1159,8 @@ def render_topbar(active=""):
                 st.markdown('</div>', unsafe_allow_html=True)
 
     else:
-        # ── Guest navbar ──────────────────────────────────────
-        logo_col, _, auth_col = st.columns([2, 6, 3])
+        # ── Guest navbar — identical layout to landing page ────
+        logo_col, _, auth_col = st.columns([2, 5, 4])
 
         with logo_col:
             st.markdown("""
@@ -1175,11 +1176,15 @@ def render_topbar(active=""):
 
         with auth_col:
             st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
-            ac1, ac2 = st.columns(2)
+            ac1, ac2, ac3, ac4 = st.columns(4, gap="small")
             with ac1:
-                if st.button("Login", key="top_login"): nav("login")
+                if st.button("Features", key="top_features", use_container_width=True): pass
             with ac2:
-                if st.button("Sign Up →", key="top_signup", type="primary"): nav("signup")
+                if st.button("Pricing", key="top_pricing_link", use_container_width=True): nav("pricing")
+            with ac3:
+                if st.button("Login", key="top_login", use_container_width=True): nav("login")
+            with ac4:
+                if st.button("Sign Up →", key="top_signup", type="primary", use_container_width=True): nav("signup")
             st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
