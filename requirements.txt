@@ -1,6 +1,5 @@
 streamlit
 requests
 pandas
-pandas_ta==0.3.14b
+ta
 yfinance
-numpy<2.0
