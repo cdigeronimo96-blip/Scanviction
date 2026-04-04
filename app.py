@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
-import pandas_ta as ta
+import ta
 import yfinance as yf
 
 st.set_page_config(page_title="Daily Stock Picks", layout="wide", page_icon="📈")
@@ -17,8 +17,8 @@ manual_watchlist = [t.strip().upper() for t in watchlist_input.split(',') if t.s
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Social Sources")
-use_stocktwits = st.sidebar.toggle("StockTwits Hot Stocks", value=True)
-use_squeeze    = st.sidebar.toggle("Short Squeeze Scanner", value=True)
+use_stocktwits    = st.sidebar.toggle("StockTwits Hot Stocks", value=True)
+use_squeeze       = st.sidebar.toggle("Short Squeeze Scanner", value=True)
 squeeze_threshold = st.sidebar.slider("Min Short Float % for Squeeze", 10, 40, 20)
 
 st.sidebar.markdown("---")
@@ -33,7 +33,6 @@ ma_long        = st.sidebar.slider("Long MA", 20, 100, 50)
 
 @st.cache_data(ttl=900)
 def get_stocktwits_hot():
-    """Trending tickers from StockTwits — no API key needed."""
     try:
         url  = "https://api.stocktwits.com/api/2/trending/symbols.json"
         data = requests.get(url, timeout=8).json()
@@ -43,21 +42,19 @@ def get_stocktwits_hot():
 
 @st.cache_data(ttl=900)
 def get_stocktwits_symbol_info(ticker):
-    """Get message volume + sentiment for a specific ticker from StockTwits."""
     try:
         url  = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
         data = requests.get(url, timeout=8).json()
-        symbol_data = data.get("symbol", {})
+        symbol_data     = data.get("symbol", {})
         watchlist_count = symbol_data.get("watchlist_count", "N/A")
-
-        # Sentiment from recent messages
-        messages = data.get("messages", [])
-        bullish = sum(1 for m in messages if m.get("entities", {}).get("sentiment", {}) and
+        messages        = data.get("messages", [])
+        bullish = sum(1 for m in messages
+                      if m.get("entities", {}).get("sentiment", {}) and
                       m["entities"]["sentiment"].get("basic") == "Bullish")
-        bearish = sum(1 for m in messages if m.get("entities", {}).get("sentiment", {}) and
+        bearish = sum(1 for m in messages
+                      if m.get("entities", {}).get("sentiment", {}) and
                       m["entities"]["sentiment"].get("basic") == "Bearish")
-        total   = bullish + bearish
-
+        total = bullish + bearish
         sentiment_pct = round((bullish / total) * 100) if total > 0 else None
         return {
             "watchlist_count": watchlist_count,
@@ -69,7 +66,6 @@ def get_stocktwits_symbol_info(ticker):
 
 @st.cache_data(ttl=1800)
 def get_squeeze_candidates(tickers, threshold):
-    """Finds high short float stocks using Yahoo Finance."""
     candidates = {}
     for ticker in tickers:
         try:
@@ -78,13 +74,12 @@ def get_squeeze_candidates(tickers, threshold):
             days_to_cover = info.get("shortRatio", 0)
             market_cap    = info.get("marketCap", 0)
             avg_volume    = info.get("averageVolume", 0)
-
             if short_float and short_float * 100 >= threshold:
                 candidates[ticker] = {
-                    "short_float":    round(short_float * 100, 1),
-                    "days_to_cover":  round(days_to_cover, 1) if days_to_cover else "N/A",
-                    "market_cap":     f"${market_cap/1e9:.2f}B" if market_cap else "N/A",
-                    "avg_volume":     f"{avg_volume/1e6:.1f}M" if avg_volume else "N/A",
+                    "short_float":   round(short_float * 100, 1),
+                    "days_to_cover": round(days_to_cover, 1) if days_to_cover else "N/A",
+                    "market_cap":    f"${market_cap/1e9:.2f}B" if market_cap else "N/A",
+                    "avg_volume":    f"{avg_volume/1e6:.1f}M" if avg_volume else "N/A",
                 }
         except Exception:
             continue
@@ -108,12 +103,16 @@ def fetch_and_analyze(ticker, api_key, outputsize=60):
     for col in ["close", "high", "low", "volume"]:
         df[col] = df[col].astype(float)
 
+    # Reverse so oldest → newest (required for ta indicators)
     df = df.iloc[::-1].reset_index(drop=True)
-    df["RSI"]      = ta.rsi(df["close"], length=rsi_period)
+
+    # ── Indicators ──
+    df["RSI"]      = ta.momentum.RSIIndicator(df["close"], window=rsi_period).rsi()
     df["MA_short"] = df["close"].rolling(ma_short).mean()
     df["MA_long"]  = df["close"].rolling(ma_long).mean()
-    macd_result    = ta.macd(df["close"])
-    df["MACD"]     = macd_result["MACD_12_26_9"] if macd_result is not None else None
+    macd_obj       = ta.trend.MACD(df["close"])
+    df["MACD"]     = macd_obj.macd()
+
     return df
 
 # ── MAIN ─────────────────────────────────────────────────────────────────────
@@ -132,27 +131,25 @@ with tab2:
             hot_tickers = get_stocktwits_hot()
 
         if not hot_tickers:
-            st.warning("Could not reach StockTwits. Try again shortly.")
+            st.warning("Could not reach StockTwits API. Try again shortly.")
         else:
             st.success(f"📡 {len(hot_tickers)} tickers trending on StockTwits right now")
             st.markdown("---")
 
-            # Show sentiment for each hot ticker
             rows = []
             prog = st.progress(0, text="Loading sentiment data...")
             for i, ticker in enumerate(hot_tickers):
                 prog.progress((i + 1) / len(hot_tickers), text=f"Fetching {ticker}...")
                 info = get_stocktwits_symbol_info(ticker)
                 rows.append({
-                    "Ticker":         ticker,
-                    "Watchlists":     info.get("watchlist_count", "N/A"),
-                    "Bullish %":      f"{info['bullish_pct']}%" if info.get("bullish_pct") else "N/A",
-                    "Recent Posts":   info.get("message_sample", "N/A"),
+                    "Ticker":       ticker,
+                    "Watchlists":   info.get("watchlist_count", "N/A"),
+                    "Bullish %":    f"{info['bullish_pct']}%" if info.get("bullish_pct") else "N/A",
+                    "Recent Posts": info.get("message_sample", "N/A"),
                 })
             prog.empty()
 
-            df_hot = pd.DataFrame(rows)
-            st.dataframe(df_hot, use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 # ── TAB 3: SQUEEZE SCANNER ───────────────────────────────────────────────────
 with tab3:
@@ -162,17 +159,16 @@ with tab3:
     if not use_squeeze:
         st.info("Enable Squeeze Scanner in the sidebar.")
     else:
-        # Build universe: manual watchlist + StockTwits hot
         universe = list(set(manual_watchlist))
         if use_stocktwits:
             universe += get_stocktwits_hot()
         universe = list(set(universe))[:40]
 
-        with st.spinner(f"Checking short interest data for {len(universe)} tickers..."):
+        with st.spinner(f"Checking short interest for {len(universe)} tickers..."):
             squeeze_data = get_squeeze_candidates(tuple(universe), squeeze_threshold)
 
         if not squeeze_data:
-            st.info(f"No stocks above {squeeze_threshold}% short float in your current universe.")
+            st.info(f"No stocks above {squeeze_threshold}% short float found.")
         else:
             st.success(f"🔥 Found {len(squeeze_data)} potential squeeze candidates!")
             squeeze_df = pd.DataFrame([
@@ -189,11 +185,10 @@ with tab3:
             st.dataframe(squeeze_df, use_container_width=True, hide_index=True)
 
             st.markdown("---")
-            st.subheader("What makes a squeeze candidate?")
             col1, col2, col3 = st.columns(3)
-            col1.metric("Short Float", f"≥ {squeeze_threshold}%", "Higher = more fuel")
-            col2.metric("Days to Cover", "≥ 5 days", "Harder to unwind")
-            col3.metric("Volume Spike", "Watch for it", "The trigger")
+            col1.metric("Short Float",  f"≥ {squeeze_threshold}%", "Higher = more fuel")
+            col2.metric("Days to Cover","≥ 5 days",                "Harder to unwind")
+            col3.metric("Volume Spike", "Watch for it",            "The trigger")
 
 # ── TAB 1: INDICATOR PICKS ───────────────────────────────────────────────────
 with tab1:
@@ -203,7 +198,6 @@ with tab1:
         st.warning("👈 Enter your Twelve Data API key in the sidebar to begin.")
         st.stop()
 
-    # Merge manual + StockTwits into scan universe
     social_tickers = get_stocktwits_hot() if use_stocktwits else []
     full_universe  = list(set(manual_watchlist + social_tickers))[:30]
 
@@ -241,8 +235,7 @@ with tab1:
         if pd.notna(latest["MACD"]):
             signals.append("📈 MACD Bullish" if latest["MACD"] > 0 else "📉 MACD Bearish")
 
-        is_social = ticker in social_tickers
-        badge     = "🔥 " if is_social else ""
+        badge = "🔥 " if ticker in social_tickers else ""
 
         if signals:
             picks.append({
@@ -257,7 +250,7 @@ with tab1:
     prog.empty()
 
     if errors:
-        st.warning(f"Skipped (no data / API limit reached): {', '.join(errors)}")
+        st.warning(f"Skipped (no data / API limit): {', '.join(errors)}")
 
     if not picks:
         st.info("No stocks hitting your thresholds right now. Try widening your RSI range.")
