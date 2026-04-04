@@ -359,67 +359,140 @@ hr { border-color: rgba(255,255,255,0.06) !important; margin: 0 !important; }
 .hm-lo { background:#200404; color:#f87171; border-radius:5px; padding:7px 4px; text-align:center; font-size:11px; font-weight:700; }
 .hm-nu { background:#101827; color:#4a5e7a; border-radius:5px; padding:7px 4px; text-align:center; font-size:11px; font-weight:700; }
 
+/* ── Logo button — looks identical to plain text logo ── */
+button[data-testid="baseButton-secondary"][kind="secondary"]:is([data-key="top_logo_click"]),
+.stButton:has(button[data-key="top_logo_click"]) > button {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #e2e8f0 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 17px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.5px !important;
+    padding: 4px 0 !important;
+    min-height: unset !important;
+    height: auto !important;
+    width: auto !important;
+    justify-content: flex-start !important;
+    outline: none !important;
+}
+.stButton:has(button[data-key="top_logo_click"]) > button:hover {
+    background: transparent !important;
+    border: none !important;
+    color: #f59e0b !important;
+}
+/* Highlight the W in StockWins logo button */
+.stButton:has(button[data-key="top_logo_click"]) > button::first-letter {
+    color: #e2e8f0;
+}
+
+/* Topbar home button wrapper — remove extra spacing/box */
+.stButton:has(button[data-key="top_logo_click"]) {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
 /* Page padding */
 .pg { padding:20px 28px 40px; }
 
 /* Separator line */
 .div-line { border-bottom:1px solid rgba(255,255,255,.06); margin:20px 0; }
 
-/* ── Button consistency fixes ── */
-/* Force all buttons same min-height so they align */
+/* ── Global button reset — visible, consistent, aligned ── */
 .stButton > button {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
+    color: #b8cce0 !important;
+    border-radius: 7px !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    padding: 8px 16px !important;
     min-height: 40px !important;
     line-height: 1.3 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    transition: all 0.15s ease !important;
+    width: 100% !important;
 }
-/* Hide the "press Enter to submit" tooltip clipping issue */
-.stForm [data-testid="stFormSubmitButton"] button::after { display:none !important; }
-.stForm small, .stForm [data-testid="InputInstructions"] { display:none !important; }
+.stButton > button:hover {
+    background: rgba(37,99,235,0.12) !important;
+    border-color: rgba(37,99,235,0.55) !important;
+    color: #93b4fd !important;
+}
+.stButton > button[kind="primary"] {
+    background: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+}
+.stButton > button[kind="primary"]:hover {
+    background: #1d4ed8 !important;
+    border-color: #1d4ed8 !important;
+    box-shadow: 0 4px 14px rgba(37,99,235,0.4) !important;
+    color: #fff !important;
+}
 
-/* Logo button — make it look like text not a button */
-[data-testid="stMainBlockContainer"] > div > div > div > div:first-child .stButton > button,
-.stButton > button[data-testid*="top_logo"] {
+/* ── Sidebar nav — borderless nav items, no background ── */
+[data-testid="stSidebar"] .stButton > button {
     background: transparent !important;
     border: none !important;
+    border-left: 2px solid transparent !important;
+    border-radius: 0 !important;
+    color: #4a5e7a !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    padding: 9px 18px !important;
+    text-align: left !important;
+    min-height: 38px !important;
+    margin: 1px 0 !important;
+    justify-content: flex-start !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(37,99,235,0.08) !important;
+    border-left-color: #2563eb !important;
+    border-top: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    color: #93b4fd !important;
+}
+
+/* ── Logo button — pure text, zero box ── */
+.stButton:has(button[data-key="top_logo_click"]) > button {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
     color: #e2e8f0 !important;
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 17px !important;
     font-weight: 700 !important;
-    padding: 4px 0 !important;
-    min-height: 32px !important;
     letter-spacing: -0.5px !important;
+    padding: 2px 0 !important;
+    min-height: unset !important;
+    height: auto !important;
+    width: auto !important;
     justify-content: flex-start !important;
 }
-.stButton > button[data-testid*="top_logo"]:hover {
+.stButton:has(button[data-key="top_logo_click"]) > button:hover {
     background: transparent !important;
-    color: #60a5fa !important;
     border: none !important;
+    color: #f59e0b !important;
+}
+.stButton:has(button[data-key="top_logo_click"]) {
+    margin: 0 !important; padding: 0 !important;
 }
 
-/* Fix form input — remove weird bottom clipping */
-.stTextInput > div { margin-bottom: 0 !important; }
-.stTextInput > div > div { margin-bottom: 0 !important; }
+/* ── Form submit clipping fix ── */
 [data-testid="InputInstructions"] { display: none !important; }
+.stTextInput > div { margin-bottom: 0 !important; }
 
-/* Equal column heights in button rows */
+/* ── Equal column button heights ── */
 [data-testid="column"] { display: flex; flex-direction: column; }
 [data-testid="column"] > div { flex: 1; display: flex; flex-direction: column; }
-[data-testid="column"] > div > div { flex: 1; }
 [data-testid="column"] .stButton { flex: 1; display: flex; }
 [data-testid="column"] .stButton > button { flex: 1; }
-
-/* Topbar home button special style */
-.sw-home-btn button {
-    background: transparent !important;
-    border: none !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-weight: 700 !important;
-    font-size: 16px !important;
-    color: #e2e8f0 !important;
-    padding: 4px 0 !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -992,13 +1065,7 @@ def render_topbar(active=""):
     st.markdown('<div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:0 24px;min-height:52px;display:flex;align-items:center;">', unsafe_allow_html=True)
     c1,c2,c3=st.columns([2,8,3])
     with c1:
-        # Logo — pure markdown text, click via hidden button styled as text
-        st.markdown('''<style>
-        button[data-testid="baseButton-secondary"][kind="secondary"]:has(+ div[data-testid="stMarkdown"] .logo) {
-            display:none;
-        }
-        </style>''', unsafe_allow_html=True)
-        if st.button("📈 StockWins", key="top_logo_click"):
+        if st.button("StockWins", key="top_logo_click"):
             nav("landing" if not is_authed() else "dashboard")
     with c2:
         if is_authed():
@@ -1127,20 +1194,20 @@ DEMO = [
 # PAGE: LANDING
 # ─────────────────────────────────────────────────────────────
 def page_landing():
-    # Minimal topbar
-    tc1,_,tc2=st.columns([2,5,3])
+    # Minimal topbar — clean, evenly spaced
+    tc1, tc2 = st.columns([3, 4])
     with tc1:
-        st.markdown('<div style="padding:10px 0 0 24px;"><span class="logo">Stock<span class="w">W</span>ins</span></div>',unsafe_allow_html=True)
-        if st.button("", key="land_logo_click", help="Home", use_container_width=False):
-            nav("landing")
+        st.markdown('<div style="padding:10px 0 0 24px;"><span class="logo">Stock<span class="w">W</span>ins</span></div>', unsafe_allow_html=True)
     with tc2:
-        lc1,lc2,lc3=st.columns(3)
+        lc1, lc2, lc3, lc4 = st.columns([2, 2, 2, 3])
         with lc1:
-            if st.button("Features",key="land_feat"): pass
+            if st.button("Features", key="land_feat", use_container_width=True): pass
         with lc2:
-            if st.button("Login",key="land_login"): nav("login")
+            if st.button("Pricing",  key="land_price_nav", use_container_width=True): nav("pricing")
         with lc3:
-            if st.button("Start Free",key="land_su",type="primary"): nav("signup")
+            if st.button("Login",    key="land_login", use_container_width=True): nav("login")
+        with lc4:
+            if st.button("Start Free →", key="land_su", type="primary", use_container_width=True): nav("signup")
     st.divider()
 
     # Hero
@@ -1152,13 +1219,35 @@ def page_landing():
             <div class="hero-h1">Spot Market Opportunities<br><span class="hi">Before They Get Crowded</span></div>
             <div class="hero-p">Discover trending stocks, social buzz, short squeeze candidates, and momentum shifts. No API key required — sign up and start exploring in seconds.</div>
         </div>""",unsafe_allow_html=True)
-        bc1,bc2,bc3=st.columns(3)
+        # Hero CTA buttons — all clearly visible
+        st.markdown("""<style>
+        /* Hero secondary CTAs — white border, readable */
+        button[data-key="h_dash"], button[data-key="h_price"] {
+            border: 1px solid rgba(255,255,255,0.35) !important;
+            color: #d1e0f0 !important;
+            background: rgba(255,255,255,0.06) !important;
+        }
+        button[data-key="h_dash"]:hover, button[data-key="h_price"]:hover {
+            border-color: #2563eb !important;
+            color: #93b4fd !important;
+            background: rgba(37,99,235,0.12) !important;
+        }
+        /* Demo switcher inactive buttons */
+        button[data-key="demo_0"], button[data-key="demo_1"], button[data-key="demo_2"] {
+            border: 1px solid rgba(255,255,255,0.2) !important;
+            color: #8aa8c4 !important;
+            background: rgba(255,255,255,0.04) !important;
+            font-size: 12px !important;
+        }
+        </style>""", unsafe_allow_html=True)
+
+        bc1, bc2, bc3 = st.columns(3)
         with bc1:
-            if st.button("Start Free",key="h_su",type="primary",use_container_width=True): nav("signup")
+            if st.button("Start Free", key="h_su", type="primary", use_container_width=True): nav("signup")
         with bc2:
-            if st.button("Try Dashboard",key="h_dash",use_container_width=True): nav("login")
+            if st.button("Try Dashboard", key="h_dash", use_container_width=True): nav("login")
         with bc3:
-            if st.button("See Pricing",key="h_price",use_container_width=True): nav("pricing")
+            if st.button("See Pricing", key="h_price", use_container_width=True): nav("pricing")
         st.markdown("<br>",unsafe_allow_html=True)
         labels=["📊 Market Overview","💥 Squeeze Candidates","💡 Plain-English Insights"]
         dc=st.columns(3)
