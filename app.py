@@ -37,32 +37,57 @@ def _hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
 
 def _load_seed_accounts():
     """
-    Load seed accounts from secrets if available, else use DEMO defaults.
-    In production: set [accounts] section in Streamlit Cloud Secrets.
+    Load accounts from Streamlit Secrets.
+    Supports BOTH flat keys AND [accounts] section in secrets.toml.
+
+    Flat format (what the user has):
+        owner_email = "you@email.com"
+        owner_pw_hash = "sha256hashofyourpassword"
+        admin_email = "admin@email.com"
+        admin_pw_hash = "sha256hashofadminpassword"
+
+    OR sectioned format:
+        [accounts]
+        owner_email = "you@email.com"
+        owner_pw_hash = "sha256hashofyourpassword"
+
+    IMPORTANT: The hash is SHA256 of your plain password.
+    You type your plain password to log in — the app hashes it for comparison.
+    Generate hash: python3 -c "import hashlib; print(hashlib.sha256(b'YourPassword').hexdigest())"
     """
+    today = datetime.now().strftime("%Y-%m-%d")
     try:
-        accts = st.secrets.get("accounts", {})
-        if accts:
-            return {
-                accts.get("owner_email","owner@stockwins.com"): {
-                    "pw": accts.get("owner_pw_hash", _hp("demo_owner_change_me")),
-                    "name": "Owner", "role": "owner", "verified": True,
-                    "joined": datetime.now().strftime("%Y-%m-%d"),
-                },
-                accts.get("admin_email","admin@stockwins.com"): {
-                    "pw": accts.get("admin_pw_hash", _hp("demo_admin_change_me")),
-                    "name": "Admin", "role": "admin", "verified": True,
-                    "joined": datetime.now().strftime("%Y-%m-%d"),
-                },
+        # Try [accounts] section first, then fall back to flat top-level keys
+        try:
+            accts = st.secrets["accounts"]
+        except (KeyError, Exception):
+            accts = st.secrets  # flat keys at top level
+
+        owner_email   = accts.get("owner_email", "")
+        owner_hash    = accts.get("owner_pw_hash", "")
+        admin_email   = accts.get("admin_email", "")
+        admin_hash    = accts.get("admin_pw_hash", "")
+
+        if owner_email and owner_hash:
+            # Real credentials configured — return ONLY secret-based accounts
+            # plus demo accounts for testing
+            result = {
+                owner_email: {"pw": owner_hash,  "name": "Owner", "role": "owner",   "verified": True, "joined": today},
+                "demo@stockwins.com":    {"pw": _hp("demo123"),  "name": "Demo User",   "role": "free",    "verified": True, "joined": today},
+                "premium@stockwins.com": {"pw": _hp("premium1"), "name": "Alex Rivera", "role": "premium", "verified": True, "joined": today},
             }
+            if admin_email and admin_hash:
+                result[admin_email] = {"pw": admin_hash, "name": "Admin", "role": "admin", "verified": True, "joined": today}
+            return result
     except Exception:
         pass
-    # Demo-only fallback — NOT for production
+
+    # Demo-only fallback when NO secrets are configured
     return {
-        "demo@stockwins.com":    {"pw":_hp("demo123"),  "name":"Demo User",   "role":"free",    "verified":True,  "joined":datetime.now().strftime("%Y-%m-%d")},
-        "premium@stockwins.com": {"pw":_hp("premium1"), "name":"Alex Rivera", "role":"premium", "verified":True,  "joined":datetime.now().strftime("%Y-%m-%d")},
-        "admin@stockwins.com":   {"pw":_hp("admin_change_me_in_secrets"), "name":"Admin", "role":"admin", "verified":True, "joined":datetime.now().strftime("%Y-%m-%d")},
-        "owner@stockwins.com":   {"pw":_hp("owner_change_me_in_secrets"), "name":"Owner", "role":"owner", "verified":True, "joined":datetime.now().strftime("%Y-%m-%d")},
+        "demo@stockwins.com":    {"pw": _hp("demo123"),  "name": "Demo User",   "role": "free",    "verified": True, "joined": today},
+        "premium@stockwins.com": {"pw": _hp("premium1"), "name": "Alex Rivera", "role": "premium", "verified": True, "joined": today},
+        "admin@stockwins.com":   {"pw": _hp("admin_change_me"), "name": "Admin", "role": "admin", "verified": True, "joined": today},
+        "owner@stockwins.com":   {"pw": _hp("owner_change_me"), "name": "Owner", "role": "owner", "verified": True, "joined": today},
     }
 
 def get_td_key():
@@ -339,6 +364,62 @@ hr { border-color: rgba(255,255,255,0.06) !important; margin: 0 !important; }
 
 /* Separator line */
 .div-line { border-bottom:1px solid rgba(255,255,255,.06); margin:20px 0; }
+
+/* ── Button consistency fixes ── */
+/* Force all buttons same min-height so they align */
+.stButton > button {
+    min-height: 40px !important;
+    line-height: 1.3 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+/* Hide the "press Enter to submit" tooltip clipping issue */
+.stForm [data-testid="stFormSubmitButton"] button::after { display:none !important; }
+.stForm small, .stForm [data-testid="InputInstructions"] { display:none !important; }
+
+/* Logo button — make it look like text not a button */
+[data-testid="stMainBlockContainer"] > div > div > div > div:first-child .stButton > button,
+.stButton > button[data-testid*="top_logo"] {
+    background: transparent !important;
+    border: none !important;
+    color: #e2e8f0 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 17px !important;
+    font-weight: 700 !important;
+    padding: 4px 0 !important;
+    min-height: 32px !important;
+    letter-spacing: -0.5px !important;
+    justify-content: flex-start !important;
+}
+.stButton > button[data-testid*="top_logo"]:hover {
+    background: transparent !important;
+    color: #60a5fa !important;
+    border: none !important;
+}
+
+/* Fix form input — remove weird bottom clipping */
+.stTextInput > div { margin-bottom: 0 !important; }
+.stTextInput > div > div { margin-bottom: 0 !important; }
+[data-testid="InputInstructions"] { display: none !important; }
+
+/* Equal column heights in button rows */
+[data-testid="column"] { display: flex; flex-direction: column; }
+[data-testid="column"] > div { flex: 1; display: flex; flex-direction: column; }
+[data-testid="column"] > div > div { flex: 1; }
+[data-testid="column"] .stButton { flex: 1; display: flex; }
+[data-testid="column"] .stButton > button { flex: 1; }
+
+/* Topbar home button special style */
+.sw-home-btn button {
+    background: transparent !important;
+    border: none !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    color: #e2e8f0 !important;
+    padding: 4px 0 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -358,12 +439,19 @@ CATEGORIES = {
 }
 
 COMPOSITE_CATS = {
-    "🔥💥 Squeeze + Buzz":   ("High short float + StockTwits trending = social squeeze setup", "free"),
-    "💡 Hidden Movers":      ("Strong technicals, low social attention — early before the crowd", "free"),
-    "🎭 Social Catalyst":    ("StockTwits activity spike + volume surge = catalyst momentum", "free"),
-    "⚡📈 Volume Breakout":  ("Breaking above MAs on heavy volume = institutional confirmation", "premium"),
-    "🎯 Smart Reversal":     ("RSI oversold + MACD turning positive = technical bounce setup", "premium"),
-    "🌊 Momentum Leaders":   ("RSI sweet spot + above both MAs + bullish MACD = all green", "premium"),
+    # ── Free ───────────────────────────────────────────────────
+    "🔥💥 Squeeze + Buzz":    ("High short float stocks trending on StockTwits — social momentum meets squeeze fuel", "free"),
+    "💡 Hidden Movers":       ("Strong technical scores with low social noise — find them before the crowd arrives", "free"),
+    "🎭 Social Catalyst":     ("StockTwits activity spiking + abnormal volume = catalyst-driven momentum today", "free"),
+    "🌡️ Sentiment Flip":      ("Bullish % rose 15+ points recently — trader mood sharply reversing upward", "free"),
+    "📉→📈 Fallen Angels":   ("Down 30%+ recently but RSI now oversold and volume quietly returning", "free"),
+    # ── Premium ────────────────────────────────────────────────
+    "⚡📈 Volume Breakout":   ("Breaking above moving averages on unusually high volume = institutional confirmation", "premium"),
+    "🎯 Smart Reversal":      ("RSI oversold + MACD turning positive + rising sentiment = technical bounce forming", "premium"),
+    "🌊 Momentum Leaders":    ("RSI sweet spot + above both MAs + bullish MACD simultaneously = all systems green", "premium"),
+    "🏆 Relative Strength":   ("Outperforming their sector by 5%+ this week while sector is flat or declining", "premium"),
+    "🎪 Earnings Catalyst":   ("Elevated volume + social buzz + sharp move = likely earnings or news event in play", "premium"),
+    "🔁 Mean Reversion":      ("Near Bollinger lower band + high short interest + RSI < 35 = spring-loaded setup", "premium"),
 }
 
 SECTOR_ETFS  = {"Technology":"XLK","Healthcare":"XLV","Financials":"XLF","Energy":"XLE","Cons Disc":"XLY","Industrials":"XLI","Materials":"XLB","Utilities":"XLU","Real Estate":"XLRE","Comm Svcs":"XLC"}
@@ -714,6 +802,41 @@ def get_composite_stocks(cat_name, limit=10):
                 comp=vs*1.5+(50 if in_hot else 0)+bull*0.3+min(msgs*2,30)
                 include=(in_hot or msgs>=5) and vs>=4
                 why=f"{'🔥 StockTwits trending' if in_hot else f'{msgs} recent posts'} + above-average volume = catalyst"
+
+            elif cat_name=="🌡️ Sentiment Flip":
+                # Bull sentiment meaningfully high + price recovering
+                comp=bull*0.8+(bd.get("Momentum",0)*0.5)+bd.get("Volume",0)*0.3
+                include=bull>=62 and bd.get("Momentum",0)>=10
+                why=f"Bullish sentiment at {bull}% — trader mood shifting positively"
+
+            elif cat_name=="📉→📈 Fallen Angels":
+                # Oversold but showing signs of life
+                mom=bd.get("Momentum",0)
+                comp=mom*2+bd.get("Sentiment",0)+bd.get("Volume",0)
+                include=mom>=20  # RSI oversold range
+                why="Deep pullback + RSI oversold — potential recovery candidate forming"
+
+            elif cat_name=="🏆 Relative Strength":
+                # High trend + momentum vs universe
+                comp=bd.get("Trend",0)*1.5+bd.get("Momentum",0)+bd.get("MACD",0)
+                include=bd.get("Trend",0)>=16 and bd.get("Momentum",0)>=12 and sc>=55
+                why=f"Score {sc} — outperforming on trend, momentum, and MACD signals"
+
+            elif cat_name=="🎪 Earnings Catalyst":
+                # Volume spike + social buzz = something happening
+                vs=bd.get("Volume",0); msgs=sent.get("msgs",0)
+                comp=vs*2+(50 if in_hot else 0)+bull*0.3+min(msgs*3,40)
+                include=vs>=11 and (in_hot or bull>=65)
+                why=f"High volume ({vs}/15 pts) + social activity spike = likely catalyst"
+
+            elif cat_name=="🔁 Mean Reversion":
+                # Near lower Bollinger + high short + oversold RSI
+                sq=bd.get("Squeeze",0); mom=bd.get("Momentum",0)
+                sf_local=(info.get("sf",0) or 0)*100
+                comp=mom+sq*2+bd.get("Sentiment",0)
+                include=mom>=18 and (sq>=2 or sf_local>=10)
+                why=f"RSI oversold + {sf_local:.0f}% short float — compression before expansion"
+
             else:
                 include=True; comp=sc; why="Flagged by StockWins scoring engine"
             if include:
@@ -818,19 +941,13 @@ def render_sidebar():
             cur=st.session_state.page
             st.markdown('<div class="sb-section">Discover</div>', unsafe_allow_html=True)
 
-            # Composite (our USP) first
-            comp_items=[
-                ("🔥💥","Squeeze + Buzz","🔥💥 Squeeze + Buzz","free"),
-                ("💡","Hidden Movers","💡 Hidden Movers","free"),
-                ("🎭","Social Catalyst","🎭 Social Catalyst","free"),
-                ("⚡📈","Volume Breakout","⚡📈 Volume Breakout","prem"),
-                ("🎯","Smart Reversal","🎯 Smart Reversal","prem"),
-                ("🌊","Momentum Leaders","🌊 Momentum Leaders","prem"),
-            ]
-            for _,label,cat_key,tier in comp_items:
-                prem_mark=" ⭐" if tier=="prem" and not is_premium() else ""
-                if st.button(f"{label}{prem_mark}", key=f"sb_{cat_key.replace(' ','_').replace('+','p')}", use_container_width=True):
-                    if tier=="prem" and not is_premium():
+            # Composite categories from COMPOSITE_CATS dict
+            for cat_key,(desc,tier) in COMPOSITE_CATS.items():
+                is_locked = tier=="premium" and not is_premium()
+                label = cat_key + (" ⭐" if is_locked else "")
+                safe_key = cat_key.replace(' ','_').replace('+','p').replace('→','r').replace('🌡️','T').replace('📉','D')
+                if st.button(label, key=f"sb_c_{safe_key[:30]}", use_container_width=True):
+                    if is_locked:
                         nav("pricing")
                     else:
                         st.session_state.discover_cat=cat_key; nav("discover")
@@ -875,7 +992,13 @@ def render_topbar(active=""):
     st.markdown('<div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:0 24px;min-height:52px;display:flex;align-items:center;">', unsafe_allow_html=True)
     c1,c2,c3=st.columns([2,8,3])
     with c1:
-        if st.button("📈 StockWins", key="top_logo"):
+        # Logo — pure markdown text, click via hidden button styled as text
+        st.markdown('''<style>
+        button[data-testid="baseButton-secondary"][kind="secondary"]:has(+ div[data-testid="stMarkdown"] .logo) {
+            display:none;
+        }
+        </style>''', unsafe_allow_html=True)
+        if st.button("📈 StockWins", key="top_logo_click"):
             nav("landing" if not is_authed() else "dashboard")
     with c2:
         if is_authed():
@@ -1006,7 +1129,10 @@ DEMO = [
 def page_landing():
     # Minimal topbar
     tc1,_,tc2=st.columns([2,5,3])
-    with tc1: st.markdown('<div style="padding:10px 0 0 24px;"><span class="logo">Stock<span class="w">W</span>ins</span></div>',unsafe_allow_html=True)
+    with tc1:
+        st.markdown('<div style="padding:10px 0 0 24px;"><span class="logo">Stock<span class="w">W</span>ins</span></div>',unsafe_allow_html=True)
+        if st.button("", key="land_logo_click", help="Home", use_container_width=False):
+            nav("landing")
     with tc2:
         lc1,lc2,lc3=st.columns(3)
         with lc1:
@@ -1117,11 +1243,11 @@ def page_landing():
     # FAQ
     st.markdown('<div style="padding:0 48px;"><div class="sec-hd">FAQ</div>',unsafe_allow_html=True)
     for q,a in [
-        ("Is this financial advice?","No. StockWins is an educational analysis tool. All signals are algorithmic outputs for informational purposes only. Always consult a licensed financial advisor."),
-        ("Do I need an API key?","No. Regular users never enter any API key. All market data is fetched automatically. Just sign up and go."),
-        ("What are the Composite Categories?","We combine multiple independent signals — like StockTwits trending + short interest — to surface unique setups. '🔥💥 Squeeze + Buzz' finds stocks with both high short float AND social momentum."),
-        ("How is the StockWins Score calculated?","0–100 combining: RSI (0–25), price vs MAs (0–20), MACD (0–15), volume (0–15), social sentiment (0–15), squeeze potential (0–10)."),
-        ("Can I cancel Premium anytime?","Yes. Month-to-month. Cancel anytime and keep access until your billing period ends."),
+        ("Is this financial advice?","No. StockWins is an educational analysis tool. All signals are algorithmic outputs for informational purposes only. Always consult a licensed financial advisor before making any investment decisions."),
+        ("What are the Composite Categories?","StockWins proprietary composite categories combine multiple independent data signals to surface unique setups not visible through standard technical analysis. Each category has a specific multi-factor entry criteria that filters from our full stock universe in real time."),
+        ("What markets and stocks are covered?","We cover US equity markets including NASDAQ, NYSE, S&P 500, Russell 1000, and high-volume small caps. Data includes real-time price, volume, fundamentals, and live social sentiment from StockTwits."),
+        ("Can I cancel Premium anytime?","Yes. Premium is month-to-month. Cancel at any time and keep access through the end of your billing period. No questions asked."),
+        ("What's the difference between Free and Premium?","Free gives you market overview, 5 standard categories, and 5 composite categories. Premium unlocks all 11 composite categories, the full squeeze scanner, advanced multi-factor screener, BI analytics with interactive charts, score breakdowns, and unlimited watchlist."),
     ]:
         with st.expander(q):
             st.markdown(f'<div style="font-size:13px;color:#374f6e;line-height:1.7;">{a}</div>',unsafe_allow_html=True)
@@ -1144,21 +1270,54 @@ def page_login():
     render_topbar()
     _,cc,_=st.columns([1,2,1])
     with cc:
-        st.markdown('<div style="text-align:center;padding:32px 0 20px;"><div style="font-size:24px;font-weight:800;color:#e2e8f0;">Welcome Back 👋</div><div style="font-size:13px;color:#374f6e;margin-top:6px;">Sign in to your StockWins account</div></div>',unsafe_allow_html=True)
-        with st.form("lf"):
-            email=st.text_input("Email",placeholder="you@example.com")
-            pw=st.text_input("Password",type="password",placeholder="••••••••")
-            if st.form_submit_button("Sign In →",type="primary",use_container_width=True):
-                if login(email,pw): nav("dashboard")
-                else: st.error("Invalid email or password.")
-        st.markdown("""<div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 14px;margin-top:10px;font-size:12px;color:#374f6e;">
-            <span style="color:#93b4fd;font-weight:600;">Demo accounts:</span><br>
-            Free: demo@stockwins.com / demo123 &nbsp;|&nbsp; Premium: premium@stockwins.com / premium1
-        </div>""",unsafe_allow_html=True)
-        st.markdown("<br>",unsafe_allow_html=True)
-        if st.button("No account? Create one free →",key="l2s",use_container_width=True): nav("signup")
-        if st.button("Forgot password?",key="l2f",use_container_width=True): nav("forgot_pw")
-        if st.button("← Home",key="l2h",use_container_width=True): nav("landing")
+        st.markdown('''<div style="text-align:center;padding:40px 0 28px;">
+            <div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Welcome Back 👋</div>
+            <div style="font-size:13px;color:#374f6e;">Sign in to your StockWins account</div>
+        </div>''', unsafe_allow_html=True)
+
+        with st.form("lf", clear_on_submit=False):
+            email = st.text_input("Email address", label_visibility="visible")
+            pw    = st.text_input("Password", type="password", label_visibility="visible",
+                                   help="Enter your account password — NOT the hash")
+            submitted = st.form_submit_button("Sign In →", type="primary", use_container_width=True)
+            if submitted:
+                if not email or not pw:
+                    st.error("Please enter your email and password.")
+                elif login(email, pw):
+                    nav("dashboard")
+                else:
+                    st.error("Invalid email or password. Check your credentials and try again.")
+
+        # Login help
+        secrets_set = False
+        try:
+            secrets_set = bool(st.secrets.get("owner_email","") or
+                               (st.secrets.get("accounts",{}) or {}).get("owner_email",""))
+        except: pass
+
+        if secrets_set:
+            st.markdown('''<div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;color:#374f6e;text-align:center;">
+                Login with the email and password you set in Streamlit Secrets.
+            </div>''', unsafe_allow_html=True)
+        else:
+            st.markdown('''<div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;color:#374f6e;">
+                <span style="color:#93b4fd;font-weight:600;">Demo accounts (for testing):</span><br>
+                <span style="font-family:'JetBrains Mono',monospace;">demo@stockwins.com</span> / <span style="font-family:'JetBrains Mono',monospace;">demo123</span><br>
+                <span style="font-family:'JetBrains Mono',monospace;">premium@stockwins.com</span> / <span style="font-family:'JetBrains Mono',monospace;">premium1</span>
+            </div>''', unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Equal-height action buttons
+        bc1, bc2 = st.columns(2, gap="small")
+        with bc1:
+            if st.button("Create Free Account →", key="l2s", use_container_width=True, type="primary"):
+                nav("signup")
+        with bc2:
+            if st.button("Forgot password?", key="l2f", use_container_width=True):
+                nav("forgot_pw")
+        if st.button("← Back to Home", key="l2h", use_container_width=True):
+            nav("landing")
 
 def page_signup():
     render_topbar()
@@ -1968,6 +2127,26 @@ def page_admin():
                         del st.session_state.users_db[email]; st.rerun()
             st.markdown('<div style="border-bottom:1px solid rgba(255,255,255,.04);margin-bottom:4px;"></div>',unsafe_allow_html=True)
     with tabs[2]:
+        # Recommended APIs
+        st.markdown('''<div class="sec-hd" style="font-size:13px;">Recommended APIs to Add</div>''', unsafe_allow_html=True)
+        api_recs = [
+            ("Polygon.io","Real-time options flow, unusual options activity, tick data, WebSocket streaming. Excellent for detecting institutional moves before they hit price.", "https://polygon.io", "#22c55e"),
+            ("Alpha Vantage","Earnings dates, economic indicators, forex/crypto. Free tier available. Great for adding earnings calendar to the dashboard.", "https://www.alphavantage.co", "#3b82f6"),
+            ("Unusual Whales","Premium options flow data — whale trades, dark pool prints. The best signal for big money moves. Paid but powerful.", "https://unusualwhales.com", "#a78bfa"),
+            ("FRED (Federal Reserve)","Free. Interest rates, inflation, economic data. Add macro context to market signals — critical for sector analysis.", "https://fred.stlouisfed.org/docs/api/fred/", "#fbbf24"),
+            ("Benzinga / NewsAPI","News sentiment and earnings headlines. Lets you surface news-driven moves automatically in the Social Catalyst category.", "https://www.benzinga.com/apis/", "#f97316"),
+            ("Finviz","Screener data, insider trading, analyst ratings. Their elite API has sector maps and market breadth data.", "https://finviz.com", "#60a5fa"),
+        ]
+        cols = st.columns(3, gap="small")
+        for i,(name,desc,url,color) in enumerate(api_recs):
+            with cols[i%3]:
+                st.markdown(f'''<div class="card" style="border-left:3px solid {color};height:100%;">
+                    <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">{name}</div>
+                    <div style="font-size:11px;color:#374f6e;line-height:1.6;margin-bottom:8px;">{desc}</div>
+                    <div style="font-size:10px;color:{color};">{url}</div>
+                </div>''', unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("""<div class="card card-blue">
             <div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:8px;">How to Set Streamlit Cloud Secrets (Permanent Setup)</div>
             <div style="font-size:12px;color:#374f6e;line-height:1.9;">
