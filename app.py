@@ -27,6 +27,21 @@ st.set_page_config(
 def _hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
 def hp(pw):  return hashlib.sha256(pw.encode()).hexdigest()
 
+# ── Module-level DB: persists within the server process across reruns ──
+_GLOBAL_USERS_DB: dict = {}
+
+def _get_global_db() -> dict:
+    """Returns the shared in-process user database. Seeds from Secrets on first call."""
+    global _GLOBAL_USERS_DB
+    if not _GLOBAL_USERS_DB:
+        _GLOBAL_USERS_DB = _load_seed_accounts()
+    return _GLOBAL_USERS_DB
+
+def _save_global_db(db: dict):
+    """Sync session users_db back to global store."""
+    global _GLOBAL_USERS_DB
+    _GLOBAL_USERS_DB = db
+
 def _load_seed_accounts():
     today = datetime.now().strftime("%Y-%m-%d")
     try:
@@ -529,7 +544,7 @@ CATEGORIES = {
 }
 
 COMPOSITE_CATS = {
-    "🔥💥 Squeeze + Buzz":    ("High short float stocks trending on StockTwits — social momentum meets squeeze fuel", "free"),
+    "🔥💥 Squeeze + Buzz":    ("High short float stocks trending on StockTwits — social momentum meets squeeze fuel", "premium"),
     "💡 Hidden Movers":       ("Strong technical scores with low social noise — find them before the crowd arrives", "free"),
     "🎭 Social Catalyst":     ("StockTwits activity spiking + abnormal volume = catalyst-driven momentum today", "free"),
     "🌡️ Sentiment Flip":      ("Bullish % rose 15+ points recently — trader mood sharply reversing upward", "free"),
@@ -566,7 +581,7 @@ def init():
         "watchlist":[],"alerts":[],"saved_screeners":[],
         "detail_ticker":None,"detail_data":{},"discover_cat":"🔥💥 Squeeze + Buzz",
         "prev_page":None,"hero_panel":0,"_page_hist":[],
-        "users_db":_load_seed_accounts(),
+        "users_db":_get_global_db(),
         "site_stats":{"total_signups":1847,"premium_users":312,"daily_active":634,"conversion":16.9},
         "email_digest_enabled":False,"digest_frequency":"Daily",
         "ranking_sort":"SW Score","ranking_filter":"All",
@@ -589,6 +604,7 @@ def signup(email, pw, name):
     if email in db: return False,"Account already exists."
     db[email]={"pw":hp(pw),"name":name,"role":"free","verified":False,
                "joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Free"}
+    _save_global_db(db)  # persist to process-level store
     st.session_state.site_stats["total_signups"]+=1
     st.session_state.user={"email":email,"name":name}
     st.session_state.role="free"
@@ -879,9 +895,19 @@ def sc_pill(sc):
 # ─────────────────────────────────────────────────────────────
 def get_composite_stocks(cat_name,limit=10):
     hot=st_hot(); universe=list(set(BROAD_UNI+hot[:8]))[:32]
-    results=[]; prog=st.progress(0,f"Computing {cat_name}…")
+    results=[]
+    prog_container=st.empty()
     for i,t in enumerate(universe[:limit*3]):
-        prog.progress((i+1)/(limit*3),f"Analyzing {t}…")
+        pct=(i+1)/(limit*3)
+        prog_container.markdown(f'''<div style="background:#0d1525;border:1px solid rgba(37,99,235,0.2);border-radius:10px;padding:12px 16px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="font-size:12px;font-weight:600;color:#60a5fa;">⚡ {cat_name}</span>
+                <span style="font-size:11px;color:#374f6e;">{int(pct*100)}% · Scanning {t}…</span>
+            </div>
+            <div style="background:rgba(255,255,255,0.06);border-radius:4px;height:4px;">
+                <div style="background:linear-gradient(90deg,#1d4ed8,#2563eb);width:{int(pct*100)}%;height:4px;border-radius:4px;"></div>
+            </div>
+        </div>''', unsafe_allow_html=True)
         try:
             q=get_quote(t); df=yf_ohlcv(t,60); info=yf_fund(t); sent=st_sent(t)
             sc,bd,op,risk,conf=compute_scores(df,info,sent); ig=get_insights(df,info)
@@ -975,7 +1001,7 @@ def get_composite_stocks(cat_name,limit=10):
                 results.append({"t":t,"q":q,"sc":sc,"bd":bd,"ig":ig,"op":op,"risk":risk,"conf":conf,
                                  "hot":in_hot,"df":df,"info":info,"sent":sent,"comp":comp,"why":why})
         except: continue
-    prog.empty()
+    prog_container.empty()
     results.sort(key=lambda x:x["comp"],reverse=True)
     return results[:limit]
 
@@ -1047,9 +1073,19 @@ def render_cat(cat,limit=10,show_why=False):
         tickers=list(CATEGORIES.get(cat,[])); hot=st_hot()
         if cat=="🔥 Trending Now": tickers=hot
         if not tickers: st.info("No tickers available."); return
-        scan=min(len(tickers),limit); stocks=[]; prog=st.progress(0,f"Loading {cat}…")
+        scan=min(len(tickers),limit); stocks=[]
+        prog_container=st.empty()
         for i,t in enumerate(tickers[:scan]):
-            prog.progress((i+1)/scan,f"Analyzing {t}…")
+            pct=(i+1)/scan
+            prog_container.markdown(f'''<div style="background:#0d1525;border:1px solid rgba(37,99,235,0.2);border-radius:10px;padding:12px 16px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:12px;font-weight:600;color:#60a5fa;">⚡ Analyzing {cat}</span>
+                    <span style="font-size:11px;color:#374f6e;">{int(pct*100)}% · Scanning {t}…</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.06);border-radius:4px;height:4px;">
+                    <div style="background:linear-gradient(90deg,#1d4ed8,#2563eb);width:{int(pct*100)}%;height:4px;border-radius:4px;transition:width 0.3s;"></div>
+                </div>
+            </div>''', unsafe_allow_html=True)
             q=get_quote(t); df=yf_ohlcv(t,60); info=yf_fund(t); sent=st_sent(t)
             sc,bd,op,risk,conf=compute_scores(df,info,sent); ig=get_insights(df,info)
             if q: stocks.append({"t":t,"q":q,"sc":sc,"bd":bd,"ig":ig,"op":op,"risk":risk,"conf":conf,"hot":t in hot,"df":df,"info":info,"sent":sent,"comp":sc,"why":""})
@@ -1280,6 +1316,44 @@ DEMO = [
     </div></div>""",
 ]
 
+
+# Additional hero demo panels
+DEMO_SCORE = """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.08);border-radius:11px;overflow:hidden;">
+<div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+  <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#ef4444;"></div><div style="width:8px;height:8px;border-radius:50%;background:#fbbf24;"></div><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;"></div>
+  <span style="font-size:11px;color:#374f6e;margin-left:6px;font-family:'JetBrains Mono',monospace;">Score Breakdown — NVDA</span></div>
+  <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:#4ade80;">88</span>
+</div>
+<div style="padding:14px;">
+  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Momentum (RSI)</span><span style="font-size:11px;font-weight:700;color:#4ade80;">20/25</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:80%;height:5px;border-radius:3px;"></div></div></div>
+  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Trend (MA20/50)</span><span style="font-size:11px;font-weight:700;color:#4ade80;">18/20</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:90%;height:5px;border-radius:3px;"></div></div></div>
+  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">MACD Signal</span><span style="font-size:11px;font-weight:700;color:#4ade80;">13/15</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:87%;height:5px;border-radius:3px;"></div></div></div>
+  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Volume Surge</span><span style="font-size:11px;font-weight:700;color:#fbbf24;">9/15</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#f59e0b;width:60%;height:5px;border-radius:3px;"></div></div></div>
+  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Social Sentiment</span><span style="font-size:11px;font-weight:700;color:#4ade80;">12/15</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:80%;height:5px;border-radius:3px;"></div></div></div>
+  <div style="margin-top:10px;padding:8px 10px;background:#080b14;border-radius:7px;font-size:11px;color:#374f6e;line-height:1.6;">
+    ✅ Trading above both 20d and 50d moving averages — buyers in control<br>✅ MACD bullish crossover confirmed — momentum building<br>⚠️ Volume below recent surge levels — watch for expansion
+  </div>
+</div></div>"""
+
+DEMO_BI = """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.08);border-radius:11px;overflow:hidden;">
+<div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+  <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#ef4444;"></div><div style="width:8px;height:8px;border-radius:50%;background:#fbbf24;"></div><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;"></div>
+  <span style="font-size:11px;color:#374f6e;margin-left:6px;font-family:'JetBrains Mono',monospace;">Opportunity Matrix</span></div>
+  <span style="background:rgba(168,85,247,0.15);color:#c084fc;font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid rgba(168,85,247,.3);">EXCLUSIVE ✨</span>
+</div>
+<div style="padding:10px;">
+  <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr 1fr 1fr;gap:3px;font-size:10px;">
+    <div style="color:#2a3a52;"></div>
+    <div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Mom</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Trend</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Vol</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Sent</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Sq</div>
+    <div style="font-family:'JetBrains Mono',monospace;color:#60a5fa;font-weight:700;padding:3px 0;display:flex;align-items:center;">NVDA</div>
+    <div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">20</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">18</div><div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">9</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">12</div><div style="background:#080f1e;border-radius:3px;text-align:center;padding:5px;color:#4a5e7a;font-weight:700;">0</div>
+    <div style="font-family:'JetBrains Mono',monospace;color:#60a5fa;font-weight:700;padding:3px 0;display:flex;align-items:center;">TSLA</div>
+    <div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">14</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">16</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">13</div><div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">10</div><div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">6</div>
+    <div style="font-family:'JetBrains Mono',monospace;color:#60a5fa;font-weight:700;padding:3px 0;display:flex;align-items:center;">GME</div>
+    <div style="background:#0a2818;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">18</div><div style="background:#080f1e;border-radius:3px;text-align:center;padding:5px;color:#4a5e7a;font-weight:700;">4</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">15</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">14</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">10</div>
+  </div>
+</div></div>"""
+
 # ─────────────────────────────────────────────────────────────
 # PAGE: LANDING
 # ─────────────────────────────────────────────────────────────
@@ -1328,42 +1402,47 @@ def page_landing():
         hero_comp = (
             '<style>'
             'body{margin:0;padding:0;background:transparent;font-family:Inter,sans-serif;overflow:hidden;}'
-            '.tab-row{display:flex;gap:28px;margin-bottom:10px;padding:16px 0 0 0;}'
+            '.tab-row{display:flex;gap:24px;margin-bottom:8px;padding:14px 0 0;}'
             '.tab-item{font-size:13px;font-weight:500;color:#374f6e;cursor:pointer;'
-            '  padding-bottom:5px;border-bottom:2px solid transparent;transition:all 0.2s;'
-            '  user-select:none;white-space:nowrap;}'
+            'padding-bottom:5px;border-bottom:2px solid transparent;transition:all 0.2s;white-space:nowrap;}'
             '.tab-item.active{color:#e2e8f0;font-weight:700;border-bottom-color:#2563eb;}'
             '.tab-item:hover{color:#a8bdd4;}'
-            '.slide-title{font-size:24px;font-weight:900;color:#f1f5f9;letter-spacing:-0.8px;'
-            '  line-height:1.15;margin-bottom:14px;min-height:58px;}'
-            '.hi{color:#2563eb;} .hg{color:#f59e0b;}'
-            '.dots{display:flex;gap:7px;margin-bottom:10px;align-items:center;}'
-            '.dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,0.15);'
-            '  cursor:pointer;transition:all 0.3s;}'
-            '.dot.active{background:#2563eb;width:20px;border-radius:4px;}'
+            '.dots{display:flex;gap:6px;margin-bottom:10px;}'
+            '.dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.15);cursor:pointer;transition:all 0.3s;}'
+            '.dot.active{background:#2563eb;width:18px;border-radius:3px;}'
+            '.slide-title{font-size:22px;font-weight:900;color:#f1f5f9;letter-spacing:-0.5px;line-height:1.2;margin-bottom:12px;min-height:52px;}'
+            '.hi{color:#2563eb;}.hg{color:#f59e0b;}'
             '</style>'
             '<div>'
             '<div class="tab-row">'
             '<div class="tab-item active" id="t0" onclick="sw(0)">📊 Market Overview</div>'
-            '<div class="tab-item" id="t1" onclick="sw(1)">💥 Squeeze Candidates</div>'
+            '<div class="tab-item" id="t1" onclick="sw(1)">💥 Squeeze Radar</div>'
             '<div class="tab-item" id="t2" onclick="sw(2)">💡 Smart Insights</div>'
+            '<div class="tab-item" id="t3" onclick="sw(3)">🎯 Score Breakdown</div>'
+            '<div class="tab-item" id="t4" onclick="sw(4)">📈 BI Analytics</div>'
             '</div>'
             '<div class="dots">'
             '<div class="dot active" id="d0" onclick="sw(0)"></div>'
             '<div class="dot" id="d1" onclick="sw(1)"></div>'
             '<div class="dot" id="d2" onclick="sw(2)"></div>'
+            '<div class="dot" id="d3" onclick="sw(3)"></div>'
+            '<div class="dot" id="d4" onclick="sw(4)"></div>'
             '</div>'
             '<div id="h0" class="slide-title">Find Trending Stocks<br><span class="hi">Before the Crowd</span></div>'
             '<div id="h1" class="slide-title" style="display:none">Scan For Short Squeeze<br><span class="hi">Candidates</span></div>'
             '<div id="h2" class="slide-title" style="display:none">Smart Insights<br>in <span class="hi">Simple Language</span></div>'
+            '<div id="h3" class="slide-title" style="display:none">Premium <span class="hg">Score Breakdowns</span><br>&amp; Deep Analysis</div>'
+            '<div id="h4" class="slide-title" style="display:none">BI Analytics &amp;<br><span class="hi">Opportunity Matrix</span></div>'
             '<div id="p0">' + DEMO[0] + '</div>'
             '<div id="p1" style="display:none">' + DEMO[1] + '</div>'
             '<div id="p2" style="display:none">' + DEMO[2] + '</div>'
+            '<div id="p3" style="display:none">' + DEMO_SCORE + '</div>'
+            '<div id="p4" style="display:none">' + DEMO_BI + '</div>'
             '</div>'
             '<script>'
             'var c=0;'
             'function sw(n){'
-            '  for(var i=0;i<3;i++){'
+            '  for(var i=0;i<5;i++){'
             '    document.getElementById("t"+i).className="tab-item"+(i===n?" active":"");'
             '    document.getElementById("d"+i).className="dot"+(i===n?" active":"");'
             '    document.getElementById("h"+i).style.display=i===n?"block":"none";'
@@ -1371,11 +1450,11 @@ def page_landing():
             '  }'
             '  c=n;'
             '}'
-            'setInterval(function(){sw((c+1)%3);},5000);'
+            'setInterval(function(){sw((c+1)%5);},5000);'
             '</script>'
         )
         import streamlit.components.v1 as components
-        components.html(hero_comp, height=500)
+        components.html(hero_comp, height=500, scrolling=False)
 
     # ── Trust bar ──
     st.markdown(f"""
@@ -1409,14 +1488,14 @@ def page_landing():
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Find Trending Stocks<br><span style="color:{BLUE};">Before the Crowd</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Discover top stocks making waves across social media and the market.</div>
         </div>
-        <div class="sw-demo-wrap" style="flex:1;">{DEMO[0]}</div>
+        <div class="sw-demo-wrap" style="flex:none;height:320px;overflow:hidden;">{DEMO[0]}</div>
       </div>
       <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Scan For Short Squeeze<br><span style="color:{BLUE};">Candidates</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Spot stocks with heavy short interest and growing momentum before the move.</div>
         </div>
-        <div class="sw-demo-wrap" style="flex:1;">{DEMO[1]}</div>
+        <div class="sw-demo-wrap" style="flex:none;height:320px;overflow:hidden;">{DEMO[1]}</div>
       </div>
     </div>
     <div class="sw-feat-grid">
@@ -1425,14 +1504,14 @@ def page_landing():
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Smart Insights<br>in Simple <span style="color:{BLUE};">Language</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Every technical signal explained in plain English. No finance degree needed.</div>
         </div>
-        <div class="sw-demo-wrap" style="flex:1;">{DEMO[2]}</div>
+        <div class="sw-demo-wrap" style="flex:none;height:320px;overflow:hidden;">{DEMO[2]}</div>
       </div>
       <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Go Premium For<br><span style="color:{GOLD};">Real-Time Signals &amp;<br>Deeper Analysis</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Upgrade to unlock advanced screening, unlimited alerts, and premium watchlists.</div>
         </div>
-        <div class="sw-prem-box" style="flex:1;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;">
+        <div class="sw-prem-box" style="flex:1;height:320px;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;">
           <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border-bottom:1px solid rgba(245,158,11,.2);padding:12px 16px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:14px;">👑</span>
             <span style="font-size:12px;font-weight:700;color:{GOLD};letter-spacing:1px;">PREMIUM FEATURES</span>
@@ -2304,6 +2383,102 @@ def page_bi():
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
+# PAGE: WATCHLIST
+# ─────────────────────────────────────────────────────────────
+def page_watchlist():
+    render_topbar("watchlist")
+    st.markdown('<div class="pg">',unsafe_allow_html=True)
+
+    wl=st.session_state.get("watchlist",[])
+    hdr1,hdr2=st.columns([3,1])
+    with hdr1: st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:4px;">⭐ My Watchlist</div>',unsafe_allow_html=True)
+    with hdr2:
+        if wl and st.button("🗑 Clear All",key="wl_clear_top",use_container_width=True):
+            st.session_state.watchlist=[]; st.rerun()
+
+    if not wl:
+        st.markdown(f'''<div class="card" style="text-align:center;padding:48px 24px;">
+            <div style="font-size:36px;margin-bottom:12px;">📋</div>
+            <div style="font-size:18px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">Your watchlist is empty</div>
+            <div style="font-size:13px;color:#374f6e;margin-bottom:20px;">Browse composite categories and click ➕ Watchlist on any stock to track it here.</div>
+        </div>''',unsafe_allow_html=True)
+        if st.button("Browse Stocks →",key="wl_browse",type="primary"): nav("discover")
+        st.markdown('</div>',unsafe_allow_html=True)
+        return
+
+    # Load watchlist data
+    rows=[]; prog=st.progress(0,"Loading watchlist…")
+    for i,t in enumerate(wl):
+        prog.progress((i+1)/len(wl),f"Loading {t}…")
+        try:
+            q=get_quote(t)
+            if not q: continue
+            df=yf_ohlcv(t,30); info=yf_fund(t); sent=st_sent(t)
+            sc,bd,op,risk,_=compute_scores(df,info,sent)
+            rec_lbl,rec_clr,_=get_recommendation(sc,bd,info)
+            pct=q.get("pct",0); price=q.get("price",0)
+            cc_=GREEN if pct>=0 else RED
+            rows.append({
+                "Ticker":t,"Name":q.get("name","")[:22],"Price":f"${price:,.2f}",
+                "Change":f"{pct:+.2f}%","Signal":rec_lbl,"Score":sc,
+                "Risk":risk,"Sector":info.get("sector","N/A"),
+                "Short Float":f"{(info.get('sf',0) or 0)*100:.1f}%",
+                "_pct":pct,"_cc":cc_,"_rec_clr":rec_clr
+            })
+        except: continue
+    prog.empty()
+
+    if not rows:
+        st.info("Could not load watchlist data. Try again in a moment.")
+        st.markdown('</div>',unsafe_allow_html=True)
+        return
+
+    # Premium score chart
+    if is_premium() and HAS_PLOTLY:
+        st.markdown('<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📊 Score Distribution</div>',unsafe_allow_html=True)
+        scores=[r["Score"] for r in rows]; tickers=[r["Ticker"] for r in rows]
+        bar_colors=[GREEN if s>=65 else GOLD if s>=40 else RED for s in scores]
+        fig=go.Figure(go.Bar(x=tickers,y=scores,marker_color=bar_colors,
+            text=scores,textposition="outside",textfont=dict(size=13,family="JetBrains Mono")))
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=0,r=0,t=0,b=0),height=160,
+            yaxis=dict(range=[0,110],showgrid=False,color="#4a5e7a"),
+            xaxis=dict(showgrid=False,color="#60a5fa",tickfont=dict(family="JetBrains Mono",size=12)))
+        st.plotly_chart(fig,use_container_width=True)
+
+    # Stock rows
+    display_rows=[{k:v for k,v in r.items() if not k.startswith("_")} for r in rows]
+    st.dataframe(pd.DataFrame(display_rows),use_container_width=True,hide_index=True)
+
+    # Quick actions
+    st.markdown('<div style="margin-top:12px;">',unsafe_allow_html=True)
+    for r in rows:
+        t=r["Ticker"]; cc_=r["_cc"]; rec_clr=r["_rec_clr"]
+        r1,r2,r3=st.columns([3,1,1],gap="small")
+        with r1:
+            st.markdown(f'''<div class="sr" style="padding:10px 14px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="sr-tick">{t}</span>
+                    <span style="font-size:11px;color:#374f6e;">{r["Name"]}</span>
+                    <span style="background:{rec_clr}22;color:{rec_clr};font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid {rec_clr}44;">{r["Signal"]}</span>
+                </div>
+                <div style="display:flex;gap:16px;margin-top:4px;font-size:12px;">
+                    <span style="font-family:'JetBrains Mono',monospace;color:#e2e8f0;font-weight:700;">{r["Price"]}</span>
+                    <span style="font-weight:700;color:{cc_};">{r["Change"]}</span>
+                    <span style="color:#374f6e;">Score: {r["Score"]}</span>
+                    <span style="color:#374f6e;">{r["Risk"]} Risk</span>
+                </div>
+            </div>''',unsafe_allow_html=True)
+        with r2:
+            if st.button("📊 Report",key=f"wl_rep_{t}",use_container_width=True,type="primary"):
+                st.session_state.detail_ticker=t; st.session_state.detail_data={}; nav("stock_detail")
+        with r3:
+            if st.button("✕ Remove",key=f"wl_rm_{t}",use_container_width=True):
+                wl.remove(t); st.session_state.watchlist=wl; st.rerun()
+    st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
 # PAGE: SCREENER
 # ─────────────────────────────────────────────────────────────
 def page_screener():
@@ -2982,7 +3157,11 @@ def page_verify_email():
         # Show demo code if email not configured
         demo = st.session_state.get("_demo_code","")
         if demo:
-            st.info(f"📋 **Demo mode** — your code is: **{demo}** (email sending not configured)")
+            st.markdown(f'''<div style="background:#0d1525;border:1px solid rgba(37,99,235,0.3);border-radius:10px;padding:16px;margin-bottom:12px;">
+                <div style="font-size:12px;font-weight:700;color:#60a5fa;margin-bottom:6px;">📋 Demo Mode — Email Sending Not Configured</div>
+                <div style="font-size:11px;color:#374f6e;margin-bottom:8px;">Add <code style="background:#060a12;color:#4ade80;padding:1px 5px;border-radius:3px;">RESEND_API_KEY</code> to Streamlit Secrets to enable real email verification.</div>
+                <div style="font-size:14px;font-weight:700;color:#e2e8f0;">Your code: <span style="font-family:'JetBrains Mono',monospace;font-size:22px;color:#2563eb;letter-spacing:4px;">{demo}</span></div>
+            </div>''', unsafe_allow_html=True)
 
         with st.form("vf"):
             code_in = st.text_input("Enter 6-digit code", placeholder="123456", max_chars=6)
@@ -3105,15 +3284,23 @@ Key facts:
 
 Be helpful, concise, and friendly. If asked about a specific stock or investment advice, remind them signals are educational only."""
                     msgs = [{"role":m["role"],"content":m["content"]} for m in st.session_state.support_chat]
-                    resp = _r.post("https://api.anthropic.com/v1/messages",
-                        headers={"Content-Type":"application/json"},
-                        json={"model":"claude-sonnet-4-20250514","max_tokens":400,
-                              "system":sys_prompt,"messages":msgs},
-                        timeout=20)
-                    if resp.status_code==200:
-                        answer = resp.json()["content"][0]["text"]
+                    # Get Anthropic API key from secrets
+                    try: anth_key = st.secrets.get("ANTHROPIC_API_KEY","")
+                    except: anth_key = ""
+                    if not anth_key:
+                        answer = "Support chat requires ANTHROPIC_API_KEY in Streamlit Secrets. In the meantime, email support@stockwins.com — we respond within 24 hours!"
                     else:
-                        answer = "I'm having trouble connecting right now. Please email support@stockwins.com for help."
+                        resp = _r.post("https://api.anthropic.com/v1/messages",
+                            headers={"Content-Type":"application/json",
+                                     "x-api-key":anth_key,
+                                     "anthropic-version":"2023-06-01"},
+                            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+                                  "system":sys_prompt,"messages":msgs},
+                            timeout=20)
+                        if resp.status_code==200:
+                            answer = resp.json()["content"][0]["text"]
+                        else:
+                            answer = f"I'm having trouble right now (status {resp.status_code}). Please email support@stockwins.com for immediate help."
                 except Exception as e:
                     answer = f"Connection issue. Please email support@stockwins.com — we typically respond within 24 hours."
             st.session_state.support_chat.append({"role":"assistant","content":answer})
