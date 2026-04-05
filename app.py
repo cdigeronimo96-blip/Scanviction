@@ -335,6 +335,34 @@ button[aria-label="👑 Upgrade to Premium"]:hover {{
 [data-testid="column"]>.element-container{{flex:1;display:flex;flex-direction:column;}}
 [data-testid="column"] .stButton{{display:flex;}}
 [data-testid="column"] .stButton>button{{flex:1;}}
+
+/* ── Mobile & Tablet Responsive ── */
+@media (max-width:900px) {{
+    /* Hero text */
+    .hero-h1{{font-size:32px !important;letter-spacing:-1px !important;}}
+    .hero-sub{{font-size:14px !important;}}
+    /* Feature grids → single column */
+    .sw-feat-grid{{grid-template-columns:1fr !important;}}
+    /* Page padding */
+    .pg{{padding:12px 14px 28px !important;}}
+    /* Footer */
+    .sw-footer-wrap{{padding:24px 20px 20px !important;}}
+    /* Hide sidebar on mobile */
+    [data-testid="stSidebar"]{{display:none !important;}}
+    /* Stack hero columns */
+    [data-testid="stHorizontalBlock"]{{flex-wrap:wrap !important;}}
+    [data-testid="stHorizontalBlock"] [data-testid="column"]{{min-width:100% !important;flex:none !important;}}
+    /* Topbar shrink */
+    .sw-nav .stButton>button{{font-size:11px !important;padding:4px 8px !important;}}
+    /* Cards */
+    .card{{padding:12px 14px !important;}}
+}}
+@media (max-width:600px) {{
+    .hero-h1{{font-size:26px !important;}}
+    .hero-sub{{font-size:13px !important;}}
+    /* Trust bar wrap */
+    .sw-trust-bar{{flex-wrap:wrap !important;gap:16px !important;padding:16px !important;}}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1207,36 +1235,44 @@ def page_landing():
 
     # ── 4 Feature panels — equal height grid ──
     st.markdown(f"""
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:0 48px;align-items:stretch;margin-bottom:28px;">
-      <div style="display:flex;flex-direction:column;">
+    <style>
+    .sw-feat-grid{{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:0 48px;align-items:stretch;}}
+    @media(max-width:900px){{.sw-feat-grid{{grid-template-columns:1fr;gap:20px;padding:0 20px;}}}}
+    /* Force DEMO boxes to fill wrapper height */
+    .sw-demo-wrap>div{{height:100%;box-sizing:border-box;}}
+    .sw-demo-wrap>div>div:last-child{{height:100%;}}
+    .sw-prem-box{{height:100%;box-sizing:border-box;display:flex;flex-direction:column;}}
+    </style>
+    <div class="sw-feat-grid" style="margin-bottom:28px;">
+      <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Find Trending Stocks<br><span style="color:{BLUE};">Before the Crowd</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Discover top stocks making waves across social media and the market.</div>
         </div>
-        <div style="flex:1;">{DEMO[0]}</div>
+        <div class="sw-demo-wrap" style="flex:1;">{DEMO[0]}</div>
       </div>
-      <div style="display:flex;flex-direction:column;">
+      <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Scan For Short Squeeze<br><span style="color:{BLUE};">Candidates</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Spot stocks with heavy short interest and growing momentum before the move.</div>
         </div>
-        <div style="flex:1;">{DEMO[1]}</div>
+        <div class="sw-demo-wrap" style="flex:1;">{DEMO[1]}</div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:0 48px;align-items:stretch;">
+    <div class="sw-feat-grid">
       <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Smart Insights<br>in Simple <span style="color:{BLUE};">Language</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Every technical signal explained in plain English. No finance degree needed.</div>
         </div>
-        <div style="flex:1;min-height:340px;">{DEMO[2]}</div>
+        <div class="sw-demo-wrap" style="flex:1;">{DEMO[2]}</div>
       </div>
       <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Go Premium For<br><span style="color:{GOLD};">Real-Time Signals &amp;<br>Deeper Analysis</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Upgrade to unlock advanced screening, unlimited alerts, and premium watchlists.</div>
         </div>
-        <div style="flex:1;min-height:340px;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;display:flex;flex-direction:column;">
+        <div class="sw-prem-box" style="flex:1;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;">
           <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border-bottom:1px solid rgba(245,158,11,.2);padding:12px 16px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:14px;">👑</span>
             <span style="font-size:12px;font-weight:700;color:{GOLD};letter-spacing:1px;">PREMIUM FEATURES</span>
@@ -2115,56 +2151,62 @@ def page_pricing():
     pricing_html = (
         '<style>'
         'body{margin:0;padding:0;font-family:Inter,sans-serif;background:transparent;}'
-        '.pw{display:flex;gap:16px;align-items:flex-end;padding:10px 2px 2px;overflow:visible;}'
+        '.pw{display:flex;gap:16px;align-items:flex-end;padding:12px 2px 2px;overflow:visible;}'
         '.pc{'
-        '  background:#0d1525;border:1px solid rgba(255,255,255,0.1);'
-        '  border-radius:14px;padding:24px 20px 0;flex:1;cursor:pointer;'
-        '  transition:all 0.3s cubic-bezier(0.4,0,0.2,1);'
-        '  display:flex;flex-direction:column;box-sizing:border-box;min-height:540px;'
+        'background:#0d1525;border:1px solid rgba(255,255,255,0.1);'
+        'border-radius:14px;padding:24px 20px 0;flex:1;cursor:pointer;'
+        'transition:all 0.3s cubic-bezier(0.4,0,0.2,1);'
+        'display:flex;flex-direction:column;box-sizing:border-box;'
+        'min-height:580px;overflow:hidden;'
         '}'
-        '.pc:hover{border-color:rgba(37,99,235,0.4);transform:translateY(-2px);}'
+        '.pc:hover{border-color:rgba(37,99,235,0.35);transform:translateY(-2px);}'
         '.sel-blue{'
-        '  border:2px solid #2563eb!important;'
-        '  background:linear-gradient(160deg,#04091d,#0d1525)!important;'
-        '  box-shadow:0 16px 56px rgba(37,99,235,0.4)!important;'
-        '  transform:translateY(-10px)!important;'
-        '  min-height:560px!important;'
+        'border:2px solid #2563eb!important;'
+        'background:linear-gradient(160deg,#04091d,#0d1525)!important;'
+        'box-shadow:0 20px 60px rgba(37,99,235,0.4)!important;'
+        'transform:translateY(-14px)!important;'
+        'min-height:580px!important;'
         '}'
         '.sel-gold{'
-        '  border:2px solid #f59e0b!important;'
-        '  background:linear-gradient(160deg,#160c00,#0f0800,#0d1525)!important;'
-        '  box-shadow:0 16px 56px rgba(245,158,11,0.4)!important;'
-        '  transform:translateY(-10px)!important;'
-        '  min-height:560px!important;'
+        'border:2px solid #f59e0b!important;'
+        'background:linear-gradient(160deg,#160c00,#0f0800,#0d1525)!important;'
+        'box-shadow:0 20px 60px rgba(245,158,11,0.4)!important;'
+        'transform:translateY(-14px)!important;'
+        'min-height:580px!important;'
         '}'
         '.badge{font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;'
-        '  display:inline-block;letter-spacing:1px;margin-bottom:10px;}'
+        'display:inline-block;letter-spacing:1px;margin-bottom:10px;}'
         '.plan-name{font-size:14px;font-weight:600;margin-bottom:2px;}'
-        '.price{font-family:monospace;font-size:46px;font-weight:800;line-height:1.1;margin-bottom:2px;}'
+        '.price{font-family:monospace;font-size:44px;font-weight:800;line-height:1.1;margin-bottom:2px;}'
         '.period{font-size:11px;color:#374f6e;margin-bottom:14px;}'
         'hr.card-hr{border:none;border-top:1px solid rgba(255,255,255,0.07);margin:10px 0 14px;}'
         'hr.gold-hr{border:none;border-top:1px solid rgba(245,158,11,0.15);margin:10px 0 14px;}'
-        '.feats{flex:1;font-size:12px;color:#374f6e;line-height:2.3;margin-bottom:0;}'
+        '.feats{flex:1;font-size:12px;color:#374f6e;line-height:2.3;}'
         '.dim{color:#1e3050;}'
         '.cta{'
-        '  width:100%;padding:15px 0;border:none;cursor:pointer;font-size:13px;font-weight:600;'
-        '  letter-spacing:0.4px;transition:all 0.2s;margin-top:20px;'
-        '  border-radius:0 0 12px 12px;'
+        'display:block;width:calc(100% + 40px);margin:20px -20px 0;'
+        'padding:15px 0;border:none;text-align:center;'
+        'cursor:pointer;font-size:13px;font-weight:600;letter-spacing:0.4px;'
+        'transition:all 0.2s;border-radius:0;'
         '}'
-        '.cta-blue{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;}'
-        '.cta-blue:hover{background:linear-gradient(135deg,#1e40af,#1d4ed8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.15);}'
-        '.cta-dim{background:rgba(255,255,255,0.03);color:#374f6e;border-top:1px solid rgba(255,255,255,0.06)!important;font-size:12px!important;}'
-        '.cta-dim:hover{background:rgba(37,99,235,0.08);color:#6b7fa0;}'
-        '.cta-gold{background:linear-gradient(135deg,#92400e,#d97706,#f59e0b);color:#1a0800;}'
-        '.cta-gold:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,0.2);}'
-        '.cta-dim{background:rgba(255,255,255,0.04);color:#4a5e7a;border-top:1px solid rgba(255,255,255,0.07)!important;}'
-        '.cta-dim:hover{background:rgba(37,99,235,0.1);color:#93b4fd;}'
-        '.cta-gold{background:linear-gradient(135deg,#92400e,#d97706,#f59e0b,#fcd34d);color:#1a0800;}'
-        '.cta-gold:hover{box-shadow:0 6px 28px rgba(245,158,11,0.55);}'
+        '.cta-blue{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;'
+        'border-top:1px solid rgba(37,99,235,0.4)!important;}'
+        '.cta-blue:hover{background:linear-gradient(135deg,#1e40af,#1d4ed8);}'
+        '.cta-dim{background:rgba(255,255,255,0.025);color:#374f6e;'
+        'border-top:1px solid rgba(255,255,255,0.06)!important;font-size:12px!important;}'
+        '.cta-dim:hover{background:rgba(255,255,255,0.05);color:#6b7fa0;}'
+        '.cta-gold{background:linear-gradient(135deg,#92400e,#d97706,#f59e0b);color:#1a0800;'
+        'border-top:1px solid rgba(245,158,11,0.4)!important;}'
+        '.cta-gold:hover{opacity:0.9;}'
         '.toast{'
-        '  display:none;margin-top:14px;padding:11px 16px;border-radius:8px;'
-        '  font-size:12px;line-height:1.6;'
-        '  background:rgba(37,99,235,0.12);border:1px solid rgba(37,99,235,0.3);color:#93b4fd;'
+        'display:none;margin-top:12px;padding:10px 14px;border-radius:8px;'
+        'font-size:12px;line-height:1.6;'
+        'background:rgba(37,99,235,0.1);border:1px solid rgba(37,99,235,0.25);color:#93b4fd;'
+        '}'
+        '@media(max-width:768px){'
+        '.pw{flex-direction:column;align-items:stretch;padding:4px 0;}'
+        '.pc{min-height:auto!important;transform:none!important;}'
+        '.sel-blue,.sel-gold{transform:none!important;}'
         '}'
         '</style>'
         '<div class="pw">'
