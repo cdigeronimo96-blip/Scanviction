@@ -76,31 +76,51 @@ def create_checkout_session(plan, user_email):
     """Create Stripe Checkout Session. Returns (url, error)."""
     key = _stripe_key()
     if not key:
-        return None, "Stripe not configured. Add STRIPE_SECRET_KEY to Streamlit Secrets."
+        return None, "STRIPE_SECRET_KEY not found in Secrets. Add it and reboot the app."
+
+    # Validate library
     try:
         import stripe as _s
+    except ImportError:
+        return None, "stripe library not installed. Ensure requirements.txt contains 'stripe' and redeploy."
+
+    # Validate key format
+    if not (key.startswith("sk_test_") or key.startswith("sk_live_")):
+        return None, f"STRIPE_SECRET_KEY must start with sk_test_ or sk_live_. Got: {key[:14]}..."
+
+    # Get and validate price ID
+    price_key = "STRIPE_PRICE_MONTHLY" if plan == "premium" else "STRIPE_PRICE_ANNUAL"
+    try: price_id = st.secrets.get(price_key, "")
+    except: price_id = ""
+    if not price_id:
+        return None, f"{price_key} not found in Secrets. Add price_xxx ID from Stripe Products page."
+    if not price_id.startswith("price_"):
+        return None, f"{price_key} must start with 'price_'. Got: {price_id[:30]} — use the Price ID, not a Payment Link URL."
+
+    try:
         _s.api_key = key
-        price_key = "STRIPE_PRICE_MONTHLY" if plan=="premium" else "STRIPE_PRICE_ANNUAL"
-        try: price_id = st.secrets.get(price_key,"")
-        except: price_id = ""
-        if not price_id:
-            return None, f"Price ID not set. Add '{price_key}' to Secrets."
         app_url = _get_app_url()
         sess = _s.checkout.sessions.create(
             payment_method_types=["card"],
             mode="subscription",
             customer_email=user_email,
             client_reference_id=user_email,
-            line_items=[{"price":price_id,"quantity":1}],
+            line_items=[{"price": price_id, "quantity": 1}],
             success_url=f"{app_url}/?payment=success&sid={{CHECKOUT_SESSION_ID}}&plan={plan}",
             cancel_url=f"{app_url}/?payment=cancelled",
-            metadata={"user_email":user_email,"plan":plan},
-            subscription_data={"metadata":{"user_email":user_email,"plan":plan}},
+            metadata={"user_email": user_email, "plan": plan},
+            subscription_data={"metadata": {"user_email": user_email, "plan": plan}},
             allow_promotion_codes=True,
         )
         return sess.url, None
+    except _s.error.AuthenticationError as e:
+        return None, f"Authentication failed — check STRIPE_SECRET_KEY is correct. Detail: {e}"
+    except _s.error.InvalidRequestError as e:
+        return None, f"Invalid request — Price ID may not exist in this Stripe account. Detail: {e}"
+    except _s.error.StripeError as e:
+        return None, f"Stripe API error: {type(e).__name__}: {e}"
     except Exception as e:
-        return None, f"Stripe error: {e}"
+        return None, f"{type(e).__name__}: {e}"
 
 def verify_checkout_session(session_id):
     """Verify completed Stripe Checkout. Returns (plan, email) or (None, error)."""
