@@ -1134,56 +1134,60 @@ def page_landing():
         with bc3:
             if gold_btn("Go Premium","h_prem"): nav("pricing")
 
-        # ── Tab switcher — pure CSS-styled buttons that look like text tabs ──
-        st.markdown(f"""<style>
-        /* Make demo tab buttons look like plain text labels */
-        button[aria-label="📊 Market Overview"],
-        button[aria-label="💥 Squeeze Candidates"],
-        button[aria-label="💡 Smart Insights"] {{
-            background: transparent !important;
-            border: none !important;
-            border-bottom: 2px solid transparent !important;
-            border-radius: 0 !important;
-            color: #374f6e !important;
-            font-size: 13px !important;
-            font-weight: 500 !important;
-            padding: 6px 0 4px !important;
-            min-height: auto !important;
-            height: auto !important;
-            width: auto !important;
-            box-shadow: none !important;
-            display: inline-flex !important;
-        }}
-        button[aria-label="📊 Market Overview"]:hover,
-        button[aria-label="💥 Squeeze Candidates"]:hover,
-        button[aria-label="💡 Smart Insights"]:hover {{
-            color: #a8bdd4 !important;
-            background: transparent !important;
-            border-color: transparent !important;
-            border-bottom-color: rgba(37,99,235,0.4) !important;
-        }}
-        /* Active tab — primary button = active */
-        button[aria-label="📊 Market Overview"][data-testid="baseButton-primary"],
-        button[aria-label="💥 Squeeze Candidates"][data-testid="baseButton-primary"],
-        button[aria-label="💡 Smart Insights"][data-testid="baseButton-primary"] {{
-            color: #e2e8f0 !important;
-            font-weight: 700 !important;
-            border-bottom: 2px solid {BLUE} !important;
-            background: transparent !important;
-        }}
-        </style>""", unsafe_allow_html=True)
-
-        tc = st.columns(3, gap="small")
-        tab_defs = [("📊 Market Overview", 0), ("💥 Squeeze Candidates", 1), ("💡 Smart Insights", 2)]
-        for col, (lbl, idx) in zip(tc, tab_defs):
-            with col:
-                if st.button(lbl, key=f"demo_tab_{idx}",
-                             type="primary" if p_idx == idx else "secondary"):
-                    st.session_state.hero_panel = idx
-                    st.rerun()
-
     with hr:
-        st.markdown(f'<div style="padding:32px 48px 24px 0;">{DEMO[p_idx]}</div>', unsafe_allow_html=True)
+        # Self-contained auto-advancing slideshow — title above, demo below
+        # Uses string concat to avoid f-string brace conflicts with DEMO HTML
+        hero_comp = (
+            '<style>'
+            'body{margin:0;padding:0;background:transparent;font-family:Inter,sans-serif;overflow:hidden;}'
+            '.tab-row{display:flex;gap:28px;margin-bottom:10px;padding:16px 0 0 0;}'
+            '.tab-item{font-size:13px;font-weight:500;color:#374f6e;cursor:pointer;'
+            '  padding-bottom:5px;border-bottom:2px solid transparent;transition:all 0.2s;'
+            '  user-select:none;white-space:nowrap;}'
+            '.tab-item.active{color:#e2e8f0;font-weight:700;border-bottom-color:#2563eb;}'
+            '.tab-item:hover{color:#a8bdd4;}'
+            '.slide-title{font-size:24px;font-weight:900;color:#f1f5f9;letter-spacing:-0.8px;'
+            '  line-height:1.15;margin-bottom:14px;min-height:58px;}'
+            '.hi{color:#2563eb;} .hg{color:#f59e0b;}'
+            '.dots{display:flex;gap:7px;margin-bottom:10px;align-items:center;}'
+            '.dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,0.15);'
+            '  cursor:pointer;transition:all 0.3s;}'
+            '.dot.active{background:#2563eb;width:20px;border-radius:4px;}'
+            '</style>'
+            '<div>'
+            '<div class="tab-row">'
+            '<div class="tab-item active" id="t0" onclick="sw(0)">📊 Market Overview</div>'
+            '<div class="tab-item" id="t1" onclick="sw(1)">💥 Squeeze Candidates</div>'
+            '<div class="tab-item" id="t2" onclick="sw(2)">💡 Smart Insights</div>'
+            '</div>'
+            '<div class="dots">'
+            '<div class="dot active" id="d0" onclick="sw(0)"></div>'
+            '<div class="dot" id="d1" onclick="sw(1)"></div>'
+            '<div class="dot" id="d2" onclick="sw(2)"></div>'
+            '</div>'
+            '<div id="h0" class="slide-title">Find Trending Stocks<br><span class="hi">Before the Crowd</span></div>'
+            '<div id="h1" class="slide-title" style="display:none">Scan For Short Squeeze<br><span class="hi">Candidates</span></div>'
+            '<div id="h2" class="slide-title" style="display:none">Smart Insights<br>in <span class="hi">Simple Language</span></div>'
+            '<div id="p0">' + DEMO[0] + '</div>'
+            '<div id="p1" style="display:none">' + DEMO[1] + '</div>'
+            '<div id="p2" style="display:none">' + DEMO[2] + '</div>'
+            '</div>'
+            '<script>'
+            'var c=0;'
+            'function sw(n){'
+            '  for(var i=0;i<3;i++){'
+            '    document.getElementById("t"+i).className="tab-item"+(i===n?" active":"");'
+            '    document.getElementById("d"+i).className="dot"+(i===n?" active":"");'
+            '    document.getElementById("h"+i).style.display=i===n?"block":"none";'
+            '    document.getElementById("p"+i).style.display=i===n?"block":"none";'
+            '  }'
+            '  c=n;'
+            '}'
+            'setInterval(function(){sw((c+1)%3);},5000);'
+            '</script>'
+        )
+        import streamlit.components.v1 as components
+        components.html(hero_comp, height=500)
 
     # ── Trust bar ──
     st.markdown(f"""
@@ -1232,18 +1236,20 @@ def page_landing():
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Go Premium For<br><span style="color:{GOLD};">Real-Time Signals &amp;<br>Deeper Analysis</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Upgrade to unlock advanced screening, unlimited alerts, and premium watchlists.</div>
         </div>
-        <div style="flex:1;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;">
+        <div style="flex:1;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;display:flex;flex-direction:column;">
           <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border-bottom:1px solid rgba(245,158,11,.2);padding:12px 16px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:14px;">👑</span>
             <span style="font-size:12px;font-weight:700;color:{GOLD};letter-spacing:1px;">PREMIUM FEATURES</span>
           </div>
-          <div style="padding:16px;font-size:13px;color:#374f6e;line-height:2.4;">
+          <div style="padding:20px 16px;font-size:13px;color:#374f6e;line-height:2.6;flex:1;">
             ✅ &nbsp;All 17 composite signal categories<br>
             ✅ &nbsp;Advanced stock screener<br>
             ✅ &nbsp;Full BI analytics &amp; charts<br>
             ✅ &nbsp;BUY/SELL recommendations<br>
             ✅ &nbsp;Score breakdowns<br>
-            ✅ &nbsp;Unlimited watchlist &amp; alerts
+            ✅ &nbsp;Unlimited watchlist &amp; alerts<br>
+            ✅ &nbsp;Priority support<br>
+            ✅ &nbsp;Early feature access
           </div>
         </div>
       </div>
@@ -2050,7 +2056,7 @@ def page_screener():
 # ─────────────────────────────────────────────────────────────
 def page_pricing():
     render_topbar("pricing")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="pg">', unsafe_allow_html=True)
     st.markdown(f"""
     <div style="text-align:center;padding:32px 0 28px;">
         <div style="font-size:11px;font-weight:700;color:{BLUE};letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">Simple, Transparent Pricing</div>
@@ -2059,171 +2065,181 @@ def page_pricing():
     </div>
     """, unsafe_allow_html=True)
 
-    # CSS: equal card heights, selected state, button inside card styling
-    st.markdown(f"""<style>
-    /* Force columns to stretch equally */
-    [data-testid="stHorizontalBlock"] {{
-        align-items: stretch !important;
-    }}
-    /* Card wrapper fills column height */
-    .sw-pc {{
-        background: {CARD};
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 14px;
-        padding: 24px 20px 20px;
-        height: 100%;
-        transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
-        display: flex;
-        flex-direction: column;
-    }}
-    .sw-pc:hover {{
-        border-color: rgba(37,99,235,0.35);
-        transform: translateY(-2px);
-    }}
-    .sw-pc.sw-sel-blue {{
-        border: 2px solid {BLUE};
-        background: linear-gradient(160deg,#04091d,{CARD});
-        box-shadow: 0 10px 40px rgba(37,99,235,0.3);
-        transform: translateY(-5px);
-    }}
-    .sw-pc.sw-sel-gold {{
-        border: 2px solid {GOLD};
-        background: linear-gradient(160deg,#160c00,#0f0800,{CARD});
-        box-shadow: 0 10px 40px rgba(245,158,11,0.3);
-        transform: translateY(-5px);
-    }}
-    .sw-pc-features {{ flex: 1; font-size: 12px; color: #374f6e; line-height: 2.3; margin-bottom: 16px; }}
-    /* CTA button inside card — pin to bottom */
-    .sw-pc-cta .stButton > button {{
-        width: 100% !important;
-        border-radius: 9px !important;
-        font-size: 14px !important;
-        font-weight: 700 !important;
-        min-height: 46px !important;
-        letter-spacing: 0.2px !important;
-    }}
-    /* Gold CTA button */
-    .sw-pc-cta-gold .stButton > button {{
-        width: 100% !important;
-        border-radius: 9px !important;
-        font-size: 14px !important;
-        font-weight: 800 !important;
-        min-height: 46px !important;
-        background: linear-gradient(135deg,#92400e,{GOLD2},{GOLD},#fcd34d) !important;
-        border: 1px solid {GOLD} !important;
-        color: #1a0800 !important;
-        box-shadow: 0 4px 20px rgba(245,158,11,0.4) !important;
-    }}
-    .sw-pc-cta-gold .stButton > button:hover {{
-        box-shadow: 0 8px 32px rgba(245,158,11,0.6) !important;
-    }}
-    </style>""", unsafe_allow_html=True)
+    import streamlit.components.v1 as components
 
-    if "selected_plan" not in st.session_state:
-        st.session_state.selected_plan = "premium"
-    sel = st.session_state.selected_plan
+    pricing_html = (
+        '<style>'
+        'body{margin:0;padding:0;font-family:Inter,sans-serif;background:transparent;}'
+        '.pw{display:flex;gap:16px;align-items:stretch;}'
+        '.pc{'
+        '  background:#0d1525;border:1px solid rgba(255,255,255,0.1);'
+        '  border-radius:14px;padding:24px 20px 0;flex:1;cursor:pointer;'
+        '  transition:all 0.3s cubic-bezier(0.4,0,0.2,1);'
+        '  display:flex;flex-direction:column;box-sizing:border-box;'
+        '}'
+        '.pc:hover{border-color:rgba(37,99,235,0.4);transform:translateY(-3px);}'
+        '.sel-blue{'
+        '  border:2px solid #2563eb!important;'
+        '  background:linear-gradient(160deg,#04091d,#0d1525)!important;'
+        '  box-shadow:0 12px 48px rgba(37,99,235,0.35)!important;'
+        '  transform:translateY(-6px) scale(1.02)!important;'
+        '  flex:1.08!important;'
+        '}'
+        '.sel-gold{'
+        '  border:2px solid #f59e0b!important;'
+        '  background:linear-gradient(160deg,#160c00,#0f0800,#0d1525)!important;'
+        '  box-shadow:0 12px 48px rgba(245,158,11,0.35)!important;'
+        '  transform:translateY(-6px) scale(1.02)!important;'
+        '  flex:1.08!important;'
+        '}'
+        '.badge{font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;'
+        '  display:inline-block;letter-spacing:1px;margin-bottom:10px;}'
+        '.plan-name{font-size:14px;font-weight:600;margin-bottom:2px;}'
+        '.price{font-family:monospace;font-size:46px;font-weight:800;line-height:1.1;margin-bottom:2px;}'
+        '.period{font-size:11px;color:#374f6e;margin-bottom:14px;}'
+        'hr.card-hr{border:none;border-top:1px solid rgba(255,255,255,0.07);margin:10px 0 14px;}'
+        'hr.gold-hr{border:none;border-top:1px solid rgba(245,158,11,0.15);margin:10px 0 14px;}'
+        '.feats{flex:1;font-size:12px;color:#374f6e;line-height:2.3;margin-bottom:0;}'
+        '.dim{color:#1e3050;}'
+        '.cta{'
+        '  width:100%;padding:14px 0;border:none;cursor:pointer;font-size:14px;font-weight:700;'
+        '  letter-spacing:0.2px;transition:all 0.2s;margin-top:16px;'
+        '  border-radius:0 0 12px 12px;'
+        '}'
+        '.cta-blue{background:#2563eb;color:#fff;}'
+        '.cta-blue:hover{background:#1d4ed8;box-shadow:0 4px 20px rgba(37,99,235,0.5);}'
+        '.cta-dim{background:rgba(255,255,255,0.04);color:#4a5e7a;border-top:1px solid rgba(255,255,255,0.07)!important;}'
+        '.cta-dim:hover{background:rgba(37,99,235,0.1);color:#93b4fd;}'
+        '.cta-gold{background:linear-gradient(135deg,#92400e,#d97706,#f59e0b,#fcd34d);color:#1a0800;}'
+        '.cta-gold:hover{box-shadow:0 6px 28px rgba(245,158,11,0.55);}'
+        '.toast{'
+        '  display:none;margin-top:14px;padding:11px 16px;border-radius:8px;'
+        '  font-size:12px;line-height:1.6;'
+        '  background:rgba(37,99,235,0.12);border:1px solid rgba(37,99,235,0.3);color:#93b4fd;'
+        '}'
+        '</style>'
+        '<div class="pw">'
 
-    p1, p2, p3 = st.columns(3, gap="small")
+        # ── FREE ──
+        '<div class="pc" id="c-free" onclick="sel(\'free\')">'
+        '<span id="b-free" class="badge" style="background:rgba(255,255,255,0.06);color:#4a5e7a;">Free Plan</span>'
+        '<div class="plan-name" style="color:#94a3b8;">Free</div>'
+        '<div class="price" style="color:#e2e8f0;">$0</div>'
+        '<div class="period">forever · no card needed</div>'
+        '<hr class="card-hr">'
+        '<div class="feats">'
+        '✅&nbsp; Market overview &amp; indexes<br>'
+        '✅&nbsp; 5 standard categories<br>'
+        '✅&nbsp; StockTwits trending list<br>'
+        '✅&nbsp; RSI &amp; MACD signals<br>'
+        '✅&nbsp; Plain-English insights<br>'
+        '✅&nbsp; 7 composite categories<br>'
+        '✅&nbsp; Watchlist (10 stocks)<br>'
+        '✅&nbsp; BUY / AVOID signals<br>'
+        '<span class="dim">'
+        '❌&nbsp; 10 premium categories<br>'
+        '❌&nbsp; Short squeeze scanner<br>'
+        '❌&nbsp; Advanced screener<br>'
+        '❌&nbsp; BI analytics charts<br>'
+        '❌&nbsp; Score breakdowns'
+        '</span>'
+        '</div>'
+        '<button class="cta cta-dim" id="cta-free" onclick="go(event,\'free\')">Get Started Free</button>'
+        '</div>'
 
-    # ── FREE ──
-    with p1:
-        cls = "sw-sel-blue" if sel == "free" else ""
-        badge = f'<div style="background:#1e3a8a;color:#93b4fd;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;letter-spacing:1px;margin-bottom:10px;">✓ SELECTED</div>' if sel == "free" else '<div style="height:26px;"></div>'
-        st.markdown(f"""<div class="sw-pc {cls}">
-            {badge}
-            <div style="font-size:14px;font-weight:600;color:#94a3b8;margin-bottom:2px;">Free</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:46px;font-weight:800;color:#e2e8f0;line-height:1.1;margin-bottom:2px;">$0</div>
-            <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">forever · no card needed</div>
-            <hr style="border-color:rgba(255,255,255,0.07);margin:10px 0 14px;">
-            <div class="sw-pc-features">
-                ✅&nbsp; Market overview &amp; indexes<br>
-                ✅&nbsp; 5 standard categories<br>
-                ✅&nbsp; StockTwits trending list<br>
-                ✅&nbsp; RSI &amp; MACD signals<br>
-                ✅&nbsp; Plain-English insights<br>
-                ✅&nbsp; 7 composite categories<br>
-                ✅&nbsp; Watchlist (10 stocks)<br>
-                ✅&nbsp; BUY / AVOID signals<br>
-                <span style="color:#1e3050;">❌&nbsp; 10 premium categories<br>
-                ❌&nbsp; Short squeeze scanner<br>
-                ❌&nbsp; Advanced screener<br>
-                ❌&nbsp; BI analytics charts<br>
-                ❌&nbsp; Score breakdowns</span>
-            </div>
-        </div>""", unsafe_allow_html=True)
-        st.markdown('<div class="sw-pc-cta">', unsafe_allow_html=True)
-        if sel == "free":
-            if st.button("Get Started Free →", key="p_free", type="primary", use_container_width=True):
-                nav("signup" if not is_authed() else "dashboard")
-        else:
-            if st.button("Select Free Plan", key="p_free", use_container_width=True):
-                st.session_state.selected_plan = "free"; st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        # ── PREMIUM ──
+        '<div class="pc sel-blue" id="c-premium" onclick="sel(\'premium\')">'
+        '<span id="b-premium" class="badge" style="background:#1e3a8a;color:#93b4fd;">✓ SELECTED</span>'
+        '<div class="plan-name" style="color:#e2e8f0;">Premium Monthly</div>'
+        '<div class="price" style="color:#e2e8f0;">$29</div>'
+        '<div class="period">per month · cancel anytime</div>'
+        '<hr class="card-hr">'
+        '<div class="feats">'
+        '✅&nbsp; Everything in Free<br>'
+        '✅&nbsp; All 17 composite categories<br>'
+        '✅&nbsp; Short squeeze scanner<br>'
+        '✅&nbsp; Advanced screener<br>'
+        '✅&nbsp; Full BI analytics &amp; charts<br>'
+        '✅&nbsp; Score breakdowns<br>'
+        '✅&nbsp; Volume surge detection<br>'
+        '✅&nbsp; Unlimited watchlist<br>'
+        '✅&nbsp; Watchlist score analytics<br>'
+        '✅&nbsp; Saved screener configs'
+        '</div>'
+        '<button class="cta cta-blue" id="cta-premium" onclick="go(event,\'premium\')">🚀 Get Premium →</button>'
+        '</div>'
 
-    # ── PREMIUM ──
-    with p2:
-        cls = "sw-sel-blue" if sel == "premium" else ""
-        badge = f'<div style="background:#1e3a8a;color:#93b4fd;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;letter-spacing:1px;margin-bottom:10px;">✓ SELECTED</div>' if sel == "premium" else f'<div style="background:rgba(37,99,235,0.15);color:{BLUE};font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;letter-spacing:1px;margin-bottom:10px;">⭐ MOST POPULAR</div>'
-        st.markdown(f"""<div class="sw-pc {cls}">
-            {badge}
-            <div style="font-size:14px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">Premium Monthly</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:46px;font-weight:800;color:#e2e8f0;line-height:1.1;margin-bottom:2px;">$29</div>
-            <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">per month · cancel anytime</div>
-            <hr style="border-color:rgba(255,255,255,0.07);margin:10px 0 14px;">
-            <div class="sw-pc-features">
-                ✅&nbsp; Everything in Free<br>
-                ✅&nbsp; All 17 composite categories<br>
-                ✅&nbsp; Short squeeze scanner<br>
-                ✅&nbsp; Advanced screener<br>
-                ✅&nbsp; Full BI analytics &amp; charts<br>
-                ✅&nbsp; Score breakdowns<br>
-                ✅&nbsp; Volume surge detection<br>
-                ✅&nbsp; Unlimited watchlist<br>
-                ✅&nbsp; Watchlist score analytics<br>
-                ✅&nbsp; Saved screener configs
-            </div>
-        </div>""", unsafe_allow_html=True)
-        st.markdown('<div class="sw-pc-cta">', unsafe_allow_html=True)
-        if sel == "premium":
-            if st.button("🚀 Get Premium →", key="p_prem", type="primary", use_container_width=True):
-                st.info("💳 Payment processing coming soon. Contact support@stockwins.com to upgrade.")
-        else:
-            if st.button("🚀 Select Premium", key="p_prem", use_container_width=True):
-                st.session_state.selected_plan = "premium"; st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        # ── ANNUAL ──
+        '<div class="pc" id="c-annual" onclick="sel(\'annual\')">'
+        '<span id="b-annual" class="badge" style="background:linear-gradient(90deg,#92400e,#d97706);color:#fff8e1;">👑 BEST VALUE — SAVE 43%</span>'
+        '<div class="plan-name" style="color:#e2e8f0;">Annual Plan</div>'
+        '<div class="price" style="color:#f59e0b;">$199</div>'
+        '<div class="period">per year · $16.58/mo · save $149</div>'
+        '<hr class="gold-hr">'
+        '<div class="feats">'
+        '✅&nbsp; Everything in Premium<br>'
+        '✅&nbsp; Priority support<br>'
+        '✅&nbsp; Early feature access<br>'
+        '✅&nbsp; Export to CSV<br>'
+        '✅&nbsp; Custom alert schedules<br>'
+        '✅&nbsp; API access (Q3 2026)<br>'
+        '✅&nbsp; Backtesting (coming)<br>'
+        '✅&nbsp; Portfolio tracker (coming)'
+        '</div>'
+        '<button class="cta cta-dim" id="cta-annual" onclick="go(event,\'annual\')">👑 Select Annual Plan</button>'
+        '</div>'
 
-    # ── ANNUAL ──
-    with p3:
-        cls = "sw-sel-gold" if sel == "annual" else ""
-        badge = f'<div style="background:rgba(245,158,11,0.18);color:{GOLD};font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;letter-spacing:1px;margin-bottom:10px;">✓ SELECTED</div>' if sel == "annual" else f'<div style="background:linear-gradient(90deg,#92400e,#d97706);color:#fff8e1;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;letter-spacing:1px;margin-bottom:10px;">👑 BEST VALUE — SAVE 43%</div>'
-        st.markdown(f"""<div class="sw-pc {cls}">
-            {badge}
-            <div style="font-size:14px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">Annual Plan</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:46px;font-weight:800;color:{GOLD};line-height:1.1;margin-bottom:2px;">$199</div>
-            <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">per year · $16.58/mo · save $149</div>
-            <hr style="border-color:rgba(245,158,11,0.15);margin:10px 0 14px;">
-            <div class="sw-pc-features">
-                ✅&nbsp; Everything in Premium<br>
-                ✅&nbsp; Priority support<br>
-                ✅&nbsp; Early feature access<br>
-                ✅&nbsp; Export to CSV<br>
-                ✅&nbsp; Custom alert schedules<br>
-                ✅&nbsp; API access (Q3 2026)<br>
-                ✅&nbsp; Backtesting (coming)<br>
-                ✅&nbsp; Portfolio tracker (coming)
-            </div>
-        </div>""", unsafe_allow_html=True)
-        st.markdown('<div class="sw-pc-cta-gold">', unsafe_allow_html=True)
-        if sel == "annual":
-            if st.button("👑 Get Annual — Best Value →", key="p_annual", use_container_width=True):
-                st.info("💳 Payment processing coming soon. Contact support@stockwins.com")
-        else:
-            if st.button("👑 Select Annual Plan", key="p_annual", use_container_width=True):
-                st.session_state.selected_plan = "annual"; st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        '</div>'
+        '<div class="toast" id="toast"></div>'
+        '<script>'
+        'var cur="premium";'
+        'function sel(p){'
+        '  cur=p;'
+        '  var plans=["free","premium","annual"];'
+        '  plans.forEach(function(x){'
+        '    var card=document.getElementById("c-"+x);'
+        '    var badge=document.getElementById("b-"+x);'
+        '    var cta=document.getElementById("cta-"+x);'
+        '    var isS=(x===p);'
+        '    if(x==="free"){'
+        '      card.className="pc"+(isS?" sel-blue":"");'
+        '      badge.textContent=isS?"✓ SELECTED":"Free Plan";'
+        '      badge.style.cssText=isS?"background:#1e3a8a;color:#93b4fd;":"background:rgba(255,255,255,0.06);color:#4a5e7a;";'
+        '      cta.className="cta "+(isS?"cta-blue":"cta-dim");'
+        '      cta.textContent=isS?"Get Started Free →":"Get Started Free";'
+        '    } else if(x==="premium"){'
+        '      card.className="pc"+(isS?" sel-blue":"");'
+        '      badge.textContent=isS?"✓ SELECTED":"⭐ MOST POPULAR";'
+        '      badge.style.cssText=isS?"background:#1e3a8a;color:#93b4fd;":"background:rgba(37,99,235,0.18);color:#60a5fa;";'
+        '      cta.className="cta "+(isS?"cta-blue":"cta-dim");'
+        '      cta.textContent=isS?"🚀 Get Premium →":"🚀 Select Premium";'
+        '    } else {'
+        '      card.className="pc"+(isS?" sel-gold":"");'
+        '      badge.textContent=isS?"✓ SELECTED":"👑 BEST VALUE — SAVE 43%";'
+        '      badge.style.cssText=isS?"background:rgba(245,158,11,0.2);color:#f59e0b;":"background:linear-gradient(90deg,#92400e,#d97706);color:#fff8e1;";'
+        '      cta.className="cta "+(isS?"cta-gold":"cta-dim");'
+        '      cta.textContent=isS?"👑 Get Annual — Best Value →":"👑 Select Annual Plan";'
+        '    }'
+        '  });'
+        '}'
+        'function go(e,p){'
+        '  e.stopPropagation();'
+        '  if(cur!==p){sel(p);return;}'
+        '  var t=document.getElementById("toast");'
+        '  t.textContent=p==="free"'
+        '    ?"✅ Use the Sign Up button in the nav to create your free account!"'
+        '    :"💳 Payment coming soon! Email support@stockwins.com to upgrade now.";'
+        '  t.style.display="block";'
+        '  setTimeout(function(){t.style.display="none";},5000);'
+        '}'
+        '</script>'
+    )
 
-    st.markdown('<div class="disc" style="margin-top:24px;">⚠️ Educational platform only. Not financial advice. Trading involves risk.</div>', unsafe_allow_html=True)
+    components.html(pricing_html, height=660)
+
+    st.markdown('<div class="disc" style="margin-top:16px;">⚠️ Educational platform only. Not financial advice. Trading involves risk.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: SETTINGS
