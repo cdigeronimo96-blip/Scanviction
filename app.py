@@ -100,7 +100,12 @@ def create_checkout_session(plan, user_email):
     try:
         _s.api_key = key
         app_url = _get_app_url()
-        sess = _s.checkout.sessions.create(
+        # Try new-style API first (stripe 5+), fall back to old-style
+        try:
+            create_fn = _s.checkout.sessions.create
+        except AttributeError:
+            create_fn = _s.checkout.Session.create
+        sess = create_fn(
             payment_method_types=["card"],
             mode="subscription",
             customer_email=user_email,
@@ -113,14 +118,15 @@ def create_checkout_session(plan, user_email):
             allow_promotion_codes=True,
         )
         return sess.url, None
-    except _s.error.AuthenticationError as e:
-        return None, f"Authentication failed — check STRIPE_SECRET_KEY is correct. Detail: {e}"
-    except _s.error.InvalidRequestError as e:
-        return None, f"Invalid request — Price ID may not exist in this Stripe account. Detail: {e}"
-    except _s.error.StripeError as e:
-        return None, f"Stripe API error: {type(e).__name__}: {e}"
     except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
+        # Get the most useful error info regardless of stripe version
+        err_type = type(e).__name__
+        err_msg  = repr(e)
+        # Try to extract user-facing message from Stripe errors
+        user_msg = getattr(e, "user_message", None) or getattr(e, "message", None) or str(e)
+        if not user_msg:
+            user_msg = err_msg
+        return None, f"{err_type}: {user_msg}"
 
 def verify_checkout_session(session_id):
     """Verify completed Stripe Checkout. Returns (plan, email) or (None, error)."""
