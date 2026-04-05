@@ -1224,19 +1224,19 @@ def page_landing():
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:0 48px;align-items:stretch;">
-      <div style="display:flex;flex-direction:column;">
+      <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Smart Insights<br>in Simple <span style="color:{BLUE};">Language</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Every technical signal explained in plain English. No finance degree needed.</div>
         </div>
-        <div style="flex:1;">{DEMO[2]}</div>
+        <div style="flex:1;min-height:340px;">{DEMO[2]}</div>
       </div>
-      <div style="display:flex;flex-direction:column;">
+      <div style="display:flex;flex-direction:column;height:100%;">
         <div style="min-height:105px;margin-bottom:16px;">
           <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Go Premium For<br><span style="color:{GOLD};">Real-Time Signals &amp;<br>Deeper Analysis</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Upgrade to unlock advanced screening, unlimited alerts, and premium watchlists.</div>
         </div>
-        <div style="flex:1;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;display:flex;flex-direction:column;">
+        <div style="flex:1;min-height:340px;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;display:flex;flex-direction:column;">
           <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border-bottom:1px solid rgba(245,158,11,.2);padding:12px 16px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:14px;">👑</span>
             <span style="font-size:12px;font-weight:700;color:{GOLD};letter-spacing:1px;">PREMIUM FEATURES</span>
@@ -1320,16 +1320,61 @@ def page_landing():
 
     st.markdown("<br>",unsafe_allow_html=True)
 
-    # ── Testimonials ──
-    st.markdown('<div style="padding:0 48px;"><div class="sec-hd">What Traders Are Saying</div>',unsafe_allow_html=True)
-    tc=st.columns(3,gap="small")
-    for col,(stars,txt,name,handle) in zip(tc,[
-        ("⭐⭐⭐⭐⭐","The Squeeze + Buzz category flagged AMC 3 days before it ran 40%. The BUY signals are actually explainable — not just a black box.","Michael T.","@miket_trades"),
-        ("⭐⭐⭐⭐⭐","Hidden Movers is my secret weapon. Found 3 stocks before they went viral on StockTwits. No other platform has this composite logic.","Sarah K.","@sarahktrader"),
-        ("⭐⭐⭐⭐⭐","The plain-English explanations changed how I analyze stocks. I finally understand WHY something is a buy, not just that it is.","David R.","@davidr_swings"),
-    ]):
-        col.markdown(f'<div class="card card-blue"><div style="margin-bottom:6px;">{stars}</div><div style="font-size:12px;color:#374f6e;line-height:1.65;margin-bottom:12px;">"{txt}"</div><div style="font-size:12px;font-weight:700;color:{BLUE};">{name}</div><div style="font-size:10px;color:#2a3a52;">{handle}</div></div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
+    # ── Testimonials — auto-scrolling ──
+    st.markdown('<div style="padding:0 48px;"><div class="sec-hd">What Traders Are Saying</div></div>',unsafe_allow_html=True)
+
+    testimonials = [
+        ("Michael T.", "The Squeeze + Buzz category flagged AMC 3 days before it ran 40%. The BUY signals are actually explainable — not just a black box."),
+        ("Sarah K.", "Hidden Movers is my secret weapon. Found 3 stocks before they went viral on StockTwits. No other platform has this composite logic."),
+        ("David R.", "The plain-English explanations changed how I analyze stocks. I finally understand WHY something is a buy, not just that it is."),
+        ("James M.", "Triple Lock caught NVDA before a 12% move in 2 days. When all 4 signals align at once, it's genuinely different from everything else I've used."),
+        ("Priya L.", "Fallen Angels is brilliant. I found 4 stocks in deep RSI territory that reversed within a week. No other screener surfaces this combination."),
+        ("Carlos V.", "The score breakdown actually teaches me what's happening. I went from guessing to understanding why a setup matters. Game changer."),
+        ("Emma W.", "Smart Money Signal flagged MSTR right before the institutional volume surge. The volume-to-MACD correlation caught something I would have missed."),
+        ("Ryan T.", "Volatility Squeeze is pure alpha. When Bollinger Bands compress to a 90-day low AND volume is building — it's like a coiled spring. I trust the signal now."),
+    ]
+
+    # Build scrolling HTML — duplicate cards for seamless loop
+    cards_html = ""
+    for name, quote in testimonials * 2:
+        cards_html += (
+            f'<div class="tc">'
+            f'<div class="stars">⭐⭐⭐⭐⭐</div>'
+            f'<div class="quote">"{quote}"</div>'
+            f'<div class="author">{name}</div>'
+            f'</div>'
+        )
+
+    testimonial_comp = (
+        '<style>'
+        'body{margin:0;padding:0;background:transparent;overflow:hidden;}'
+        '@keyframes scroll-left{'
+        '  0%{transform:translateX(0);}'
+        '  100%{transform:translateX(-50%);}'
+        '}'
+        '.track-wrap{overflow:hidden;padding:4px 0 8px;}'
+        '.track{'
+        '  display:flex;gap:16px;'
+        '  animation:scroll-left 50s linear infinite;'
+        '  width:max-content;'
+        '}'
+        '.track:hover{animation-play-state:paused;}'
+        '.tc{'
+        '  background:#0d1525;border:1px solid rgba(255,255,255,0.07);'
+        '  border-radius:12px;padding:20px 22px;width:320px;flex-shrink:0;'
+        '  box-sizing:border-box;'
+        '}'
+        '.stars{font-size:13px;margin-bottom:10px;letter-spacing:1px;}'
+        '.quote{font-size:12px;color:#374f6e;line-height:1.7;margin-bottom:14px;font-style:italic;}'
+        '.author{font-size:12px;font-weight:700;color:#2563eb;}'
+        '</style>'
+        '<div class="track-wrap">'
+        '<div class="track">' + cards_html + '</div>'
+        '</div>'
+    )
+
+    import streamlit.components.v1 as components
+    components.html(testimonial_comp, height=160)
 
     st.markdown("<br>",unsafe_allow_html=True)
 
@@ -2070,27 +2115,27 @@ def page_pricing():
     pricing_html = (
         '<style>'
         'body{margin:0;padding:0;font-family:Inter,sans-serif;background:transparent;}'
-        '.pw{display:flex;gap:16px;align-items:stretch;}'
+        '.pw{display:flex;gap:16px;align-items:flex-end;padding:10px 2px 2px;overflow:visible;}'
         '.pc{'
         '  background:#0d1525;border:1px solid rgba(255,255,255,0.1);'
         '  border-radius:14px;padding:24px 20px 0;flex:1;cursor:pointer;'
         '  transition:all 0.3s cubic-bezier(0.4,0,0.2,1);'
-        '  display:flex;flex-direction:column;box-sizing:border-box;'
+        '  display:flex;flex-direction:column;box-sizing:border-box;min-height:540px;'
         '}'
-        '.pc:hover{border-color:rgba(37,99,235,0.4);transform:translateY(-3px);}'
+        '.pc:hover{border-color:rgba(37,99,235,0.4);transform:translateY(-2px);}'
         '.sel-blue{'
         '  border:2px solid #2563eb!important;'
         '  background:linear-gradient(160deg,#04091d,#0d1525)!important;'
-        '  box-shadow:0 12px 48px rgba(37,99,235,0.35)!important;'
-        '  transform:translateY(-6px) scale(1.02)!important;'
-        '  flex:1.08!important;'
+        '  box-shadow:0 16px 56px rgba(37,99,235,0.4)!important;'
+        '  transform:translateY(-10px)!important;'
+        '  min-height:560px!important;'
         '}'
         '.sel-gold{'
         '  border:2px solid #f59e0b!important;'
         '  background:linear-gradient(160deg,#160c00,#0f0800,#0d1525)!important;'
-        '  box-shadow:0 12px 48px rgba(245,158,11,0.35)!important;'
-        '  transform:translateY(-6px) scale(1.02)!important;'
-        '  flex:1.08!important;'
+        '  box-shadow:0 16px 56px rgba(245,158,11,0.4)!important;'
+        '  transform:translateY(-10px)!important;'
+        '  min-height:560px!important;'
         '}'
         '.badge{font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;'
         '  display:inline-block;letter-spacing:1px;margin-bottom:10px;}'
@@ -2102,12 +2147,16 @@ def page_pricing():
         '.feats{flex:1;font-size:12px;color:#374f6e;line-height:2.3;margin-bottom:0;}'
         '.dim{color:#1e3050;}'
         '.cta{'
-        '  width:100%;padding:14px 0;border:none;cursor:pointer;font-size:14px;font-weight:700;'
-        '  letter-spacing:0.2px;transition:all 0.2s;margin-top:16px;'
+        '  width:100%;padding:15px 0;border:none;cursor:pointer;font-size:13px;font-weight:600;'
+        '  letter-spacing:0.4px;transition:all 0.2s;margin-top:20px;'
         '  border-radius:0 0 12px 12px;'
         '}'
-        '.cta-blue{background:#2563eb;color:#fff;}'
-        '.cta-blue:hover{background:#1d4ed8;box-shadow:0 4px 20px rgba(37,99,235,0.5);}'
+        '.cta-blue{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;}'
+        '.cta-blue:hover{background:linear-gradient(135deg,#1e40af,#1d4ed8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.15);}'
+        '.cta-dim{background:rgba(255,255,255,0.03);color:#374f6e;border-top:1px solid rgba(255,255,255,0.06)!important;font-size:12px!important;}'
+        '.cta-dim:hover{background:rgba(37,99,235,0.08);color:#6b7fa0;}'
+        '.cta-gold{background:linear-gradient(135deg,#92400e,#d97706,#f59e0b);color:#1a0800;}'
+        '.cta-gold:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,0.2);}'
         '.cta-dim{background:rgba(255,255,255,0.04);color:#4a5e7a;border-top:1px solid rgba(255,255,255,0.07)!important;}'
         '.cta-dim:hover{background:rgba(37,99,235,0.1);color:#93b4fd;}'
         '.cta-gold{background:linear-gradient(135deg,#92400e,#d97706,#f59e0b,#fcd34d);color:#1a0800;}'
