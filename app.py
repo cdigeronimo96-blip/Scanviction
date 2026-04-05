@@ -59,6 +59,127 @@ def get_td_key():
     return ""
 
 # ─────────────────────────────────────────────────────────────
+# STRIPE PAYMENT PROCESSING
+# ─────────────────────────────────────────────────────────────
+def _stripe_key():
+    try: return st.secrets.get("STRIPE_SECRET_KEY","")
+    except: return ""
+
+def stripe_configured():
+    return bool(_stripe_key())
+
+def _get_app_url():
+    try: return st.secrets.get("APP_URL","https://stockwins.streamlit.app")
+    except: return "https://stockwins.streamlit.app"
+
+def create_checkout_session(plan, user_email):
+    """Create Stripe Checkout Session. Returns (url, error)."""
+    key = _stripe_key()
+    if not key:
+        return None, "Stripe not configured. Add STRIPE_SECRET_KEY to Streamlit Secrets."
+    try:
+        import stripe as _s
+        _s.api_key = key
+        price_key = "STRIPE_PRICE_MONTHLY" if plan=="premium" else "STRIPE_PRICE_ANNUAL"
+        try: price_id = st.secrets.get(price_key,"")
+        except: price_id = ""
+        if not price_id:
+            return None, f"Price ID not set. Add '{price_key}' to Secrets."
+        app_url = _get_app_url()
+        sess = _s.checkout.sessions.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            customer_email=user_email,
+            client_reference_id=user_email,
+            line_items=[{"price":price_id,"quantity":1}],
+            success_url=f"{app_url}/?payment=success&sid={{CHECKOUT_SESSION_ID}}&plan={plan}",
+            cancel_url=f"{app_url}/?payment=cancelled",
+            metadata={"user_email":user_email,"plan":plan},
+            subscription_data={"metadata":{"user_email":user_email,"plan":plan}},
+            allow_promotion_codes=True,
+        )
+        return sess.url, None
+    except Exception as e:
+        return None, f"Stripe error: {e}"
+
+def verify_checkout_session(session_id):
+    """Verify completed Stripe Checkout. Returns (plan, email) or (None, error)."""
+    key = _stripe_key()
+    if not key: return None,"Stripe not configured"
+    try:
+        import stripe as _s
+        _s.api_key = key
+        sess = _s.checkout.sessions.retrieve(session_id)
+        if sess.payment_status == "paid":
+            plan  = sess.metadata.get("plan","premium")
+            email = sess.customer_email or sess.client_reference_id or ""
+            return plan, email
+        return None, f"Payment status: {sess.payment_status}"
+    except Exception as e:
+        return None, f"Stripe error: {e}"
+
+def create_portal_session(user_email):
+    """Create Stripe Customer Portal session. Returns (url, error)."""
+    key = _stripe_key()
+    if not key: return None,"Stripe not configured"
+    try:
+        import stripe as _s
+        _s.api_key = key
+        customers = _s.Customer.list(email=user_email, limit=1)
+        if not customers.data:
+            return None,"No billing account found for this email. Contact support."
+        portal = _s.billing_portal.sessions.create(
+            customer=customers.data[0].id,
+            return_url=_get_app_url()+"/?page=settings",
+        )
+        return portal.url, None
+    except Exception as e:
+        return None, f"Stripe error: {e}"
+
+def handle_payment_return():
+    """Check URL params for Stripe redirect. Returns True if handled."""
+    try: params = st.query_params.to_dict()
+    except: return False
+
+    if params.get("payment") == "success":
+        sid = params.get("sid",""); plan = params.get("plan","premium")
+        st.query_params.clear()
+        if sid:
+            v_plan, v_info = verify_checkout_session(sid)
+            if v_plan:
+                if is_authed():
+                    e = st.session_state.user["email"]
+                    st.session_state.users_db[e]["role"]="premium" if v_plan=="premium" else "premium"
+                    st.session_state.users_db[e]["plan"]="Monthly" if v_plan=="premium" else "Annual"
+                    st.session_state.role = v_plan if v_plan=="annual" else "premium"
+                    # Annual users still get premium features
+                    if v_plan=="annual": st.session_state.role="premium"
+                st.session_state["_pay_success"] = v_plan
+            else:
+                st.session_state["_pay_error"] = v_info
+        return True
+
+    elif params.get("payment") == "cancelled":
+        st.query_params.clear()
+        st.session_state["_pay_cancelled"] = True
+        return True
+
+    elif params.get("checkout"):
+        plan = params.get("checkout","")
+        st.query_params.clear()
+        if plan in ("premium","annual"):
+            if is_authed():
+                url, err = create_checkout_session(plan, st.session_state.user["email"])
+                if url: st.session_state["_redirect_url"] = url
+                else:   st.session_state["_pay_error"] = err
+            else:
+                st.session_state["_pending_checkout"] = plan
+                nav("signup")
+        return True
+
+    return False
+
+# ─────────────────────────────────────────────────────────────
 # DESIGN SYSTEM
 # ─────────────────────────────────────────────────────────────
 GOLD   = "#f59e0b"
@@ -2311,17 +2432,42 @@ def page_pricing():
         'function go(e,p){'
         '  e.stopPropagation();'
         '  if(cur!==p){sel(p);return;}'
-        '  var t=document.getElementById("toast");'
-        '  t.textContent=p==="free"'
-        '    ?"✅ Use the Sign Up button in the nav to create your free account!"'
-        '    :"💳 Payment coming soon! Email support@stockwins.com to upgrade now.";'
-        '  t.style.display="block";'
-        '  setTimeout(function(){t.style.display="none";},5000);'
+        '  if(p==="free"){'
+        '    var t=document.getElementById("toast");'
+        '    t.textContent="✅ Use the Sign Up button above to create your free account!";'
+        '    t.style.display="block";'
+        '    setTimeout(function(){t.style.display="none";},5000);'
+        '    return;'
+        '  }'
+        '  // Trigger Stripe checkout via URL param → Python reads it and creates session'
+        '  var url=new URL(window.parent.location.href);'
+        '  url.searchParams.set("checkout",p);'
+        '  window.parent.location.href=url.toString();'
         '}'
         '</script>'
     )
 
     components.html(pricing_html, height=660)
+
+    # ── Stripe status / fallback ──
+    if stripe_configured():
+        st.markdown(f"""<div style="text-align:center;margin-top:12px;">
+            <span style="font-size:11px;color:#374f6e;">🔒 Secure payments by </span>
+            <span style="font-size:11px;font-weight:700;color:#6775ba;">stripe</span>
+            <span style="font-size:11px;color:#374f6e;"> · Cancel anytime · SSL encrypted</span>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown(f"""<div style="background:#0e1421;border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:14px 18px;margin-top:12px;">
+            <div style="font-size:12px;font-weight:700;color:{GOLD};margin-bottom:5px;">⚙️ Payment processing not yet configured</div>
+            <div style="font-size:12px;color:#374f6e;line-height:1.8;">
+            To enable Stripe payments, add to <strong style="color:#e2e8f0;">Streamlit Cloud → Settings → Secrets</strong>:<br>
+            <code style="background:#060a12;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:11px;">STRIPE_SECRET_KEY = "sk_live_..."</code><br>
+            <code style="background:#060a12;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:11px;">STRIPE_PRICE_MONTHLY = "price_..."</code><br>
+            <code style="background:#060a12;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:11px;">STRIPE_PRICE_ANNUAL = "price_..."</code><br>
+            <code style="background:#060a12;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:11px;">APP_URL = "https://stockwins.streamlit.app"</code><br>
+            To upgrade manually in the meantime: <a href="mailto:support@stockwins.com" style="color:#93b4fd;">support@stockwins.com</a>
+            </div>
+        </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="disc" style="margin-top:16px;">⚠️ Educational platform only. Not financial advice. Trading involves risk.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -2394,16 +2540,63 @@ def page_settings():
                 if st.button("Save Digest Settings",type="primary"): st.success("✅ Digest preferences saved!")
 
     with tabs[4]:
-        role=st.session_state.get("role","free")
-        rl={"free":"Free","premium":"Premium Monthly","admin":"Admin","owner":"Owner"}.get(role,"Free")
-        rc_={"free":"#6b7fa0","premium":"#a78bfa","admin":"#93b4fd","owner":GOLD}.get(role,"#6b7fa0")
-        st.markdown(f"""<div class="card card-blue"><div style="font-size:15px;font-weight:800;color:#e2e8f0;">Current Plan: <span style="color:{rc_};">{rl}</span></div>
-        <div style="font-size:12px;color:#374f6e;margin-top:4px;">Member since {db_user.get('joined','N/A')}</div>
-        <div style="font-size:12px;color:#374f6e;margin-top:2px;">Billing: {db_user.get('plan','Free')}</div></div>""",unsafe_allow_html=True)
+        role = st.session_state.get("role","free")
+        rl   = {"free":"Free","premium":"Premium Monthly","admin":"Admin","owner":"Owner"}.get(role,"Free")
+        rc_  = {"free":"#6b7fa0","premium":"#a78bfa","admin":"#93b4fd","owner":GOLD}.get(role,"#6b7fa0")
+        plan_detail = db_user.get("plan","Free")
+
+        st.markdown(f"""<div class="card card-blue" style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <div style="font-size:15px;font-weight:800;color:#e2e8f0;">
+                        Current Plan: <span style="color:{rc_};">{rl}</span>
+                    </div>
+                    <div style="font-size:12px;color:#374f6e;margin-top:4px;">Member since {db_user.get('joined','N/A')}</div>
+                    <div style="font-size:12px;color:#374f6e;">Billing: {plan_detail}</div>
+                </div>
+                {'<span style="background:rgba(34,197,94,0.12);color:#4ade80;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(34,197,94,0.3);">ACTIVE</span>' if is_premium() else '<span style="background:rgba(100,116,139,0.12);color:#64748b;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(100,116,139,0.3);">FREE PLAN</span>'}
+            </div>
+        </div>""", unsafe_allow_html=True)
+
         if not is_premium():
-            if gold_btn("Upgrade to Premium","set_prem"): nav("pricing")
+            st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">Upgrade to unlock all 17 composite categories, advanced screener, BI analytics, and more.</div>',unsafe_allow_html=True)
+            uc1,uc2=st.columns(2,gap="small")
+            with uc1:
+                if gold_btn("👑 Upgrade to Premium — $29/mo","set_prem_mo"):
+                    if stripe_configured():
+                        url,err=create_checkout_session("premium",st.session_state.user["email"])
+                        if url: st.session_state["_redirect_url"]=url; st.rerun()
+                        else: st.error(err)
+                    else: nav("pricing")
+            with uc2:
+                if st.button("👑 Get Annual — $199/yr (Save 43%)",key="set_prem_yr",use_container_width=True):
+                    if stripe_configured():
+                        url,err=create_checkout_session("annual",st.session_state.user["email"])
+                        if url: st.session_state["_redirect_url"]=url; st.rerun()
+                        else: st.error(err)
+                    else: nav("pricing")
         else:
-            st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-top:10px;padding:10px 14px;background:#080b14;border:1px solid {BORDER};border-radius:7px;">To cancel or modify your subscription, contact <span style="color:#93b4fd;">support@stockwins.com</span></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:10px;">Manage Your Subscription</div>',unsafe_allow_html=True)
+            if stripe_configured():
+                if st.button("🔗 Open Billing Portal →", key="set_portal", type="primary", use_container_width=False):
+                    url, err = create_portal_session(st.session_state.user["email"])
+                    if url:
+                        import streamlit.components.v1 as _c
+                        _c.html(f'<script>window.top.open("{url}","_blank");</script>',height=0)
+                        st.info("Billing portal opened in a new tab.")
+                    else:
+                        st.error(err)
+                st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-top:8px;line-height:1.7;">The billing portal lets you: update payment method · view invoices · cancel subscription · download receipts</div>',unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div style="background:#0e1421;border:1px solid {BORDER};border-radius:7px;padding:12px 14px;font-size:12px;color:#374f6e;">To manage your subscription, email <a href="mailto:support@stockwins.com" style="color:#93b4fd;">support@stockwins.com</a></div>',unsafe_allow_html=True)
+
+        if is_premium():
+            st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+            st.markdown('<div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">Subscription Details</div>',unsafe_allow_html=True)
+            sc1,sc2,sc3=st.columns(3)
+            sc1.markdown(f'<div class="stat"><div class="stat-v" style="font-size:14px;color:#a78bfa;">{rl}</div><div class="stat-l">Current Plan</div></div>',unsafe_allow_html=True)
+            sc2.markdown(f'<div class="stat"><div class="stat-v" style="font-size:14px;color:{GREEN};">Active</div><div class="stat-l">Status</div></div>',unsafe_allow_html=True)
+            sc3.markdown(f'<div class="stat"><div class="stat-v" style="font-size:14px;color:#e2e8f0;">{plan_detail}</div><div class="stat-l">Billing Cycle</div></div>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -2512,8 +2705,66 @@ def page_admin():
             filter_by=st.selectbox("Default category filter",["All","Free Only","Premium Only","Composite Only"],key="ranking_filter_ctrl")
             st.session_state.ranking_filter=filter_by
         if st.button("Save Ranking Controls",type="primary"): st.success("✅ Saved!")
-        st.markdown('<div class="sec-hd" style="font-size:13px;margin-top:16px;">Billing & Subscription</div>',unsafe_allow_html=True)
-        st.markdown('<div class="card"><div style="font-size:12px;color:#374f6e;line-height:1.9;">Billing integration requires Stripe or LemonSqueezy. To implement:<br>1. Add Stripe secret key to Streamlit Secrets<br>2. Create webhook endpoint for subscription events<br>3. Map Stripe customer IDs to user emails<br>4. Auto-promote/demote roles on payment success/failure<br><span style="color:#2a3a52;">(Currently: manual role promotion via Users tab)</span></div></div>',unsafe_allow_html=True)
+        st.markdown('<div class="sec-hd" style="font-size:13px;margin-top:16px;">💳 Stripe Billing Configuration</div>',unsafe_allow_html=True)
+
+        # Live status
+        stripe_ok = stripe_configured()
+        scolor = GREEN if stripe_ok else GOLD
+        sstatus = "✅ Stripe Connected" if stripe_ok else "⚠️ Stripe Not Configured"
+        st.markdown(f'<div style="background:{"#04200d" if stripe_ok else "#1a1000"};border:1px solid {"rgba(34,197,94,0.3)" if stripe_ok else "rgba(245,158,11,0.3)"};border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;color:{scolor};margin-bottom:16px;">{sstatus}</div>',unsafe_allow_html=True)
+
+        st.markdown(f"""<div class="card">
+            <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:10px;">Step-by-Step Stripe Setup</div>
+            <div style="font-size:12px;color:#374f6e;line-height:2.0;">
+            <strong style="color:#e2e8f0;">1. Create a Stripe account</strong> at <a href="https://stripe.com" target="_blank" style="color:#93b4fd;">stripe.com</a><br>
+            <strong style="color:#e2e8f0;">2. Create Products & Prices</strong> in Stripe Dashboard → Products:<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• StockWins Premium Monthly → Recurring $29/mo → copy Price ID<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• StockWins Annual Plan → Recurring $199/yr → copy Price ID<br>
+            <strong style="color:#e2e8f0;">3. Get your Secret Key</strong> from Stripe Dashboard → Developers → API Keys<br>
+            <strong style="color:#e2e8f0;">4. Add to Streamlit Secrets</strong> (Settings → Secrets in your app dashboard):<br>
+            </div>
+            <pre style="background:#060a12;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:14px;font-size:11px;color:#4ade80;margin:10px 0;overflow-x:auto;">STRIPE_SECRET_KEY = "sk_live_..."
+STRIPE_PRICE_MONTHLY = "price_xxx"
+STRIPE_PRICE_ANNUAL  = "price_yyy"
+APP_URL = "https://your-app.streamlit.app"</pre>
+            <div style="font-size:12px;color:#374f6e;line-height:2.0;">
+            <strong style="color:#e2e8f0;">5. Customer Portal</strong> — Enable in Stripe Dashboard → Billing → Customer Portal<br>
+            <strong style="color:#e2e8f0;">6. Test Mode</strong> — Use <code style="background:#0e1421;color:#93b4fd;padding:1px 5px;border-radius:3px;">sk_test_...</code> keys first, then switch to live<br>
+            <strong style="color:#e2e8f0;">7. Test card</strong>: <code style="background:#0e1421;color:#93b4fd;padding:1px 5px;border-radius:3px;">4242 4242 4242 4242</code> · any future exp · any CVC<br>
+            </div>
+        </div>""",unsafe_allow_html=True)
+
+        st.markdown(f"""<div class="card card-blue" style="margin-top:8px;">
+            <div style="font-size:12px;font-weight:700;color:#93b4fd;margin-bottom:6px;">⚠️ Webhook Note for Streamlit</div>
+            <div style="font-size:12px;color:#374f6e;line-height:1.8;">
+            Streamlit Community Cloud can't receive webhooks directly. StockWins uses <strong style="color:#e2e8f0;">Checkout Session verification</strong> on the success redirect URL instead. This handles new subscriptions reliably.<br>
+            For subscription renewals, cancellations, and failed payments in production, you have two options:<br>
+            • <strong style="color:#e2e8f0;">Option A</strong>: Add a lightweight webhook endpoint (Flask/FastAPI on Render.com, free tier) that updates a shared DB<br>
+            • <strong style="color:#e2e8f0;">Option B</strong>: Use Stripe's <code style="background:#0e1421;color:#93b4fd;">payment_behavior: allow_incomplete</code> + manual user verification via the Users tab<br>
+            For MVP/early-stage, Option B is fine. Upgrade to Option A when you have 50+ paying subscribers.
+            </div>
+        </div>""",unsafe_allow_html=True)
+
+        if stripe_ok and is_owner():
+            st.markdown('<div class="sec-hd" style="font-size:12px;margin-top:16px;">Quick Actions</div>',unsafe_allow_html=True)
+            qa1,qa2=st.columns(2,gap="small")
+            with qa1:
+                manual_email=st.text_input("User email to upgrade",placeholder="user@email.com",key="admin_upgrade_email",label_visibility="visible")
+                manual_plan=st.selectbox("Plan",["premium","annual"],key="admin_upgrade_plan",label_visibility="visible")
+                if st.button("↑ Manually Upgrade User",key="admin_do_upgrade",type="primary",use_container_width=True):
+                    if manual_email and manual_email in st.session_state.users_db:
+                        st.session_state.users_db[manual_email]["role"]="premium"
+                        st.session_state.users_db[manual_email]["plan"]="Monthly" if manual_plan=="premium" else "Annual"
+                        st.success(f"✅ {manual_email} upgraded to {manual_plan}")
+                    elif manual_email: st.error("User not found")
+            with qa2:
+                downgrade_email=st.text_input("User email to downgrade",placeholder="user@email.com",key="admin_downgrade_email",label_visibility="visible")
+                if st.button("↓ Downgrade to Free",key="admin_do_downgrade",use_container_width=True):
+                    if downgrade_email and downgrade_email in st.session_state.users_db:
+                        st.session_state.users_db[downgrade_email]["role"]="free"
+                        st.session_state.users_db[downgrade_email]["plan"]="Free"
+                        st.success(f"✅ {downgrade_email} downgraded")
+                    elif downgrade_email: st.error("User not found")
 
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -2521,6 +2772,46 @@ def page_admin():
 # ROUTER
 # ─────────────────────────────────────────────────────────────
 render_sidebar()
+
+# ── 1. Handle Stripe payment returns (URL params) ──
+handle_payment_return()
+
+# ── 2. Execute Stripe redirect if checkout session was just created ──
+if st.session_state.get("_redirect_url"):
+    url = st.session_state.pop("_redirect_url")
+    import streamlit.components.v1 as _comp
+    # Full-page redirect to Stripe Checkout
+    _comp.html(f"""
+    <style>body{{background:#07090f;display:flex;align-items:center;justify-content:center;height:100vh;font-family:Inter,sans-serif;}}</style>
+    <div style="text-align:center;color:#6b7fa0;">
+        <div style="font-size:24px;margin-bottom:12px;">🔒</div>
+        <div style="font-size:14px;margin-bottom:8px;color:#e2e8f0;">Redirecting to secure checkout...</div>
+        <div style="font-size:12px;">Powered by Stripe</div>
+    </div>
+    <script>setTimeout(function(){{window.top.location.href="{url}";}},400);</script>
+    """, height=200)
+    st.stop()
+
+# ── 3. Payment notifications ──
+if st.session_state.get("_pay_success"):
+    plan = st.session_state.pop("_pay_success")
+    plan_name = "Annual" if plan=="annual" else "Premium"
+    st.success(f"🎉 Payment successful! Welcome to StockWins {plan_name}! Your account has been upgraded.")
+
+if st.session_state.get("_pay_error"):
+    err = st.session_state.pop("_pay_error")
+    st.error(f"⚠️ Payment issue: {err}. Contact support@stockwins.com")
+
+if st.session_state.get("_pay_cancelled"):
+    st.session_state.pop("_pay_cancelled")
+    st.info("Payment cancelled — no charge was made. Choose a plan below when you're ready.")
+
+# ── 4. Complete pending checkout after login ──
+if is_authed() and st.session_state.get("_pending_checkout"):
+    plan = st.session_state.pop("_pending_checkout")
+    url, err = create_checkout_session(plan, st.session_state.user["email"])
+    if url: st.session_state["_redirect_url"] = url; st.rerun()
+    else:   st.error(f"Checkout error: {err}")
 
 page=st.session_state.get("page","landing")
 guard={"dashboard","discover","watchlist","screener","bi_dashboard","stock_detail","settings","admin"}
