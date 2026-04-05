@@ -1134,19 +1134,61 @@ def page_landing():
         with bc3:
             if gold_btn("Go Premium","h_prem"): nav("pricing")
 
-        st.markdown("<br>",unsafe_allow_html=True)
-        st.markdown(f"""
-        <style>
-        button[aria-label="📊 Market Overview"],button[aria-label="💥 Squeeze Candidates"],button[aria-label="💡 Smart Insights"]{{
-            font-size:12px !important;padding:6px 10px !important;min-height:36px !important;
-        }}
+        # ── Text tab labels (not buttons) ──
+        tab_labels=[("📊","Market Overview"),("💥","Squeeze Candidates"),("💡","Smart Insights")]
+        tabs_html='<div style="display:flex;gap:24px;margin-top:20px;margin-bottom:4px;padding-left:48px;">'
+        for i,(icon,lbl) in enumerate(tab_labels):
+            if i==p_idx:
+                tabs_html+=f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;cursor:pointer;padding-bottom:4px;border-bottom:2px solid {BLUE};">{icon} {lbl}</div>'
+            else:
+                tabs_html+=f'<div style="font-size:13px;font-weight:500;color:#374f6e;cursor:pointer;padding-bottom:4px;">{icon} {lbl}</div>'
+        tabs_html+='</div>'
+        st.markdown(tabs_html, unsafe_allow_html=True)
+
+        # Hidden nav buttons for JS to click
+        st.markdown("""<style>
+        button[aria-label="__panel_0__"],button[aria-label="__panel_1__"],button[aria-label="__panel_2__"],
+        button[aria-label="__auto_adv__"]{display:none !important;}
         </style>""", unsafe_allow_html=True)
-        dc=st.columns(3)
-        labels=["📊 Market Overview","💥 Squeeze Candidates","💡 Smart Insights"]
-        for i,(col,lbl) in enumerate(zip(dc,labels)):
-            with col:
-                if st.button(lbl,key=f"demo_{i}",type="primary" if p_idx==i else "secondary",use_container_width=True):
-                    st.session_state.hero_panel=i; st.rerun()
+        hc=st.columns(3)
+        for i in range(3):
+            with hc[i]:
+                if st.button(f"__panel_{i}__",key=f"hp_{i}"):
+                    st.session_state.hero_panel=i; st.session_state.last_advance=__import__('time').time(); st.rerun()
+        if st.button("__auto_adv__",key="auto_adv"):
+            st.session_state.hero_panel=(p_idx+1)%3; st.session_state.last_advance=__import__('time').time(); st.rerun()
+
+        # JS: click a tab button on click, auto-advance every 5s
+        st.markdown(f"""
+        <script>
+        (function(){{
+            // Wire text tabs to hidden buttons
+            function wireTabs(){{
+                var panels=window.parent.document.querySelectorAll('[data-testid="stHorizontalBlock"]');
+                var tabs=window.parent.document.querySelectorAll('div[style*="cursor:pointer"]');
+                var allBtns=window.parent.document.querySelectorAll('button');
+                var panelBtns=[null,null,null]; var autoBtnEl=null;
+                allBtns.forEach(function(b){{
+                    var l=b.getAttribute('aria-label')||'';
+                    if(l==='__panel_0__') panelBtns[0]=b;
+                    if(l==='__panel_1__') panelBtns[1]=b;
+                    if(l==='__panel_2__') panelBtns[2]=b;
+                    if(l==='__auto_adv__') autoBtnEl=b;
+                }});
+                tabs.forEach(function(t,i){{
+                    if(i<3 && panelBtns[i]) t.onclick=function(){{panelBtns[i].click();}};
+                }});
+                // Auto-advance every 5s
+                if(autoBtnEl && !window.__swAutoSet__){{
+                    window.__swAutoSet__=true;
+                    setInterval(function(){{autoBtnEl.click();}},5000);
+                }}
+            }}
+            setTimeout(wireTabs,800);
+        }})();
+        </script>
+        """, unsafe_allow_html=True)
+
     with hr:
         st.markdown(f'<div style="padding:32px 48px 24px 0;">{DEMO[p_idx]}</div>',unsafe_allow_html=True)
 
@@ -2024,57 +2066,170 @@ def page_pricing():
     </div>
     """, unsafe_allow_html=True)
 
-    # Hover animation CSS
-    st.markdown("""
-    <style>
-    .price-card,.price-card-featured,.price-card-gold {
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-    </style>
+    # Track selected plan
+    if "selected_plan" not in st.session_state:
+        st.session_state.selected_plan = "premium"
+
+    sel = st.session_state.selected_plan
+
+    # Hidden selector buttons (JS will click them)
+    st.markdown("""<style>
+    button[aria-label="__sel_free__"],button[aria-label="__sel_premium__"],button[aria-label="__sel_annual__"]{display:none !important;}
+    </style>""", unsafe_allow_html=True)
+    sc=st.columns(3)
+    with sc[0]:
+        if st.button("__sel_free__",key="sel_free"): st.session_state.selected_plan="free"; st.rerun()
+    with sc[1]:
+        if st.button("__sel_premium__",key="sel_premium"): st.session_state.selected_plan="premium"; st.rerun()
+    with sc[2]:
+        if st.button("__sel_annual__",key="sel_annual"): st.session_state.selected_plan="annual"; st.rerun()
+
+    # Card CSS
+    st.markdown(f"""<style>
+    .pc-wrap {{
+        display: flex; gap: 16px; align-items: flex-start;
+        padding: 0 0 8px 0;
+    }}
+    .pc {{
+        background: {CARD}; border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 14px; padding: 24px 20px; flex: 1;
+        cursor: pointer; transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+        min-height: 560px; display: flex; flex-direction: column;
+    }}
+    .pc:hover {{ border-color: rgba(37,99,235,0.4); transform: translateY(-2px); }}
+    .pc.sel-free {{
+        border: 2px solid {BLUE}; background: linear-gradient(160deg,#060f2a,{CARD});
+        box-shadow: 0 12px 48px rgba(37,99,235,0.25); transform: translateY(-4px) scale(1.02);
+    }}
+    .pc.sel-premium {{
+        border: 2px solid {BLUE}; background: linear-gradient(160deg,#060f2a,{CARD});
+        box-shadow: 0 12px 48px rgba(37,99,235,0.35); transform: translateY(-4px) scale(1.02);
+    }}
+    .pc.sel-annual {{
+        border: 2px solid {GOLD}; background: linear-gradient(160deg,#1a0d00,#120800,{CARD});
+        box-shadow: 0 12px 48px rgba(245,158,11,0.35); transform: translateY(-4px) scale(1.02);
+    }}
+    .pc-features {{ flex: 1; font-size: 12px; color: #374f6e; line-height: 2.2; }}
+    .pc-cta {{ margin-top: 16px; }}
+    </style>""", unsafe_allow_html=True)
+
+    # Render all 3 cards as pure HTML (clickable via JS)
+    sel_cls_f = "sel-free"    if sel == "free"    else ""
+    sel_cls_p = "sel-premium" if sel == "premium" else ""
+    sel_cls_a = "sel-annual"  if sel == "annual"  else ""
+
+    st.markdown(f"""
+    <div class="pc-wrap" id="sw-pricing-wrap">
+
+      <!-- FREE -->
+      <div class="pc {sel_cls_f}" id="pc-free" onclick="swSelectPlan('free')">
+        <div style="min-height:32px;">
+          {'<div style="background:#1e3a8a;color:#93b4fd;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;letter-spacing:1px;">SELECTED ✓</div>' if sel=="free" else '<div style="height:24px;"></div>'}
+        </div>
+        <div style="font-size:14px;font-weight:600;color:#94a3b8;">Free</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:#e2e8f0;margin:6px 0 2px;line-height:1;">$0</div>
+        <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">forever · no card needed</div>
+        <hr style="border-color:{BORDER};margin:10px 0;">
+        <div class="pc-features">
+          ✅ Market overview &amp; indexes<br>
+          ✅ 5 standard categories<br>
+          ✅ StockTwits hot list<br>
+          ✅ RSI &amp; MACD signals<br>
+          ✅ Plain-English insights<br>
+          ✅ 7 composite categories<br>
+          ✅ Watchlist (10 stocks)<br>
+          ✅ BUY/AVOID signals<br>
+          <span style="color:#1e3050;">❌ 10 premium composite cats<br>
+          ❌ Short squeeze scanner<br>
+          ❌ Advanced screener<br>
+          ❌ BI analytics charts<br>
+          ❌ Score breakdowns</span>
+        </div>
+      </div>
+
+      <!-- PREMIUM -->
+      <div class="pc {sel_cls_p}" id="pc-premium" onclick="swSelectPlan('premium')">
+        <div style="min-height:32px;">
+          {'<div style="background:#1e3a8a;color:#93b4fd;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;letter-spacing:1px;">SELECTED ✓</div>' if sel=="premium" else '<div style="background:rgba(37,99,235,0.2);color:#60a5fa;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;letter-spacing:1px;">⭐ MOST POPULAR</div>'}
+        </div>
+        <div style="font-size:14px;font-weight:600;color:#e2e8f0;">Premium Monthly</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:#e2e8f0;margin:6px 0 2px;line-height:1;">$29</div>
+        <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">per month · cancel anytime</div>
+        <hr style="border-color:{BORDER};margin:10px 0;">
+        <div class="pc-features">
+          ✅ Everything in Free<br>
+          ✅ All 17 composite categories<br>
+          ✅ Short squeeze scanner<br>
+          ✅ Advanced screener<br>
+          ✅ Full BI analytics &amp; charts<br>
+          ✅ Score breakdowns<br>
+          ✅ Volume surge detection<br>
+          ✅ Unlimited watchlist<br>
+          ✅ Watchlist score analytics<br>
+          ✅ Saved screeners
+        </div>
+      </div>
+
+      <!-- ANNUAL -->
+      <div class="pc {sel_cls_a}" id="pc-annual" onclick="swSelectPlan('annual')">
+        <div style="min-height:32px;">
+          {'<div style="background:rgba(245,158,11,0.2);color:#f59e0b;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;letter-spacing:1px;">SELECTED ✓</div>' if sel=="annual" else '<div style="background:linear-gradient(90deg,#92400e,#d97706);color:#fff8e1;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;letter-spacing:1px;">👑 BEST VALUE</div>'}
+        </div>
+        <div style="font-size:14px;font-weight:600;color:#e2e8f0;">Annual Plan</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:{GOLD};margin:6px 0 2px;line-height:1;">$199</div>
+        <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">per year · save 43% vs monthly</div>
+        <hr style="border-color:rgba(245,158,11,.15);margin:10px 0;">
+        <div class="pc-features">
+          ✅ Everything in Premium<br>
+          ✅ Priority support<br>
+          ✅ Early feature access<br>
+          ✅ Export to CSV<br>
+          ✅ Custom alert schedules<br>
+          ✅ API access (Q3 2026)<br>
+          ✅ Backtesting (coming)<br>
+          ✅ Portfolio tracker (coming)
+        </div>
+      </div>
+
+    </div>
+
+    <script>
+    function swSelectPlan(plan) {{
+        var btns = window.parent.document.querySelectorAll('button');
+        btns.forEach(function(b) {{
+            var l = b.getAttribute('aria-label') || '';
+            if (l === '__sel_' + plan + '__') {{ b.click(); }}
+        }});
+    }}
+    </script>
     """, unsafe_allow_html=True)
 
-    p1,p2,p3=st.columns(3,gap="small")
-
-    free_html=f"""<div class="price-card">
-    <div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">Free</div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:40px;font-weight:800;color:#e2e8f0;margin:4px 0 4px;">$0</div>
-    <div style="font-size:11px;color:#374f6e;margin-bottom:16px;">forever · no card needed</div>
-    <hr style="border-color:{BORDER};margin:12px 0;">
-    <div style="font-size:12px;color:#374f6e;line-height:2.2;">✅ Market overview &amp; indexes<br>✅ 5 standard categories<br>✅ StockTwits hot list<br>✅ RSI &amp; MACD signals<br>✅ Plain-English insights<br>✅ 7 composite categories<br>✅ Watchlist (10 stocks)<br>✅ BUY/AVOID signals<br>❌ 10 premium composite cats<br>❌ Short squeeze scanner<br>❌ Advanced screener<br>❌ BI analytics charts<br>❌ Score breakdowns</div>
-    </div>"""
-
-    premium_html=f"""<div class="price-card-featured">
-    <div style="background:{BLUE};color:white;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:10px;letter-spacing:1.5px;">⭐ MOST POPULAR</div>
-    <div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">Premium Monthly</div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:40px;font-weight:800;color:#e2e8f0;margin:4px 0 4px;">$29</div>
-    <div style="font-size:11px;color:#374f6e;margin-bottom:16px;">per month · cancel anytime</div>
-    <hr style="border-color:{BORDER};margin:12px 0;">
-    <div style="font-size:12px;color:#374f6e;line-height:2.2;">✅ Everything in Free<br>✅ All 17 composite categories<br>✅ Short squeeze scanner<br>✅ Advanced screener<br>✅ Full BI analytics &amp; charts<br>✅ Score breakdowns<br>✅ Volume surge detection<br>✅ Unlimited watchlist<br>✅ Watchlist score analytics<br>✅ Saved screeners</div>
-    </div>"""
-
-    annual_html=f"""<div class="price-card-gold">
-    <div style="background:linear-gradient(90deg,#92400e,{GOLD});color:#1a0800;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:4px;letter-spacing:1px;">👑 BEST VALUE</div>
-    <div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">Annual Plan</div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:40px;font-weight:800;color:{GOLD};margin:4px 0 4px;">$199</div>
-    <div style="font-size:11px;color:#374f6e;margin-bottom:16px;">per year · save 43% vs monthly</div>
-    <hr style="border-color:rgba(245,158,11,.2);margin:12px 0;">
-    <div style="font-size:12px;color:#374f6e;line-height:2.2;">✅ Everything in Premium<br>✅ Priority support<br>✅ Early feature access<br>✅ Export to CSV<br>✅ Custom alert schedules<br>✅ API access (Q3 2026)<br>✅ Backtesting (coming)<br>✅ Portfolio tracker (coming)</div>
-    </div>"""
-
-    with p1:
-        st.markdown(free_html, unsafe_allow_html=True)
-        if not is_authed():
-            if st.button("Get Started Free",key="p_free",use_container_width=True): nav("signup")
-    with p2:
-        st.markdown(premium_html, unsafe_allow_html=True)
-        if st.button("🚀 Go Premium →",key="p_prem",type="primary",use_container_width=True):
-            st.info("💳 Payment processing coming soon. Contact support@stockwins.com to upgrade.")
-    with p3:
-        st.markdown(annual_html, unsafe_allow_html=True)
-        st.markdown('<div class="gold-btn">', unsafe_allow_html=True)
-        if st.button("👑 Get Annual →",key="p_annual",use_container_width=True):
-            st.info("💳 Coming soon!")
-        st.markdown('</div>', unsafe_allow_html=True)
+    # CTA buttons below — one per plan, styled to match selection
+    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+    cb1,cb2,cb3=st.columns(3,gap="small")
+    with cb1:
+        if sel=="free":
+            if st.button("Get Started Free →",key="p_free",type="primary",use_container_width=True):
+                nav("signup" if not is_authed() else "dashboard")
+        else:
+            if st.button("Get Started Free",key="p_free",use_container_width=True):
+                st.session_state.selected_plan="free"; st.rerun()
+    with cb2:
+        if sel=="premium":
+            if st.button("🚀 Get Premium →",key="p_prem",type="primary",use_container_width=True):
+                st.info("💳 Payment coming soon. Contact support@stockwins.com")
+        else:
+            if st.button("🚀 Get Premium",key="p_prem",use_container_width=True):
+                st.session_state.selected_plan="premium"; st.rerun()
+    with cb3:
+        if sel=="annual":
+            st.markdown('<div class="gold-btn">', unsafe_allow_html=True)
+            if st.button("👑 Get Annual — Best Value →",key="p_annual",use_container_width=True):
+                st.info("💳 Payment coming soon. Contact support@stockwins.com")
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            if st.button("👑 Get Annual",key="p_annual",use_container_width=True):
+                st.session_state.selected_plan="annual"; st.rerun()
 
     st.markdown('<div class="disc" style="margin-top:20px;">⚠️ Educational platform only. Not financial advice. Trading involves risk.</div>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
