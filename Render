@@ -1,0 +1,18 @@
+services:
+  - type: cron
+    name: stockwins-alerts
+    runtime: python
+    buildCommand: pip install -r requirements_worker.txt
+    schedule: "*/15 * * * *"
+    startCommand: python alerts_worker.py
+    envVars:
+      - key: WORKER_MODE
+        value: once
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: ALERTS_DB_PATH
+        value: /tmp/sw_alerts.json
+      - key: USERS_DB_PATH
+        value: /tmp/sw_users.json
