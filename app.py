@@ -1738,11 +1738,11 @@ def page_landing():
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Upgrade to unlock advanced screening, unlimited alerts, and premium watchlists.</div>
         </div>
         <div class="sw-prem-box" style="flex:1;height:320px;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;">
-          <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border-bottom:1px solid rgba(245,158,11,.2);padding:12px 16px;display:flex;align-items:center;gap:8px;">
-            <span style="font-size:14px;">👑</span>
-            <span style="font-size:12px;font-weight:700;color:{GOLD};letter-spacing:1px;">PREMIUM FEATURES</span>
+          <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border-bottom:1px solid rgba(245,158,11,.2);padding:10px 16px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;">👑</span>
+            <span style="font-size:11px;font-weight:700;color:{GOLD};letter-spacing:1px;">PREMIUM FEATURES</span>
           </div>
-          <div style="padding:20px 16px;font-size:13px;color:#374f6e;line-height:2.6;flex:1;">
+          <div style="padding:14px 16px;font-size:12.5px;color:#374f6e;line-height:2.05;flex:1;">
             ✅ &nbsp;All 17 composite signal categories<br>
             ✅ &nbsp;Advanced stock screener<br>
             ✅ &nbsp;Full BI analytics &amp; charts<br>
@@ -2068,108 +2068,33 @@ def page_dashboard():
     render_topbar("dashboard")
     st.markdown('<div class="pg">',unsafe_allow_html=True)
 
-    # ── Premium status strip ──
-    if is_premium():
-        role_lbl = {"owner":"👑 Owner","admin":"🛡️ Admin","premium":"⭐ Premium"}.get(st.session_state.get("role","free"),"⭐ Premium")
-        st.markdown(f'''<div style="background:linear-gradient(135deg,#1a0d00,#0d1525);
-            border:1px solid rgba(245,158,11,0.2);border-radius:10px;
-            padding:10px 16px;margin-bottom:14px;
-            display:flex;align-items:center;justify-content:space-between;">
-            <div style="font-size:13px;font-weight:700;color:{GOLD};">{role_lbl} — All features unlocked</div>
-            <div style="font-size:11px;color:#374f6e;">17 categories · Squeeze scanner · BI Analytics · Full alerts</div>
-        </div>''', unsafe_allow_html=True)
+    # ── Welcome strip ──
+    user_name = st.session_state.user.get("name","Trader") if is_authed() else "Trader"
+    role_lbl = {"owner":"👑 Owner","admin":"🛡️ Admin","premium":"⭐ Premium","free":"👤 Free"}.get(st.session_state.get("role","free"),"👤 Free")
+    role_color = GOLD if is_premium() else "#6b7fa0"
 
-    # ── Our Composite Categories FIRST (the hero) ──
+    now_hour = datetime.now().hour
+    greeting = "Good morning" if now_hour<12 else ("Good afternoon" if now_hour<18 else "Good evening")
+
     st.markdown(f"""
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-        <div style="font-size:17px;font-weight:700;color:#e2e8f0;">🎯 Our Proprietary Signal Categories</div>
-        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;">✨ Unique to StockWins</span>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;">
+        <div>
+            <div style="font-size:14px;color:#6b7fa0;margin-bottom:2px;">{greeting},</div>
+            <div style="font-size:26px;font-weight:800;color:#e2e8f0;letter-spacing:-0.5px;">{user_name} 👋</div>
+        </div>
+        <div style="text-align:right;">
+            <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Account Status</div>
+            <div style="font-size:14px;font-weight:700;color:{role_color};">{role_lbl}</div>
+        </div>
     </div>
-    <div style="font-size:13px;color:#374f6e;margin-bottom:16px;">Combining multiple independent signals to surface unique opportunities not visible through standard technical analysis.</div>
     """, unsafe_allow_html=True)
 
-    color_map={
-        "🔥💥 Squeeze + Buzz":"#ef4444","💡 Hidden Movers":"#3b82f6","🎭 Social Catalyst":"#f97316",
-        "🌡️ Sentiment Flip":"#ec4899","📉→📈 Fallen Angels":"#8b5cf6","🔬 Micro-Cap Movers":"#06b6d4",
-        "💎 Value Momentum":"#22c55e","⚡📈 Volume Breakout":"#06b6d4","🎯 Smart Reversal":"#f59e0b",
-        "🌊 Momentum Leaders":"#22c55e","🏆 Relative Strength":"#a78bfa","🎪 Earnings Catalyst":"#f97316",
-        "🔁 Mean Reversion":"#60a5fa","⚡🧲 Smart Money Signal":"#fbbf24","🌪️ Volatility Squeeze":"#c084fc",
-        "🎯📊 Triple Lock":"#4ade80","🦈 Sustained Strength":"#34d399",
-    }
-    comp_items=list(COMPOSITE_CATS.items())
-    for i in range(0,len(comp_items),2):
-        cols=st.columns(2,gap="small")
-        for j,col in enumerate(cols):
-            if i+j<len(comp_items):
-                cat,(desc,tier)=comp_items[i+j]
-                is_locked=tier=="premium" and not is_premium()
-                c=color_map.get(cat,BLUE)
-                tier_tag=f'<span style="background:rgba(245,158,11,.12);color:{GOLD};font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(245,158,11,.3);">⭐ PREMIUM</span>' if tier=="premium" else f'<span style="background:rgba(34,197,94,.1);color:#4ade80;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(34,197,94,.3);">FREE</span>'
-                with col:
-                    st.markdown(f"""<div class="card" style="border-left:3px solid {c};">
-                        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;">
-                            <div style="font-size:14px;font-weight:700;color:#e2e8f0;">{cat} {"🔒" if is_locked else ""}</div>{tier_tag}
-                        </div>
-                        <div style="font-size:11px;color:#374f6e;margin-bottom:8px;">{desc}</div>
-                    </div>""",unsafe_allow_html=True)
-                    btn_key=f"dash_cat_{cat[:20].replace(' ','_').replace('+','p')}"
-                    if st.button(f"Explore {cat} →",key=btn_key,use_container_width=True):
-                        if is_locked: nav("pricing")
-                        else: st.session_state.discover_cat=cat; nav("discover")
+    # ── Market Overview FIRST (this is the dashboard's purpose) ──
+    st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">📊 MARKET OVERVIEW</div>',unsafe_allow_html=True)
 
-    st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+    with st.spinner("Loading market data…"):
+        idx=get_indexes(); secs=get_sectors(); movers=get_bi_movers()
 
-    # ── StockTwits Hot + Squeeze preview ──
-    left,right=st.columns(2,gap="small")
-    with left:
-        st.markdown(f'<div class="sec-hd">📡 StockTwits Hot Stocks <span class="tag tag-live" style="margin-left:auto;">Live</span></div>',unsafe_allow_html=True)
-        hot=st_hot(); prog=st.progress(0,"Loading…")
-        for i,t in enumerate(hot[:5]):
-            prog.progress((i+1)/5)
-            q=get_quote(t)
-            if q:
-                s=st_sent(t); cc_=GREEN if q["pct"]>=0 else RED; ar="▲" if q["pct"]>=0 else "▼"
-                st.markdown(f"""<div class="sr">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <div><span class="sr-tick">{t}</span><span class="b b-hot" style="margin-left:6px;">🔥</span>
-                        <div class="sr-name">{q.get('name','')[:28]}</div>
-                        <div class="sr-why">→ {s['bull']}% bullish · {s.get('wl',0):,} watching</div></div>
-                        <div style="text-align:right;"><div class="sr-price">${q['price']:,.2f}</div>
-                        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:{cc_};">{ar}{abs(q['pct']):.2f}%</div></div>
-                    </div></div>""",unsafe_allow_html=True)
-        prog.empty()
-
-    with right:
-        st.markdown(f'<div class="sec-hd">🔥💥 Squeeze + Buzz Preview <span class="tag tag-live" style="margin-left:auto;">Composite</span></div>',unsafe_allow_html=True)
-        st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">High short float + social trending = explosive combo</div>',unsafe_allow_html=True)
-        prog=st.progress(0,"Scanning…"); shown=0
-        for i,t in enumerate(["GME","AMC","MSTR","MULN","SPCE"]):
-            prog.progress((i+1)/5)
-            info=yf_fund(t); sf=(info.get("sf",0) or 0)*100
-            if sf>=8:
-                q=get_quote(t)
-                if q:
-                    shown+=1; cc_=GREEN if q["pct"]>=0 else RED
-                    st.markdown(f"""<div class="sr">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <div><span class="sr-tick">{t}</span>
-                            <div class="sr-name">{q.get('name','')[:28]}</div>
-                            <div class="sr-why">→ Short float: <span style="color:{RED};font-weight:700;">{sf:.1f}%</span> · DTC: {info.get('dtc',0) or 0:.1f}d</div></div>
-                            <div style="text-align:right;"><div class="sr-price">${q['price']:,.2f}</div>
-                            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:{cc_};">{"▲" if q['pct']>=0 else "▼"}{abs(q['pct']):.2f}%</div></div>
-                        </div></div>""",unsafe_allow_html=True)
-        prog.empty()
-        if shown==0: st.info("No squeeze candidates above threshold right now.")
-        if st.button("Full Squeeze Scanner →",key="dash_sq",use_container_width=True):
-            if is_premium(): st.session_state.discover_cat="🔥💥 Squeeze + Buzz"; nav("discover")
-            else: nav("pricing")
-
-    st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
-
-    # ── Market Overview (bottom) ──
-    st.markdown('<div class="sec-hd">📊 Market Overview</div>',unsafe_allow_html=True)
-    with st.spinner("Loading…"):
-        idx=get_indexes(); secs=get_sectors()
     idx_cols=st.columns(len(idx))
     for col,(name,d) in zip(idx_cols,idx.items()):
         c=GREEN if d["pct"]>=0 else RED; ar="▲" if d["pct"]>=0 else "▼"
@@ -2177,22 +2102,159 @@ def page_dashboard():
         bars=""
         if hist:
             mn,mx=min(hist),max(hist); rng=mx-mn if mx!=mn else 1
-            bars=''.join([f'<div style="height:{int(12*(v-mn)/rng+3)}px;width:4px;background:{GREEN if d["pct"]>=0 else RED};border-radius:2px;display:inline-block;margin-right:1px;vertical-align:bottom;opacity:0.6;"></div>' for v in hist])
-        col.markdown(f"""<div class="idx-w">
-            <div class="idx-name">{name}</div><div class="idx-price">{d['price']:,.2f}</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:{c};">{ar}{abs(d['pct']):.2f}%</div>
-            <div style="margin-top:8px;height:16px;display:flex;align-items:flex-end;">{bars}</div>
+            bars=''.join([f'<div style="height:{int(14*(v-mn)/rng+3)}px;width:4px;background:{GREEN if d["pct"]>=0 else RED};border-radius:2px;display:inline-block;margin-right:1px;vertical-align:bottom;opacity:0.55;"></div>' for v in hist])
+        col.markdown(f"""<div class="idx-w" style="padding:14px;">
+            <div class="idx-name">{name}</div>
+            <div class="idx-price" style="font-size:18px;">{d['price']:,.2f}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:{c};">{ar}{abs(d['pct']):.2f}%</div>
+            <div style="margin-top:10px;height:18px;display:flex;align-items:flex-end;">{bars}</div>
         </div>""",unsafe_allow_html=True)
 
-    st.markdown("<br>",unsafe_allow_html=True)
+    # ── Quick stats row ──
+    st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+    avg_pct = sum(m["pct"] for m in movers)/len(movers) if movers else 0
+    bull_count = sum(1 for m in movers if m["pct"]>0)
+    bear_count = sum(1 for m in movers if m["pct"]<0)
+    breadth_label = "Bullish" if avg_pct>0.3 else "Bearish" if avg_pct<-0.3 else "Mixed"
+    breadth_color = GREEN if avg_pct>0.3 else RED if avg_pct<-0.3 else "#94a3b8"
+    top_sec = max(secs,key=secs.get) if secs else "—"
+    top_sec_chg = secs.get(top_sec,0) if secs else 0
+
+    qcols = st.columns(4)
+    qcols[0].markdown(f"""<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:12px 14px;border-radius:10px;">
+        <div style="font-size:10px;color:#374f6e;letter-spacing:1.5px;font-weight:700;">MARKET BREADTH</div>
+        <div style="font-size:18px;font-weight:800;color:{breadth_color};margin-top:4px;">{breadth_label}</div>
+        <div style="font-size:10px;color:#4a5e7a;margin-top:2px;">{bull_count} ↑ · {bear_count} ↓</div>
+    </div>""", unsafe_allow_html=True)
+    qcols[1].markdown(f"""<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:12px 14px;border-radius:10px;">
+        <div style="font-size:10px;color:#374f6e;letter-spacing:1.5px;font-weight:700;">STRONGEST SECTOR</div>
+        <div style="font-size:14px;font-weight:800;color:{GREEN};margin-top:4px;">{top_sec}</div>
+        <div style="font-size:10px;color:#4a5e7a;margin-top:2px;">+{top_sec_chg:.2f}% today</div>
+    </div>""", unsafe_allow_html=True)
+    qcols[2].markdown(f"""<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:12px 14px;border-radius:10px;">
+        <div style="font-size:10px;color:#374f6e;letter-spacing:1.5px;font-weight:700;">YOUR WATCHLIST</div>
+        <div style="font-size:18px;font-weight:800;color:#e2e8f0;margin-top:4px;">{len(st.session_state.get("watchlist",[]))} stocks</div>
+        <div style="font-size:10px;color:#4a5e7a;margin-top:2px;">tracked</div>
+    </div>""", unsafe_allow_html=True)
+    qcols[3].markdown(f"""<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:12px 14px;border-radius:10px;">
+        <div style="font-size:10px;color:#374f6e;letter-spacing:1.5px;font-weight:700;">ACTIVE ALERTS</div>
+        <div style="font-size:18px;font-weight:800;color:#e2e8f0;margin-top:4px;">{len(st.session_state.get("alerts",[]))} active</div>
+        <div style="font-size:10px;color:#4a5e7a;margin-top:2px;">monitoring</div>
+    </div>""", unsafe_allow_html=True)
+
+    st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+
+    # ── Top Movers + Hot Stocks (2 columns) ──
+    left,right=st.columns(2,gap="small")
+
+    with left:
+        st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">📈 TOP MOVERS TODAY</div>',unsafe_allow_html=True)
+        gainers = sorted(movers, key=lambda x:x["pct"], reverse=True)[:5]
+        losers = sorted(movers, key=lambda x:x["pct"])[:5]
+
+        st.markdown('<div style="font-size:11px;color:#4ade80;font-weight:700;margin-bottom:6px;">🟢 GAINERS</div>',unsafe_allow_html=True)
+        for m in gainers:
+            st.markdown(f"""<div class="sr" style="padding:8px 12px;margin-bottom:3px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span class="sr-tick" style="font-size:13px;">{m['t']}</span>
+                    <div style="display:flex;gap:14px;align-items:center;">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#e2e8f0;">${m['price']:,.2f}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:{GREEN};">▲{m['pct']:.2f}%</span>
+                    </div>
+                </div>
+            </div>""",unsafe_allow_html=True)
+
+        st.markdown('<div style="font-size:11px;color:#f87171;font-weight:700;margin:10px 0 6px;">🔴 LOSERS</div>',unsafe_allow_html=True)
+        for m in losers:
+            st.markdown(f"""<div class="sr" style="padding:8px 12px;margin-bottom:3px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span class="sr-tick" style="font-size:13px;">{m['t']}</span>
+                    <div style="display:flex;gap:14px;align-items:center;">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#e2e8f0;">${m['price']:,.2f}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:{RED};">▼{abs(m['pct']):.2f}%</span>
+                    </div>
+                </div>
+            </div>""",unsafe_allow_html=True)
+
+    with right:
+        st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">🔥 SOCIAL BUZZ</div>',unsafe_allow_html=True)
+        hot=st_hot()
+        for t in hot[:8]:
+            q=get_quote(t)
+            if q:
+                s=st_sent(t); cc_=GREEN if q["pct"]>=0 else RED; ar="▲" if q["pct"]>=0 else "▼"
+                bull_color = GREEN if s['bull']>=60 else RED if s['bull']<40 else "#94a3b8"
+                st.markdown(f"""<div class="sr" style="padding:8px 12px;margin-bottom:3px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <span class="sr-tick" style="font-size:13px;">{t}</span>
+                            <span style="font-size:10px;color:{bull_color};margin-left:8px;font-weight:700;">{s['bull']}% bullish</span>
+                        </div>
+                        <div style="display:flex;gap:12px;align-items:center;">
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#e2e8f0;">${q['price']:,.2f}</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:{cc_};">{ar}{abs(q['pct']):.2f}%</span>
+                        </div>
+                    </div>
+                </div>""",unsafe_allow_html=True)
+
+    st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+
+    # ── Sector Heatmap ──
+    st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">🗺️ SECTOR HEATMAP</div>',unsafe_allow_html=True)
     sec_sorted=sorted(secs.items(),key=lambda x:x[1],reverse=True)
-    sc5=st.columns(5)
+    sc_cols=st.columns(len(sec_sorted))
     for i,(sec,chg) in enumerate(sec_sorted):
-        with sc5[i%5]:
-            cls="hm-hi" if chg>0.15 else "hm-lo" if chg<-0.15 else "hm-nu"
-            bg={"hm-hi":"#04200d","hm-lo":"#200404","hm-nu":"#101827"}[cls]
-            tc={"hm-hi":GREEN,"hm-lo":RED,"hm-nu":"#4a5e7a"}[cls]
-            st.markdown(f'<div style="background:{bg};color:{tc};border-radius:5px;padding:7px 4px;text-align:center;font-size:11px;font-weight:700;margin-bottom:4px;"><div style="font-size:9px;margin-bottom:1px;">{sec}</div>{"▲" if chg>=0 else "▼"}{abs(chg):.1f}%</div>',unsafe_allow_html=True)
+        with sc_cols[i]:
+            intensity = min(abs(chg)/2.5, 1.0)
+            if chg > 0:
+                bg = f"rgba(34,197,94,{0.15+intensity*0.5})"
+                tc = "#4ade80"
+            elif chg < 0:
+                bg = f"rgba(239,68,68,{0.15+intensity*0.5})"
+                tc = "#f87171"
+            else:
+                bg = "rgba(255,255,255,0.04)"; tc = "#94a3b8"
+            arrow = "▲" if chg>=0 else "▼"
+            st.markdown(f"""<div style="background:{bg};border-radius:8px;padding:14px 6px;text-align:center;border:1px solid rgba(255,255,255,0.05);">
+                <div style="font-size:11px;color:#e2e8f0;font-weight:600;margin-bottom:4px;">{sec}</div>
+                <div style="font-size:14px;font-weight:800;color:{tc};font-family:'JetBrains Mono',monospace;">{arrow}{abs(chg):.2f}%</div>
+            </div>""",unsafe_allow_html=True)
+
+    st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+
+    # ── Quick action panel ──
+    st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">⚡ QUICK ACTIONS</div>',unsafe_allow_html=True)
+    qa1,qa2,qa3,qa4=st.columns(4,gap="small")
+    with qa1:
+        if st.button("🎯 Discover Categories", key="dash_qa_disc", use_container_width=True, type="primary"):
+            nav("discover")
+    with qa2:
+        if st.button("⭐ My Watchlist", key="dash_qa_wl", use_container_width=True):
+            nav("watchlist")
+    with qa3:
+        if st.button("📊 BI Analytics", key="dash_qa_bi", use_container_width=True):
+            nav("bi_dashboard")
+    with qa4:
+        if st.button("🔔 Manage Alerts", key="dash_qa_al", use_container_width=True):
+            nav("settings")
+
+    # ── Premium teaser if free user ──
+    if not is_premium():
+        st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border:1px solid rgba(245,158,11,0.3);
+                    border-radius:14px;padding:24px 28px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+                <div>
+                    <div style="font-size:11px;font-weight:700;color:{GOLD};letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">👑 UPGRADE TO PREMIUM</div>
+                    <div style="font-size:18px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Unlock 11 Premium Composite Categories + Real-Time Telegram Alerts</div>
+                    <div style="font-size:13px;color:#6b7fa0;">Squeeze Setup · Smart Money Signal · Volatility Squeeze · Triple Lock · BI Analytics · Advanced Screener</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if gold_btn("Start Premium — $29/month →", "dash_upgrade"): nav("pricing")
+
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -2201,76 +2263,113 @@ def page_dashboard():
 def page_discover():
     render_topbar("discover")
     st.markdown(f"""<style>
-    /* Discover sidebar buttons */
-    [data-testid="stSidebar"] + div .stButton>button,
-    .disc-sidebar .stButton>button{{
-        text-align:left!important;justify-content:flex-start!important;
-        font-size:12px!important;padding:7px 12px!important;min-height:34px!important;
-    }}
+    .disc-tabs{{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px;padding:0;}}
+    .disc-section-label{{font-size:10px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin:14px 0 8px;}}
+    .disc-cat-header{{background:linear-gradient(135deg,#0d1525 0%,#080b14 100%);
+        border:1px solid {BORDER};border-radius:14px;padding:24px 28px;margin-bottom:18px;
+        box-shadow:0 2px 12px rgba(0,0,0,0.2);}}
+    .disc-cat-title{{font-size:28px;font-weight:900;color:#f1f5f9;letter-spacing:-0.8px;margin-bottom:6px;}}
+    .disc-cat-desc{{font-size:14px;color:#6b7fa0;line-height:1.5;}}
+    .disc-cat-meta{{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap;}}
+    .disc-meta-pill{{font-size:11px;font-weight:600;padding:5px 12px;border-radius:20px;
+        background:rgba(37,99,235,0.08);color:#93b4fd;border:1px solid rgba(37,99,235,0.2);}}
     </style>""", unsafe_allow_html=True)
 
-    sel = st.session_state.get("discover_cat","🔥💥 Squeeze + Buzz")
+    sel = st.session_state.get("discover_cat","💡 Hidden Movers")
 
-    # ── Category header strip (full width, above everything) ──
+    # Category metadata
     is_comp = sel in COMPOSITE_CATS
-    tier_str=""
+    tier_str=""; tier_color = GREEN
     if is_comp:
         _,tier = COMPOSITE_CATS[sel]
-        tier_clr = GOLD if tier=="premium" else GREEN
+        tier_color = GOLD if tier=="premium" else GREEN
         tier_lbl = "PREMIUM ⭐" if tier=="premium" else "FREE"
-        tier_str = f'<span style="background:{"rgba(245,158,11,.12)" if tier=="premium" else "rgba(34,197,94,.1)"};color:{tier_clr};font-size:9px;font-weight:700;padding:3px 9px;border-radius:20px;border:1px solid {"rgba(245,158,11,.3)" if tier=="premium" else "rgba(34,197,94,.3)"};margin-left:10px;">{tier_lbl}</span>'
+        tier_str = f'<span class="disc-meta-pill" style="background:{"rgba(245,158,11,.1)" if tier=="premium" else "rgba(34,197,94,.1)"};color:{tier_color};border-color:{"rgba(245,158,11,.25)" if tier=="premium" else "rgba(34,197,94,.25)"};">{tier_lbl}</span>'
     desc_str = COMPOSITE_CATS[sel][0] if is_comp else f"Browse all {sel} stocks"
     is_locked = is_comp and COMPOSITE_CATS.get(sel,("",None))[1]=="premium" and not is_premium()
-    if is_locked and not is_authed():
-        # Guest trying to access premium - prompt login too
-        pass
 
+    # ── Big anchor header at top ──
     st.markdown(f"""
-    <div style="background:#080b14;border-bottom:1px solid {BORDER};padding:14px 24px;margin:-1px 0 0;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-            <div style="font-size:20px;font-weight:800;color:#e2e8f0;">{sel}</div>
+    <div class="disc-cat-header">
+        <div class="disc-cat-title">{sel}</div>
+        <div class="disc-cat-desc">{desc_str}</div>
+        <div class="disc-cat-meta">
             {tier_str}
+            <span class="disc-meta-pill">📊 Real-time Yahoo Finance data</span>
+            <span class="disc-meta-pill">🔄 Updates every market session</span>
         </div>
-        <div style="font-size:12px;color:#374f6e;font-style:italic;">{desc_str}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── 2-column: sidebar | results ──
-    fc, mc = st.columns([1,4], gap="small")
-    with fc:
-        st.markdown('<div style="padding:12px 0 0;">',unsafe_allow_html=True)
+    # ── Category selector grid (horizontal, all visible) ──
+    st.markdown('<div class="disc-section-label">⭐ Composite Categories — StockWins Exclusive</div>', unsafe_allow_html=True)
 
-        # Quick category chips at top
-        st.markdown('<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1.5px;text-transform:uppercase;padding:0 0 5px;">Composite Picks</div>',unsafe_allow_html=True)
-        for cat,(desc,tier) in COMPOSITE_CATS.items():
-            is_l = tier=="premium" and not is_premium()
-            safe = cat.replace(" ","_").replace("+","p").replace("→","r").replace("🌡️","T").replace("📉","D")[:28]
-            is_active = cat==sel
-            btn_style = "primary" if is_active else "secondary"
-            lbl = cat+(" ⭐" if is_l else "")
-            if st.button(lbl, key=f"disc_c_{safe}", use_container_width=True, type=btn_style):
-                if is_l: nav("pricing")
-                else: st.session_state.discover_cat=cat; st.rerun()
+    # Render composite cats in a grid (4 per row)
+    comp_items = list(COMPOSITE_CATS.items())
+    for row_start in range(0, len(comp_items), 4):
+        cols = st.columns(4, gap="small")
+        for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+4]):
+            with cols[col_idx]:
+                is_l = tier=="premium" and not is_premium()
+                safe = cat.replace(" ","_").replace("+","p").replace("→","r").replace("🌡️","T").replace("📉","D").replace("📈","U").replace("⚡","E")[:30]
+                is_active = cat==sel
+                lbl = cat+(" 🔒" if is_l else "")
+                btn_type = "primary" if is_active else "secondary"
+                if st.button(lbl, key=f"disc_c_{safe}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
+                    if is_l: nav("pricing")
+                    else: st.session_state.discover_cat=cat; st.rerun()
 
-        st.markdown('<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1.5px;text-transform:uppercase;padding:10px 0 5px;">Standard</div>',unsafe_allow_html=True)
-        for cat in CATEGORIES:
-            is_active = cat==sel
-            if st.button(cat, key=f"disc_s_{cat[:20].replace(' ','_')}", use_container_width=True,
-                         type="primary" if is_active else "secondary"):
-                st.session_state.discover_cat=cat; st.rerun()
+    # Standard categories
+    st.markdown('<div class="disc-section-label">🌐 Standard Categories</div>', unsafe_allow_html=True)
+    std_items = list(CATEGORIES.keys())
+    for row_start in range(0, len(std_items), 4):
+        cols = st.columns(4, gap="small")
+        for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
+            with cols[col_idx]:
+                is_active = cat==sel
+                btn_type = "primary" if is_active else "secondary"
+                if st.button(cat, key=f"disc_s_{cat[:24].replace(' ','_')}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
+                    st.session_state.discover_cat=cat; st.rerun()
 
-        if not is_premium():
-            st.markdown("<br>",unsafe_allow_html=True)
-            if gold_btn("Unlock All →","disc_up"): nav("pricing")
-        st.markdown('</div>',unsafe_allow_html=True)
+    # Spacing
+    st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
 
-    with mc:
-        st.markdown('<div style="padding:12px 0 0;">',unsafe_allow_html=True)
-        if is_locked:
-            render_lock(sel)
-        else:
-            render_cat(sel, show_why=is_comp)
-        st.markdown('</div>',unsafe_allow_html=True)
+    # ── Results area immediately below ──
+    if is_locked:
+        render_lock(sel)
+    else:
+        # Big loading indicator
+        loading_placeholder = st.empty()
+        loading_placeholder.markdown(f"""
+        <div style="background:#0d1525;border:1px solid rgba(37,99,235,0.3);border-radius:12px;
+                    padding:18px 24px;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <div class="loader-spin" style="width:18px;height:18px;border:2px solid rgba(37,99,235,0.2);border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                    <div>
+                        <div style="font-size:14px;font-weight:700;color:#e2e8f0;">⚡ Analyzing {sel}</div>
+                        <div style="font-size:11px;color:#374f6e;">Scanning stocks against composite criteria…</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style>@keyframes spin{{to{{transform:rotate(360deg);}}}}</style>
+        """, unsafe_allow_html=True)
+
+        render_cat(sel, show_why=is_comp)
+        loading_placeholder.empty()
+
+    # Upgrade nudge for free users at bottom
+    if not is_premium():
+        st.markdown('<div style="height:24px;"></div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border:1px solid rgba(245,158,11,0.25);
+                    border-radius:12px;padding:18px 24px;text-align:center;">
+            <div style="font-size:14px;font-weight:700;color:{GOLD};margin-bottom:4px;">👑 Unlock All 11 Premium Composite Categories</div>
+            <div style="font-size:12px;color:#374f6e;">Squeeze Setup, Smart Money Signal, Volatility Squeeze, Triple Lock & more.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if gold_btn("Upgrade to Premium →", "disc_upgrade_bottom"): nav("pricing")
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: STOCK DETAIL
@@ -2646,38 +2745,6 @@ def page_bi():
             mc_=st.columns(len(signal_types))
             for col,sig in zip(mc_,signal_types):
                 col.markdown(f'<div style="text-align:center;font-size:11px;color:#374f6e;padding:6px 4px;background:#080b14;border-radius:6px;"><div style="font-weight:700;color:#94a3b8;margin-bottom:2px;">{sig}</div>{descs[sig]}</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
-    render_topbar("watchlist")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
-    st.markdown('<div class="sec-hd">⭐ My Watchlist</div>',unsafe_allow_html=True)
-    wl=st.session_state.get("watchlist",[])
-    if not wl:
-        st.markdown('<div class="card" style="text-align:center;padding:40px;"><div style="font-size:28px;margin-bottom:10px;">📋</div><div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">Watchlist is empty</div><div style="font-size:13px;color:#374f6e;">Browse categories and click ➕ Watchlist on any stock.</div></div>',unsafe_allow_html=True)
-        wl_c1, wl_c2 = st.columns(2, gap="small")
-        with wl_c1:
-            if st.button("Browse Stocks →",key="wl_browse",type="primary",use_container_width=True): nav("discover")
-        with wl_c2:
-            if st.button("View Dashboard",key="wl_browse2",use_container_width=True): nav("dashboard")
-        st.markdown('</div>',unsafe_allow_html=True); return
-
-    st.caption(f"{len(wl)} stocks")
-    rows=[]; prog=st.progress(0,"Loading watchlist…")
-    for i,t in enumerate(wl):
-        prog.progress((i+1)/len(wl))
-        q=get_quote(t); df=yf_ohlcv(t,30); info=yf_fund(t); sent=st_sent(t)
-        sc,bd,op,risk,_=compute_scores(df,info,sent); rec_lbl,rec_clr,_=get_recommendation(sc,bd,info)
-        if q: rows.append({"Ticker":t,"Name":q.get("name","")[:22],"Price":f"${q['price']:,.2f}","Change":f"{q['pct']:+.2f}%","Signal":rec_lbl,"Score":sc,"Risk":risk,"Short Float":f"{(info.get('sf',0) or 0)*100:.1f}%","Sector":info.get("sector","N/A")})
-    prog.empty()
-    if rows:
-        if HAS_PLOTLY and is_premium():
-            st.markdown('<div class="sec-hd" style="font-size:13px;margin-bottom:10px;">Score Distribution</div>',unsafe_allow_html=True)
-            scores=[r["Score"] for r in rows]; tickers=[r["Ticker"] for r in rows]
-            colors=[GREEN if s>=65 else GOLD if s>=40 else RED for s in scores]
-            fig=go.Figure(go.Bar(x=tickers,y=scores,marker_color=colors,text=scores,textposition="outside"))
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=0,b=0),height=180,yaxis=dict(range=[0,110],showgrid=False,color="#4a5e7a"),xaxis=dict(showgrid=False,color="#60a5fa",tickfont=dict(family="JetBrains Mono",size=11)))
-            st.plotly_chart(fig,use_container_width=True)
-        st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
-    if st.button("🗑️ Clear Watchlist",key="wl_clear"): st.session_state.watchlist=[]; st.rerun()
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -3178,8 +3245,65 @@ def page_settings():
         if st.button("🚪 Logout",key="set_logout"): logout()
 
     with tabs[2]:
+        # ── Section 1: Proprietary Signals (default ON for premium) ──
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#04200d,#0d1525);border:1px solid rgba(34,197,94,0.25);
+                    border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#4ade80;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;">✨ AUTOMATIC PROPRIETARY SIGNALS</div>
+                    <div style="font-size:13px;color:#e2e8f0;font-weight:600;margin-bottom:4px;">Default ON for Premium subscribers</div>
+                    <div style="font-size:12px;color:#6b7fa0;line-height:1.7;">When a stock enters one of our composite categories (Squeeze Setup, Hidden Mover, Sentiment Flip, etc.), you automatically get a notification. No configuration needed.</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if is_premium():
+            db_user_a = st.session_state.users_db.get(st.session_state.user["email"],{}) if is_authed() else {}
+            prop_signals_enabled = db_user_a.get("prop_signals_enabled", True)  # Default ON
+            current_cat_alerts = db_user_a.get("category_alerts", list(COMPOSITE_CATS.keys()))
+
+            colp1, colp2 = st.columns([3,1], gap="small")
+            with colp1:
+                st.markdown(f"""<div style="background:#0d1525;border:1px solid {BORDER};border-radius:10px;padding:14px;">
+                    <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📡 Receiving alerts for {len(current_cat_alerts)} of {len(COMPOSITE_CATS)} composite categories</div>
+                    <div style="font-size:11px;color:#374f6e;line-height:1.7;">{', '.join([c.split(' ')[1] if ' ' in c else c for c in current_cat_alerts[:6]])}{'...' if len(current_cat_alerts)>6 else ''}</div>
+                </div>""", unsafe_allow_html=True)
+            with colp2:
+                new_state = st.toggle("Auto-Signals", value=prop_signals_enabled, key="prop_toggle",
+                                       help="Toggle automatic proprietary signal notifications")
+                if new_state != prop_signals_enabled:
+                    st.session_state.users_db[st.session_state.user["email"]]["prop_signals_enabled"] = new_state
+                    save_user_to_file(st.session_state.user["email"], st.session_state.users_db[st.session_state.user["email"]])
+                    st.toast(f"{'✅ Proprietary signals enabled' if new_state else '⏸ Proprietary signals paused'}", icon="🔔")
+
+            with st.expander("⚙️ Customize which composite categories alert me", expanded=False):
+                st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:8px;">Uncheck any category you don\'t want to be notified about.</div>', unsafe_allow_html=True)
+                selected_cats = []
+                cat_cols = st.columns(2, gap="small")
+                for idx, cat in enumerate(list(COMPOSITE_CATS.keys())):
+                    with cat_cols[idx % 2]:
+                        if st.checkbox(cat, value=cat in current_cat_alerts, key=f"propcat_{idx}"):
+                            selected_cats.append(cat)
+                if st.button("💾 Save Category Preferences", key="save_prop_cats", type="primary", use_container_width=True):
+                    st.session_state.users_db[st.session_state.user["email"]]["category_alerts"] = selected_cats
+                    save_user_to_file(st.session_state.user["email"], st.session_state.users_db[st.session_state.user["email"]])
+                    st.success(f"✅ You'll receive alerts for {len(selected_cats)} categories")
+                    st.rerun()
+        else:
+            st.markdown(f"""<div class="card card-gold">
+                <div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Required</div>
+                <div style="font-size:12px;color:#374f6e;line-height:1.7;">Automatic proprietary signal alerts (Squeeze Setup, Hidden Mover, Sentiment Flip, Smart Money Signal, etc.) are part of the Premium plan.</div>
+            </div>""", unsafe_allow_html=True)
+            if gold_btn("Upgrade to Receive Auto-Signals","prop_upgrade"): nav("pricing")
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+
+        # ── Section 2: Custom Alerts (user-configured for specific tickers) ──
         alerts=st.session_state.get("alerts",[])
-        st.markdown(f'<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">🔔 Price & Signal Alerts</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">🎯 Custom Alerts</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:14px;">Set up alerts for specific tickers and conditions (price, volume, RSI, etc.). These run alongside the automatic proprietary signals above.</div>',unsafe_allow_html=True)
 
         with st.form("af",clear_on_submit=True):
             fc1,fc2,fc3=st.columns(3)
@@ -3192,7 +3316,7 @@ def page_settings():
             with ch_col1: ch_email=st.checkbox("📧 Email",value=True)
             with ch_col2: ch_tg=st.checkbox("✈️ Telegram",value=False,disabled=not is_premium(),help="Premium only")
             with ch_col3: ch_push=st.checkbox("🔔 Browser Push",value=False,disabled=not is_premium(),help="Premium only")
-            if st.form_submit_button("➕ Add Alert",type="primary",use_container_width=True) and at:
+            if st.form_submit_button("➕ Add Custom Alert",type="primary",use_container_width=True) and at:
                 type_map={"Price Above":"price_above","Price Below":"price_below","% Change Up":"pct_change",
                           "Volume Spike (×avg)":"volume_spike","RSI Oversold (<30)":"rsi_oversold",
                           "RSI Overbought (>70)":"rsi_overbought","Sentiment Bullish %":"sentiment_flip"}
@@ -3209,7 +3333,7 @@ def page_settings():
                 st.success(f"✅ Alert active: {at} will notify you via {', '.join(channels or ['email'])}")
 
         if alerts:
-            st.caption(f"{len(alerts)} active alert{'s' if len(alerts)!=1 else ''}")
+            st.caption(f"{len(alerts)} active custom alert{'s' if len(alerts)!=1 else ''}")
             for i,a in enumerate(alerts):
                 ac1,ac2,ac3=st.columns([5,1,1])
                 with ac1:
@@ -3229,11 +3353,12 @@ def page_settings():
                         if is_authed(): save_alerts_to_file(st.session_state.user["email"], alerts)
                         st.rerun()
         else:
-            st.caption("No alerts yet.")
+            st.caption("No custom alerts yet. Use the form above to add one.")
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
 
         # Telegram setup for premium
         if is_premium():
-            st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
             st.markdown('<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">✈️ Telegram Setup</div>',unsafe_allow_html=True)
             try: tg_token_set = bool(st.secrets.get("TELEGRAM_BOT_TOKEN",""))
             except: tg_token_set = False
@@ -3243,37 +3368,16 @@ def page_settings():
                 st.markdown(f'<div class="card" style="font-size:12px;color:#374f6e;">Add <code>TELEGRAM_BOT_TOKEN</code> to Streamlit Secrets to enable Telegram alerts.</div>',unsafe_allow_html=True)
             else:
                 if current_tg:
-                    st.markdown(f'<div style="font-size:12px;color:#4ade80;margin-bottom:8px;">✅ Telegram connected (ID: {current_tg})</div>',unsafe_allow_html=True)
+                    st.markdown(f'<div style="font-size:12px;color:#4ade80;margin-bottom:8px;">✅ Telegram connected (Chat ID: {current_tg})</div>',unsafe_allow_html=True)
                 else:
-                    st.markdown(f'<div style="font-size:12px;color:#374f6e;line-height:1.8;margin-bottom:8px;">1. Open Telegram → search <strong style="color:#e2e8f0;">@StockWinsBot</strong><br>2. Send /start to get your Chat ID<br>3. Paste it below</div>',unsafe_allow_html=True)
+                    st.markdown(f'<div style="font-size:12px;color:#374f6e;line-height:1.8;margin-bottom:8px;">1. Open Telegram → search <strong style="color:#e2e8f0;">@StockWinsAlertsBot</strong><br>2. Send /start to get your Chat ID<br>3. Paste it below</div>',unsafe_allow_html=True)
                 with st.form("tg_form"):
                     tg_id=st.text_input("Your Telegram Chat ID",value=current_tg,placeholder="1234567890",label_visibility="visible")
-                    if st.form_submit_button("Save Telegram",type="primary"):
+                    if st.form_submit_button("Save Telegram Connection",type="primary"):
                         uemail=st.session_state.user["email"]
                         st.session_state.users_db[uemail]["telegram_chat_id"]=tg_id.strip()
                         save_user_to_file(uemail, st.session_state.users_db[uemail])
                         st.success("✅ Telegram connected!")
-        # Category Alerts selection (premium)
-        if is_premium():
-            st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
-            st.markdown('<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📊 Composite Category Alerts</div>',unsafe_allow_html=True)
-            st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">Choose which composite categories send you Telegram alerts when a stock qualifies. All selected = all 17 categories.</div>',unsafe_allow_html=True)
-            all_cats = list(COMPOSITE_CATS.keys())
-            db_user3 = st.session_state.users_db.get(st.session_state.user["email"],{}) if is_authed() else {}
-            current_cat_alerts = db_user3.get("category_alerts", [])
-            select_all = st.checkbox("Select all categories", value=len(current_cat_alerts)==0 or len(current_cat_alerts)==len(all_cats), key="cat_alert_all")
-            if not select_all:
-                selected_cats = st.multiselect("Choose categories", all_cats,
-                    default=current_cat_alerts if current_cat_alerts else all_cats[:3],
-                    key="cat_alert_sel")
-            else:
-                selected_cats = all_cats
-            if st.button("Save Category Preferences", key="save_cat_alerts", type="primary"):
-                uemail2 = st.session_state.user["email"]
-                chosen = [] if select_all else selected_cats
-                st.session_state.users_db[uemail2]["category_alerts"] = chosen
-                save_user_to_file(uemail2, st.session_state.users_db[uemail2])
-                st.success("✅ Category alert preferences saved!")
 
         if not is_premium():
             st.markdown(f'<div class="card card-gold" style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:{GOLD};margin-bottom:4px;">👑 Premium Alert Channels</div><div style="font-size:12px;color:#374f6e;">Upgrade to Premium for instant Telegram alerts and real-time browser push notifications on composite category signals.</div></div>',unsafe_allow_html=True)
