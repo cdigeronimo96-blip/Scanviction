@@ -5,8 +5,35 @@
 
 import streamlit as st
 import requests, pandas as pd, ta, yfinance as yf
-import hashlib, time, random
+import hashlib, time, random, math, sys, os
 from datetime import datetime, timedelta
+
+# Signal Performance Engine
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from signal_engine import (
+        record_signal_event, update_signal_outcomes, get_ticker_signal_history,
+        get_recent_signal_events, get_category_performance_stats,
+        calculate_pnl, estimate_options_pnl, compute_confidence,
+        detect_market_regime, seed_demo_signal_history
+    )
+    HAS_SIGNAL_ENGINE = True
+except Exception as _se:
+    HAS_SIGNAL_ENGINE = False
+    def record_signal_event(*a, **kw): return {}
+    def get_ticker_signal_history(t, **kw): return []
+    def get_recent_signal_events(**kw): return []
+    def get_category_performance_stats(): return {}
+    def calculate_pnl(inv, tp, cp, direction="long"):
+        if tp <= 0: return {}
+        pct = ((cp - tp) / tp) * 100 * (1 if direction=="long" else -1)
+        pnl = inv * (pct/100)
+        return {"pnl_usd": round(pnl,2), "pnl_pct": round(pct,2), "current_value": round(inv+pnl,2),
+                "shares": round(inv/tp,4), "price_change": round(cp-tp,2), "pct_change": round((cp-tp)/tp*100,2)}
+    def estimate_options_pnl(*a, **kw): return {}
+    def compute_confidence(*a, **kw): return {"confidence":"N/A","risk":"Unknown","factors":[],"score":50}
+    def detect_market_regime(*a, **kw): return {"regime":"mixed","label":"⚖️ Mixed","description":"","best_strategies":[]}
+    def seed_demo_signal_history(): pass
 
 try:
     import io as _io
@@ -298,8 +325,28 @@ section.main>div{{padding-top:0 !important;}}
     background:#080c18 !important;
     border-right:1px solid {BORDER} !important;
     width:225px !important;min-width:225px !important;max-width:225px !important;
+    position:sticky !important;top:0 !important;
+    height:100vh !important;
 }}
-[data-testid="stSidebar"]>div{{padding:0 !important;}}
+[data-testid="stSidebar"]>div{{
+    padding:0 !important;
+    height:100vh !important;
+    overflow-y:auto !important;
+}}
+/* Ensure hamburger / collapse control visible always */
+[data-testid="collapsedControl"]{{
+    background:#0d1525 !important;
+    border:1px solid {BORDER} !important;
+    border-radius:6px !important;
+    color:#93b4fd !important;
+    z-index:10000 !important;
+    visibility:visible !important;
+    display:block !important;
+}}
+[data-testid="stSidebarCollapseButton"]{{
+    visibility:visible !important;
+    color:#93b4fd !important;
+}}
 
 /* ── Base Button ── */
 .stButton>button{{
@@ -579,6 +626,32 @@ button[role="tab"][aria-selected="true"]{{
 }}
 /* ── Success/error/info messages ── */
 [data-testid="stAlert"]{{border-radius:10px!important;font-size:13px!important;}}
+/* ── Sticky page back button ── */
+.sw-back-btn-wrap{{
+    position:sticky !important;
+    top:8px !important;
+    z-index:50 !important;
+    margin-bottom:12px !important;
+    background:rgba(7,9,15,0.92) !important;
+    backdrop-filter:blur(8px) !important;
+    -webkit-backdrop-filter:blur(8px) !important;
+    padding:6px 0 !important;
+}}
+.sw-back-btn-wrap .stButton>button{{
+    background:rgba(255,255,255,0.04) !important;
+    border:1px solid rgba(37,99,235,0.3) !important;
+    color:#93b4fd !important;
+    font-size:12px !important;
+    min-height:34px !important;
+    width:auto !important;
+    padding:0 16px !important;
+    max-width:120px !important;
+}}
+.sw-back-btn-wrap .stButton>button:hover{{
+    background:rgba(37,99,235,0.15) !important;
+    border-color:{BLUE} !important;
+}}
+
 /* ── Mobile & Tablet Responsive ── */
 @media (max-width:900px) {{
     /* Hero text */
@@ -590,8 +663,12 @@ button[role="tab"][aria-selected="true"]{{
     .pg{{padding:12px 14px 28px !important;}}
     /* Footer */
     .sw-footer-wrap{{padding:24px 20px 20px !important;}}
-    /* Hide sidebar on mobile */
-    [data-testid="stSidebar"]{{display:none !important;}}
+    /* Sidebar collapsible on mobile - never permanently hide */
+    [data-testid="stSidebar"]{{
+        position:fixed!important;
+        height:100vh!important;
+        z-index:999!important;
+    }}
     /* Stack hero columns */
     [data-testid="stHorizontalBlock"]{{flex-wrap:wrap !important;}}
     [data-testid="stHorizontalBlock"] [data-testid="column"]{{min-width:100% !important;flex:none !important;}}
@@ -714,7 +791,9 @@ def nav(p):
     cur = st.session_state.get("page")
     if cur and cur != p:
         hist = st.session_state.get("_page_hist", [])
-        hist.append(cur)
+        # Don't add duplicates
+        if not hist or hist[-1] != cur:
+            hist.append(cur)
         if len(hist) > 20: hist = hist[-20:]
         st.session_state["_page_hist"] = hist
     st.session_state.prev_page = cur
@@ -730,6 +809,15 @@ def go_back():
         st.rerun()
     else:
         nav("discover" if is_authed() else "landing")
+
+def back_button(key="page_back"):
+    """Render a sticky back button at the top of any page."""
+    st.markdown('<div class="sw-back-btn-wrap">', unsafe_allow_html=True)
+    bc1, _ = st.columns([1, 6])
+    with bc1:
+        if st.button("← Back", key=key, use_container_width=True):
+            go_back()
+    st.markdown('</div>', unsafe_allow_html=True)
 # ─────────────────────────────────────────────────────────────
 # EXCEL EXPORT
 # ─────────────────────────────────────────────────────────────
@@ -1291,6 +1379,46 @@ def render_cat(cat,limit=10,show_why=False):
         return
     for s in stocks: render_sr(s,cat.replace(" ","_").replace("+","p").replace("→","r"),show_why=is_comp)
 
+    # ── Auto-record signal events for composite categories ──
+    if is_comp and HAS_SIGNAL_ENGINE:
+        try:
+            # Get current market regime for context
+            try:
+                secs_ctx = get_sectors() or {}
+                movers_ctx = get_bi_movers() or []
+                avg_pct_ctx = sum(m.get("pct",0) for m in movers_ctx)/max(1,len(movers_ctx))
+                squeeze_ct = sum(1 for s in stocks if (s.get("info",{}).get("sf",0) or 0)*100 >= 15)
+                regime_info = detect_market_regime(secs_ctx, avg_pct_ctx, squeeze_ct)
+                current_regime = regime_info.get("regime", "mixed")
+            except Exception:
+                current_regime = "mixed"
+
+            # Record each stock as a signal event
+            for s in stocks[:5]:  # top 5 only to limit storage
+                try:
+                    ticker_s = s.get("t","")
+                    score_s = s.get("sc",0)
+                    if not ticker_s or score_s < 50: continue  # Only record meaningful signals
+                    q_s = s.get("q") or {}
+                    price_s = q_s.get("price",0)
+                    if price_s <= 0: continue
+                    bd_s = s.get("bd",{})
+                    info_s = s.get("info",{})
+                    sent_s = s.get("sent",{})
+                    df_s = s.get("df")
+                    rec_s = s.get("op","WATCH")
+                    conf_data = compute_confidence(bd_s, info_s, sent_s, df_s) if df_s is not None else {}
+                    record_signal_event(
+                        ticker=ticker_s, category=cat, score=score_s,
+                        score_components=bd_s, price=price_s,
+                        info=info_s, sent=sent_s, recommendation=rec_s,
+                        confidence=conf_data, regime=current_regime
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
 def render_lock(name=""):
     st.markdown(f"""<div style="background:linear-gradient(135deg,#120d00,#0d1525);
         border:1px solid rgba(245,158,11,0.3);border-radius:14px;padding:40px 32px;text-align:center;">
@@ -1411,7 +1539,7 @@ def render_sidebar():
                 if st.button(cat,key=f"sb_s_{cat[:20].replace(' ','_')}",use_container_width=True):
                     st.session_state.discover_cat=cat; nav("discover")
             st.markdown('<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1.5px;text-transform:uppercase;padding:12px 18px 5px;">Tools</div>',unsafe_allow_html=True)
-            for icon,label,pg in [("📊","Dashboard","dashboard"),("⭐","Watchlist","watchlist"),("🔍","Screener","screener"),("📈","BI Analytics","bi_dashboard"),("💰","Pricing","pricing"),("🔔","Alerts & Settings","settings"),("💬","Contact & Help","contact")]:
+            for icon,label,pg in [("📊","Dashboard","dashboard"),("⭐","Watchlist","watchlist"),("🔍","Screener","screener"),("📈","BI Analytics","bi_dashboard"),("📉","Signal Track Record","signal_track"),("💰","Pricing","pricing"),("🔔","Alerts & Settings","settings"),("💬","Contact & Help","contact")]:
                 if st.button(f"{icon} {label}",key=f"sb_{pg}",use_container_width=True): nav(pg)
             if is_admin():
                 st.markdown('<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1.5px;text-transform:uppercase;padding:12px 18px 5px;">Admin</div>',unsafe_allow_html=True)
@@ -1897,6 +2025,7 @@ def page_landing():
 # ─────────────────────────────────────────────────────────────
 def page_features():
     render_topbar()
+    back_button("ft_back")
     st.markdown('<div class="pg">',unsafe_allow_html=True)
     # CTA strip at top
     if not is_premium() and is_authed():
@@ -1986,7 +2115,9 @@ def page_login():
                 if not email or not pw: st.error("Please enter your email and password.")
                 elif login(email,pw):
                     st.session_state["_login_welcome"] = st.session_state.user.get("name","")
-                    nav("dashboard")
+                    # Honor intended destination
+                    intended = st.session_state.pop("_intended_page", None)
+                    nav(intended if intended else "dashboard")
                 else: st.error("Invalid email or password.")
 
         # Show hints based on whether secrets are configured
@@ -2040,25 +2171,133 @@ def page_signup():
                     else: st.error(msg)
         if st.button("Already have an account? Sign In",key="s2l",use_container_width=True): nav("login")
 
+def _send_sms(phone, message):
+    """Send SMS via Twilio. Returns (True, None) or (False, error_msg)."""
+    try:
+        sid   = st.secrets.get("TWILIO_ACCOUNT_SID","")
+        token = st.secrets.get("TWILIO_AUTH_TOKEN","")
+        from_ = st.secrets.get("TWILIO_PHONE_NUMBER","")
+        if not all([sid, token, from_]):
+            return False, "DEMO_SMS"
+        import requests as _r
+        resp = _r.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+            auth=(sid, token),
+            data={"From": from_, "To": phone, "Body": message},
+            timeout=10
+        )
+        if resp.status_code in (200, 201):
+            return True, None
+        return False, f"Twilio error {resp.status_code}"
+    except Exception as e:
+        return False, str(e)
+
+def _send_password_reset(email, reset_token):
+    """Send password reset email. Returns (True,None) or (False, info)."""
+    try:
+        resend_key = st.secrets.get("RESEND_API_KEY","")
+        app_url    = _get_app_url()
+        reset_url  = f"{app_url}/?reset_token={reset_token}&email={email}"
+        if resend_key:
+            import requests as _r
+            html = f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;">
+                <h2 style="color:#2563eb;">Stock<span style="color:#f59e0b;">W</span>ins</h2>
+                <h3 style="color:#e2e8f0;">Reset your password</h3>
+                <p style="color:#6b7fa0;">Click below to reset. Expires in 1 hour.</p>
+                <a href="{reset_url}" style="display:inline-block;padding:12px 28px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Reset Password →</a>
+                <p style="color:#374f6e;font-size:11px;margin-top:16px;">Or copy: {reset_url}</p>
+            </div>"""
+            resp = _r.post("https://api.resend.com/emails",
+                headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
+                json={"from":"StockWins <noreply@stockwins.com>","to":[email],
+                      "subject":"Reset your StockWins password","html":html},
+                timeout=10)
+            if resp.status_code in (200,201): return True, None
+    except Exception: pass
+    return False, f"DEMO_RESET:{reset_token}"
+
+def _send_verification_email(email, code):
+    """Send 6-digit email verification code. Falls back to demo mode."""
+    try:
+        resend_key = st.secrets.get("RESEND_API_KEY","")
+        if resend_key:
+            import requests as _r
+            resp = _r.post("https://api.resend.com/emails",
+                headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
+                json={"from":"StockWins <noreply@stockwins.com>","to":[email],
+                      "subject":"Your StockWins verification code",
+                      "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">
+                        <h2>Stock<span style="color:#f59e0b;">W</span>ins</h2>
+                        <h3>Verify your email</h3>
+                        <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
+                        <p style="color:#6b7fa0;margin-top:20px;">Expires in 10 minutes.</p>
+                      </div>"""},
+                timeout=10)
+            if resp.status_code in (200,201): return True,None
+            return False, f"Email error: {resp.text}"
+    except Exception: pass
+    return False, f"DEMO_CODE:{code}"
+
 def page_forgot():
     render_topbar()
     _,cc,_=st.columns([1,2,1])
     with cc:
-        st.markdown('<div style="text-align:center;padding:28px 0 16px;"><div style="font-size:22px;font-weight:800;color:#e2e8f0;">Reset Password 🔑</div></div>',unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;padding:28px 0 16px;"><div style="font-size:24px;font-weight:800;color:#e2e8f0;">🔑 Reset Your Password</div><div style="font-size:13px;color:#374f6e;margin-top:6px;">Enter your email and we&#39;ll send a secure reset link.</div></div>',unsafe_allow_html=True)
+        # Check if user came via reset link in URL
+        try:
+            params = st.query_params
+            reset_token = params.get("reset_token","")
+            reset_email = params.get("email","")
+        except Exception:
+            reset_token = ""; reset_email = ""
+
+        if reset_token and reset_email:
+            db = st.session_state.users_db
+            stored = db.get(reset_email,{}).get("reset_token","")
+            expiry  = db.get(reset_email,{}).get("reset_token_expiry",0)
+            if stored == reset_token and time.time() < expiry:
+                st.markdown('<div style="background:#0d1525;border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:14px;margin-bottom:12px;font-size:13px;font-weight:700;color:#4ade80;">✅ Reset link verified — set your new password</div>',unsafe_allow_html=True)
+                with st.form("rpf"):
+                    np_=st.text_input("New Password",type="password",placeholder="Min 8 characters")
+                    np2=st.text_input("Confirm New Password",type="password")
+                    if st.form_submit_button("🔐 Reset Password",type="primary",use_container_width=True):
+                        if not np_ or not np2: st.error("Fill in both fields.")
+                        elif np_!=np2: st.error("Passwords don't match.")
+                        elif len(np_)<8: st.error("Minimum 8 characters.")
+                        else:
+                            db[reset_email]["pw"]=hp(np_)
+                            db[reset_email].pop("reset_token",None)
+                            db[reset_email].pop("reset_token_expiry",None)
+                            _save_global_db(db); save_user_to_file(reset_email,db[reset_email])
+                            try: st.query_params.clear()
+                            except: pass
+                            st.success("✅ Password reset! Redirecting to login…")
+                            time.sleep(1.5); nav("login")
+                return
+            else:
+                st.error("⚠️ Reset link is invalid or expired. Request a new one.")
+
         with st.form("fpf"):
-            email=st.text_input("Email address",placeholder="you@example.com")
-            if st.form_submit_button("Send Reset Link →",type="primary",use_container_width=True):
-                if email in st.session_state.users_db:
-                    st.markdown("""
-                    <div style="background:#04200d;border:1px solid rgba(34,197,94,0.3);
-                                border-radius:10px;padding:16px;text-align:center;margin-top:8px;">
-                        <div style="font-size:24px;margin-bottom:8px;">📧</div>
-                        <div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:4px;">Reset Link Sent!</div>
-                        <div style="font-size:12px;color:#374f6e;">Check your inbox and follow the link to reset your password.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    time.sleep(2); nav("login")
-                else: st.error("No account found.")
+            email=st.text_input("Email Address",placeholder="you@example.com")
+            if st.form_submit_button("📧 Send Reset Link →",type="primary",use_container_width=True):
+                if not email or "@" not in email: st.error("Enter a valid email address.")
+                elif email in st.session_state.users_db:
+                    token="".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789",k=24))
+                    st.session_state.users_db[email]["reset_token"]=token
+                    st.session_state.users_db[email]["reset_token_expiry"]=time.time()+3600
+                    _save_global_db(st.session_state.users_db)
+                    save_user_to_file(email,st.session_state.users_db[email])
+                    ok,info=_send_password_reset(email,token)
+                    if ok:
+                        st.markdown('<div style="background:#04200d;border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:18px;text-align:center;margin-top:10px;"><div style="font-size:32px;margin-bottom:8px;">📧</div><div style="font-size:15px;font-weight:700;color:#4ade80;margin-bottom:4px;">Reset Email Sent!</div><div style="font-size:12px;color:#374f6e;">Check your inbox. The link expires in 1 hour.</div></div>',unsafe_allow_html=True)
+                    elif info and info.startswith("DEMO_RESET:"):
+                        demo_tok=info.split(":",1)[1]
+                        demo_url=f"{_get_app_url()}/?reset_token={demo_tok}&email={email}"
+                        st.markdown(f'<div style="background:#0d1525;border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:16px;margin-top:10px;"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:8px;">📧 Demo Mode — No email provider configured</div><div style="font-size:11px;color:#374f6e;margin-bottom:8px;">Add RESEND_API_KEY to Secrets for production email.</div><div style="font-size:11px;color:#4ade80;word-break:break-all;">{demo_url}</div></div>',unsafe_allow_html=True)
+                    else:
+                        st.error(f"Failed to send: {info}")
+                else:
+                    st.markdown(f'<div style="background:#04200d;border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:18px;text-align:center;margin-top:10px;"><div style="font-size:24px;margin-bottom:8px;">📧</div><div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:4px;">Check Your Email</div><div style="font-size:12px;color:#374f6e;">If {email} is registered, a reset link was sent.</div></div>',unsafe_allow_html=True)
         if st.button("← Back to Login",key="f2l",use_container_width=True): nav("login")
 
 # ─────────────────────────────────────────────────────────────
@@ -2088,6 +2327,77 @@ def page_dashboard():
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Featured Setup of the Day (Top signal from recent events) ──
+    if HAS_SIGNAL_ENGINE:
+        try:
+            recent_signals = get_recent_signal_events(limit=20)
+            # Pick best recent active signal
+            active_signals = [
+                s for s in recent_signals
+                if s.get("outcomes",{}).get("label","pending") in ("pending","success","mixed")
+                   and s.get("score_at_trigger",0) >= 65
+            ]
+            if active_signals:
+                # Sort by score, take top
+                featured = sorted(active_signals, key=lambda x: x.get("score_at_trigger",0), reverse=True)[0]
+                feat_ticker = featured.get("ticker","?")
+                feat_cat = featured.get("category","Signal")
+                feat_score = featured.get("score_at_trigger",0)
+                feat_outcomes = featured.get("outcomes",{})
+                feat_curr_pct = feat_outcomes.get("current_pct",0) or 0
+                feat_entry = featured.get("trigger_price",0)
+                feat_dt = datetime.fromisoformat(featured.get("triggered_at", datetime.now().isoformat()))
+                days_ago = (datetime.now() - feat_dt).days
+                hours_ago = max(1, int((datetime.now() - feat_dt).total_seconds() / 3600))
+                time_str = f"{days_ago}d ago" if days_ago >= 1 else f"{hours_ago}h ago"
+                conf = featured.get("confidence",{}).get("confidence","High")
+
+                gain_color = GREEN if feat_curr_pct >= 0 else RED
+                gain_emoji = "🚀" if feat_curr_pct >= 5 else "📈" if feat_curr_pct >= 0 else "📉"
+
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#0d1525 0%,#0a1228 50%,#0d1525 100%);
+                            border:1px solid rgba(168,85,247,0.4);
+                            border-radius:14px;padding:20px 24px;margin-bottom:18px;
+                            position:relative;overflow:hidden;">
+                    <div style="position:absolute;top:0;right:0;background:linear-gradient(135deg,#c084fc,#a78bfa);
+                                color:#0d1525;font-size:10px;font-weight:800;padding:4px 14px;
+                                border-radius:0 0 0 12px;letter-spacing:1.5px;">⭐ FEATURED SETUP</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-top:6px;">
+                        <div style="flex:1;min-width:240px;">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+                                <span style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:900;color:#c084fc;">{feat_ticker}</span>
+                                <span style="font-size:13px;font-weight:600;color:#e2e8f0;">{feat_cat}</span>
+                            </div>
+                            <div style="font-size:11px;color:#6b7fa0;line-height:1.7;">
+                                StockWins flagged <strong style="color:#e2e8f0;">{feat_ticker}</strong> {time_str}
+                                via <strong style="color:#c084fc;">{feat_cat}</strong> at <strong style="color:#e2e8f0;">${feat_entry:.2f}</strong>
+                                · Score <strong style="color:#e2e8f0;">{feat_score}/100</strong>
+                                · Confidence <strong style="color:#e2e8f0;">{conf}</strong>
+                            </div>
+                        </div>
+                        <div style="text-align:center;background:rgba(255,255,255,0.03);border-radius:10px;padding:12px 18px;">
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:900;color:{gain_color};">
+                                {gain_emoji} {'+' if feat_curr_pct >= 0 else ''}{feat_curr_pct:.1f}%
+                            </div>
+                            <div style="font-size:10px;color:#374f6e;margin-top:2px;">Since signal</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                feat_c1, feat_c2 = st.columns([1,4], gap="small")
+                with feat_c1:
+                    if st.button(f"📊 View {feat_ticker} Report", key="feat_view", type="primary", use_container_width=True):
+                        st.session_state.detail_ticker = feat_ticker
+                        st.session_state.detail_data = {}
+                        nav("stock_detail")
+                with feat_c2:
+                    pass
+                st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+        except Exception:
+            pass
 
     # ── Market Overview FIRST (this is the dashboard's purpose) ──
     st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">📊 MARKET OVERVIEW</div>',unsafe_allow_html=True)
@@ -2143,6 +2453,53 @@ def page_dashboard():
     </div>""", unsafe_allow_html=True)
 
     st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+
+    # ── Today's Market Brief (auto-generated insight) ──
+    try:
+        # Compute regime
+        if HAS_SIGNAL_ENGINE:
+            squeeze_count = sum(1 for m in movers if m.get("pct",0) > 5)
+            regime_info = detect_market_regime(secs, avg_pct, squeeze_count)
+            regime_label = regime_info.get("label","⚖️ Mixed")
+            regime_desc = regime_info.get("description","Mixed market conditions.")
+            best_strategies = regime_info.get("best_strategies",[])
+        else:
+            regime_label = "⚖️ Mixed"
+            regime_desc = "Standard market conditions."
+            best_strategies = []
+
+        # Find strongest and weakest sector
+        sec_sorted_brief = sorted(secs.items(), key=lambda x: x[1], reverse=True)
+        strong_sec = sec_sorted_brief[0] if sec_sorted_brief else ("—", 0)
+        weak_sec = sec_sorted_brief[-1] if sec_sorted_brief else ("—", 0)
+
+        # Top mover
+        top_gain = max(movers, key=lambda x: x["pct"]) if movers else {}
+        top_loss = min(movers, key=lambda x: x["pct"]) if movers else {}
+
+        strategies_str = " · ".join(best_strategies[:3]) if best_strategies else "Diversified composite signals"
+
+        brief_html = f"""
+        <div style="background:linear-gradient(135deg,#0a1228 0%,#0d1525 100%);
+                    border:1px solid rgba(37,99,235,0.25);border-radius:14px;
+                    padding:18px 22px;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                <span style="font-size:11px;font-weight:800;color:#93b4fd;letter-spacing:2px;">💡 TODAY'S MARKET BRIEF</span>
+                <span style="background:rgba(37,99,235,0.15);color:#93b4fd;font-size:10px;font-weight:700;padding:3px 10px;border-radius:12px;border:1px solid rgba(37,99,235,0.3);">{regime_label}</span>
+            </div>
+            <div style="font-size:13px;color:#e2e8f0;line-height:1.7;">
+                {regime_desc} <strong style="color:#4ade80;">{strong_sec[0]}</strong> leads sectors at <strong style="color:#4ade80;">+{strong_sec[1]:.2f}%</strong>,
+                while <strong style="color:#f87171;">{weak_sec[0]}</strong> lags at <strong style="color:#f87171;">{weak_sec[1]:+.2f}%</strong>.
+                Top mover: <strong style="color:#60a5fa;">{top_gain.get('t','—')}</strong> ({'+' if top_gain.get('pct',0)>=0 else ''}{top_gain.get('pct',0):.2f}%).
+            </div>
+            <div style="font-size:11px;color:#6b7fa0;margin-top:8px;line-height:1.6;">
+                <strong style="color:#94a3b8;">Best strategies in this regime:</strong> {strategies_str}
+            </div>
+        </div>
+        """
+        st.markdown(brief_html, unsafe_allow_html=True)
+    except Exception:
+        pass
 
     # ── Top Movers + Hot Stocks (2 columns) ──
     left,right=st.columns(2,gap="small")
@@ -2237,6 +2594,35 @@ def page_dashboard():
     with qa4:
         if st.button("🔔 Manage Alerts", key="dash_qa_al", use_container_width=True):
             nav("settings")
+
+    # ── Recently Viewed Stocks ──
+    rv = st.session_state.get("recently_viewed", [])
+    if is_authed():
+        # Load from user DB if session is empty
+        if not rv:
+            uemail = st.session_state.user.get("email","")
+            db_user = st.session_state.users_db.get(uemail, {})
+            rv = db_user.get("recently_viewed", [])
+            st.session_state.recently_viewed = rv
+    if rv:
+        st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">🕒 RECENTLY VIEWED</div>', unsafe_allow_html=True)
+        rv_cols = st.columns(min(len(rv), 6))
+        for i, t in enumerate(rv[:6]):
+            with rv_cols[i]:
+                q_rv = get_quote(t)
+                if q_rv:
+                    cc_rv = GREEN if q_rv["pct"]>=0 else RED
+                    ar_rv = "▲" if q_rv["pct"]>=0 else "▼"
+                    st.markdown(f"""<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 10px;text-align:center;">
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:#60a5fa;">{t}</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#e2e8f0;margin:2px 0;">${q_rv['price']:,.2f}</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:{cc_rv};">{ar_rv}{abs(q_rv['pct']):.2f}%</div>
+                    </div>""", unsafe_allow_html=True)
+                    if st.button("View", key=f"rv_view_{t}", use_container_width=True):
+                        st.session_state.detail_ticker = t
+                        st.session_state.detail_data = {}
+                        nav("stock_detail")
 
     # ── Premium teaser if free user ──
     if not is_premium():
@@ -2379,11 +2765,25 @@ def page_detail():
     ticker=st.session_state.get("detail_ticker")
     data=st.session_state.get("detail_data",{})
 
+    # ── Track in Recently Viewed (per-user) ──
+    if ticker and is_authed():
+        try:
+            rv = st.session_state.get("recently_viewed", [])
+            # Remove if already in list, then prepend
+            rv = [t for t in rv if t != ticker]
+            rv.insert(0, ticker)
+            rv = rv[:10]  # Keep last 10
+            st.session_state.recently_viewed = rv
+            # Persist to user DB
+            uemail = st.session_state.user["email"]
+            if uemail in st.session_state.users_db:
+                st.session_state.users_db[uemail]["recently_viewed"] = rv
+        except Exception:
+            pass
+
     # ── Back button ──
-    bc1, bc2, _ = st.columns([1,1,5])
-    with bc1:
-        if st.button("← Back", key="back_det", use_container_width=True):
-            go_back()
+    back_button("back_det")
+    _bcc, bc2, _ = st.columns([1,1,5])
     with bc2:
         ticker_for_wl = st.session_state.get("detail_ticker","")
         wl = st.session_state.get("watchlist",[])
@@ -2537,6 +2937,239 @@ def page_detail():
             <div style="font-size:11px;color:#2a3a52;margin-top:8px;">👥 {sent.get('wl',0):,} watching · {sent.get('msgs',0)} recent posts</div>
         </div>""",unsafe_allow_html=True)
 
+    # ── SIGNAL TRACK RECORD for this ticker ──
+    st.markdown('<div class="div-line"></div>', unsafe_allow_html=True)
+
+    # Get signal history for this ticker
+    if HAS_SIGNAL_ENGINE:
+        seed_demo_signal_history()  # ensure demo data exists
+    ticker_signals = get_ticker_signal_history(ticker, limit=10) if HAS_SIGNAL_ENGINE else []
+
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:16px;font-weight:800;color:#e2e8f0;">📈 StockWins Signal Track Record</div>
+        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);
+              font-size:10px;font-weight:700;padding:4px 12px;border-radius:20px;">Proprietary Data</span>
+    </div>
+    <div style="font-size:12px;color:#374f6e;margin-bottom:14px;">
+        Every time StockWins flagged <strong style="color:#60a5fa;">{ticker}</strong> via a composite signal,
+        we tracked what actually happened. Use this to evaluate signal quality.
+    </div>
+    """, unsafe_allow_html=True)
+
+    if ticker_signals:
+        for sig in ticker_signals[:3]:
+            outs = sig.get("outcomes", {})
+            curr_pct = outs.get("current_pct", 0) or 0
+            label = outs.get("label", "pending")
+            label_color = "#4ade80" if label == "success" else "#f87171" if label == "failure" else "#fbbf24"
+            label_bg = "rgba(34,197,94,0.08)" if label == "success" else "rgba(239,68,68,0.08)" if label == "failure" else "rgba(251,191,36,0.08)"
+            label_emoji = "✅" if label == "success" else "❌" if label == "failure" else "⏳"
+
+            trigger_dt = datetime.fromisoformat(sig.get("triggered_at", datetime.now().isoformat()))
+            days_ago = (datetime.now() - trigger_dt).days
+            trigger_price = sig.get("trigger_price", 0)
+            conf = sig.get("confidence", {})
+            lifecycle = sig.get("lifecycle_stage", "candidate")
+            lifecycle_colors = {"candidate":"#6b7fa0","confirmed":"#fbbf24","active":"#4ade80",
+                                 "extended":"#60a5fa","completed":"#4ade80","failed":"#f87171"}
+
+            st.markdown(f"""
+            <div style="background:{label_bg};border:1px solid {label_color}33;border-radius:12px;
+                        padding:16px 18px;margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+                    <div>
+                        <div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:4px;">
+                            {sig.get("category","Signal")}
+                        </div>
+                        <div style="font-size:11px;color:#374f6e;">
+                            Flagged {days_ago}d ago · Entry: <span style="font-family:'JetBrains Mono',monospace;color:#60a5fa;">${trigger_price:.2f}</span>
+                            · {conf.get("confidence","N/A")} confidence · {conf.get("risk","N/A")} risk
+                            <span style="background:{lifecycle_colors.get(lifecycle,"#6b7fa0")}22;
+                                   color:{lifecycle_colors.get(lifecycle,"#6b7fa0")};
+                                   border:1px solid {lifecycle_colors.get(lifecycle,"#6b7fa0")}44;
+                                   font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:8px;">
+                                {lifecycle.upper()}
+                            </span>
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:20px;font-weight:900;font-family:'JetBrains Mono',monospace;color:{label_color};">
+                            {'+' if curr_pct >= 0 else ''}{curr_pct:.1f}%
+                        </div>
+                        <div style="font-size:11px;color:#374f6e;">{label_emoji} {label.title()}</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">
+                    {f'<div style="text-align:center;background:rgba(255,255,255,0.03);border-radius:6px;padding:6px 14px;"><div style="font-size:11px;color:#374f6e;">+1 Day</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:{"#4ade80" if (outs.get("1d_pct") or 0)>=0 else "#f87171"};">{("+"+str(outs["1d_pct"])) if outs.get("1d_pct") is not None else "—"}%</div></div>' if outs.get("1d_pct") is not None else ""}
+                    {f'<div style="text-align:center;background:rgba(255,255,255,0.03);border-radius:6px;padding:6px 14px;"><div style="font-size:11px;color:#374f6e;">+3 Days</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:{"#4ade80" if (outs.get("3d_pct") or 0)>=0 else "#f87171"};">{("+"+str(outs["3d_pct"])) if outs.get("3d_pct") is not None else "—"}%</div></div>' if outs.get("3d_pct") is not None else ""}
+                    {f'<div style="text-align:center;background:rgba(255,255,255,0.03);border-radius:6px;padding:6px 14px;"><div style="font-size:11px;color:#374f6e;">+5 Days</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:{"#4ade80" if (outs.get("5d_pct") or 0)>=0 else "#f87171"};">{("+"+str(outs["5d_pct"])) if outs.get("5d_pct") is not None else "—"}%</div></div>' if outs.get("5d_pct") is not None else ""}
+                    {f'<div style="text-align:center;background:rgba(255,255,255,0.03);border-radius:6px;padding:6px 14px;"><div style="font-size:11px;color:#374f6e;">Max ↑</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:#4ade80;">+{outs["max_upside"]:.1f}%</div></div>' if outs.get("max_upside") is not None else ""}
+                    {f'<div style="text-align:center;background:rgba(255,255,255,0.03);border-radius:6px;padding:6px 14px;"><div style="font-size:11px;color:#374f6e;">Max ↓</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:#f87171;">{outs["max_drawdown"]:.1f}%</div></div>' if outs.get("max_drawdown") is not None else ""}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""<div style="background:#0d1525;border:1px solid {BORDER};border-radius:10px;
+                        padding:16px;text-align:center;font-size:12px;color:#374f6e;">
+            No previous signal events recorded for {ticker} yet. Check back after this setup matures.
+        </div>""", unsafe_allow_html=True)
+
+    # ── WHAT WOULD YOU HAVE MADE? ──
+    st.markdown('<div class="div-line"></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="font-size:16px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">💰 What Would You Have Made?</div>
+    <div style="font-size:12px;color:#374f6e;margin-bottom:14px;">
+        Enter a hypothetical investment to see estimated P&L since today's StockWins signal.
+        Includes stock buy/short and options estimate.
+        <span style="color:#fbbf24;"> ⚠️ Educational estimate — not financial advice.</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Only show to authenticated users; gate full options to premium
+    if not is_authed():
+        st.markdown(f'<div class="card" style="text-align:center;padding:18px;"><div style="font-size:13px;color:#374f6e;">Sign in to use the P&L estimator.</div></div>', unsafe_allow_html=True)
+        if st.button("Sign In to Use P&L Estimator", key="det_pnl_login", use_container_width=True, type="primary"):
+            nav("login")
+    else:
+        pnl_col1, pnl_col2 = st.columns([2, 1], gap="small")
+        with pnl_col1:
+            investment_amt = st.number_input(
+                "💵 Investment Amount ($)",
+                min_value=100.0, max_value=1000000.0, value=1000.0, step=100.0,
+                key="pnl_inv", help="How much you would have invested"
+            )
+        with pnl_col2:
+            direction = st.selectbox("Direction", ["Long (Buy)", "Short (Short-Sell)"],
+                                      key="pnl_dir", help="Buy = profit if price rises, Short = profit if price falls")
+
+        dir_key = "long" if "Long" in direction else "short"
+
+        # Find most recent signal trigger for this ticker, or use current price as entry
+        if ticker_signals:
+            most_recent = ticker_signals[0]
+            entry_price = most_recent.get("trigger_price", price)
+            days_held = (datetime.now() - datetime.fromisoformat(most_recent.get("triggered_at", datetime.now().isoformat()))).days
+            signal_date = datetime.fromisoformat(most_recent.get("triggered_at", datetime.now().isoformat())).strftime("%b %d, %Y")
+            st.caption(f"📅 Using StockWins signal entry from {signal_date} · Entry: ${entry_price:.2f}")
+        else:
+            entry_price = price
+            days_held = 0
+            st.caption(f"📅 Using today's price as entry (no prior signal for {ticker})")
+
+        # Calculate stock P&L
+        stock_pnl = calculate_pnl(investment_amt, entry_price, price, dir_key)
+
+        # Display stock P&L
+        if stock_pnl:
+            pnl_positive = stock_pnl.get("pnl_usd", 0) >= 0
+            pnl_color = "#4ade80" if pnl_positive else "#f87171"
+            pnl_bg = "rgba(34,197,94,0.08)" if pnl_positive else "rgba(239,68,68,0.08)"
+            pnl_arrow = "▲" if pnl_positive else "▼"
+
+            st.markdown(f"""
+            <div style="background:{pnl_bg};border:1px solid {pnl_color}44;border-radius:12px;padding:18px 20px;margin-bottom:12px;">
+                <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:10px;">
+                    📊 Stock Position — {direction}
+                </div>
+                <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;">
+                    <div>
+                        <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">P&L</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{pnl_color};">
+                            {'+' if pnl_positive else ''}${stock_pnl['pnl_usd']:,.2f}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Return %</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:{pnl_color};">
+                            {pnl_arrow}{abs(stock_pnl['pnl_pct']):.2f}%
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Shares</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0;">
+                            {stock_pnl['shares']:.2f}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Entry</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#60a5fa;">
+                            ${stock_pnl['trigger_price']:.2f}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Current</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0;">
+                            ${stock_pnl['current_price']:.2f}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Current Value</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0;">
+                            ${stock_pnl['current_value']:,.2f}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Options P&L (Premium)
+        if is_premium():
+            opt_col1, opt_col2 = st.columns(2, gap="small")
+            opt_type = "call" if dir_key == "long" else "put"
+            opt_pnl = estimate_options_pnl(investment_amt, entry_price, price, max(1, days_held), opt_type)
+
+            if opt_pnl:
+                opt_positive = opt_pnl.get("pnl_usd", 0) >= 0
+                opt_color = "#4ade80" if opt_positive else "#f87171"
+                opt_bg = "rgba(34,197,94,0.06)" if opt_positive else "rgba(239,68,68,0.06)"
+
+                with opt_col1:
+                    opt_emoji = "📈" if opt_type == "call" else "📉"
+                    st.markdown(f"""
+                    <div style="background:{opt_bg};border:1px solid {opt_color}44;border-radius:12px;padding:16px;height:100%;">
+                        <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">
+                            {opt_emoji} Options — {opt_type.upper()} (ATM · ~30 DTE)
+                        </div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:900;color:{opt_color};margin-bottom:6px;">
+                            {'+' if opt_positive else ''}${opt_pnl['pnl_usd']:,.2f}
+                        </div>
+                        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#374f6e;">
+                            <div>Return: <span style="color:{opt_color};font-weight:700;">{opt_pnl['pnl_pct']:+.1f}%</span></div>
+                            <div>Contracts: <span style="color:#e2e8f0;font-weight:700;">{opt_pnl['contracts']}</span></div>
+                            <div>Premium: <span style="color:#e2e8f0;font-weight:700;">${opt_pnl['premium_per_contract']:.0f}/ea</span></div>
+                            <div>Leverage: <span style="color:#fbbf24;font-weight:700;">{opt_pnl['leverage_multiple']:.1f}×</span></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with opt_col2:
+                    # Comparison table
+                    inv_formatted = f"${investment_amt:,.0f}"
+                    st.markdown(f"""
+                    <div style="background:#080b14;border:1px solid {BORDER};border-radius:12px;padding:16px;height:100%;">
+                        <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:10px;">⚖️ Strategy Comparison</div>
+                        <table style="width:100%;font-size:11px;border-collapse:collapse;">
+                            <tr style="color:#374f6e;"><td style="padding:3px 0;">Strategy</td><td style="text-align:right;padding:3px 0;">P&L</td><td style="text-align:right;padding:3px 0;">Return</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.05);"><td style="padding:5px 0;color:#e2e8f0;font-weight:600;">Stock {direction.split('(')[0].strip()}</td>
+                                <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{'#4ade80' if (stock_pnl.get('pnl_usd',0)>=0) else '#f87171'};">${stock_pnl.get('pnl_usd',0):+,.0f}</td>
+                                <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{'#4ade80' if (stock_pnl.get('pnl_pct',0)>=0) else '#f87171'};">{stock_pnl.get('pnl_pct',0):+.1f}%</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.05);"><td style="padding:5px 0;color:#e2e8f0;font-weight:600;">Options {opt_type.upper()}</td>
+                                <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{'#4ade80' if opt_positive else '#f87171'};">${opt_pnl.get('pnl_usd',0):+,.0f}</td>
+                                <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{'#4ade80' if opt_positive else '#f87171'};">{opt_pnl.get('pnl_pct',0):+.1f}%</td></tr>
+                        </table>
+                        <div style="font-size:10px;color:#2a3a52;margin-top:10px;line-height:1.5;">{opt_pnl.get('disclaimer','')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="card card-gold" style="padding:14px 18px;margin-top:8px;">
+                <div style="font-size:12px;font-weight:700;color:{GOLD};margin-bottom:4px;">👑 Options P&L Estimator — Premium</div>
+                <div style="font-size:12px;color:#374f6e;">See estimated call/put P&L, leverage multiples, and strategy comparisons with a Premium account.</div>
+            </div>
+            """, unsafe_allow_html=True)
+            if gold_btn("Unlock Options Estimator", "det_opt_up"): nav("pricing")
+
     # Why flagged
     st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
     st.markdown('<div class="sec-hd">🎯 Why This Stock Is On Your Radar</div>',unsafe_allow_html=True)
@@ -2574,20 +3207,366 @@ def page_detail():
 
     # Actions
     st.markdown("<br>",unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px;">⚡ QUICK ACTIONS</div>', unsafe_allow_html=True)
     wl=st.session_state.get("watchlist",[]); in_wl=ticker in wl
-    a1,a2,_=st.columns([1,1,2])
+    a1,a2,a3=st.columns(3, gap="small")
     with a1:
-        if st.button("✅ Remove from Watchlist" if in_wl else "➕ Add to Watchlist",key="det_wl",type="primary",use_container_width=True):
+        if st.button("✅ On Watchlist" if in_wl else "➕ Add to Watchlist",key="det_wl",type="primary",use_container_width=True):
             if in_wl: wl.remove(ticker)
             else:     wl.append(ticker)
+            st.session_state.watchlist = wl
+            if is_authed():
+                db = st.session_state.users_db.get(st.session_state.user["email"], {})
+                db["watchlist"] = wl
+                save_user_to_file(st.session_state.user["email"], db)
+            st.toast(f"{'Removed from' if in_wl else 'Added to'} watchlist", icon="⭐")
             st.rerun()
     with a2:
-        if st.button("🔔 Set Price Alert",key="det_alert",use_container_width=True):
-            st.session_state.alerts=st.session_state.get("alerts",[])
-            st.session_state.alerts.append({"ticker":ticker,"price":price,"type":"Price Alert","active":True})
-            st.success(f"Alert set for {ticker} at ${price:,.2f}")
-    st.markdown('<div class="disc">⚠️ For educational purposes only. Not financial advice. Trading involves risk of loss.</div>',unsafe_allow_html=True)
+        if st.button("🔔 Manage Alerts →",key="det_alert_nav",use_container_width=True):
+            nav("settings")
+    with a3:
+        if st.button("📊 Signal History →",key="det_track",use_container_width=True):
+            nav("signal_track")
+
+    # ── Smart Alert Presets ──
+    st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px;">🎯 SMART ALERT PRESETS for {ticker}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:11px;color:#374f6e;margin-bottom:10px;">One-click alerts based on current price. Notifications via your default channels.</div>', unsafe_allow_html=True)
+    p1, p2, p3, p4 = st.columns(4, gap="small")
+    presets = [
+        (p1, f"📈 +10% from here", "price_above", round(price*1.10, 2), f"Trigger when {ticker} crosses ${price*1.10:.2f}"),
+        (p2, f"📉 -10% from here", "price_below", round(price*0.90, 2), f"Trigger when {ticker} falls to ${price*0.90:.2f}"),
+        (p3, f"🔊 Volume 2× avg", "volume_spike", 2.0, f"Trigger on volume surge"),
+        (p4, f"⚡ Big move ±5%", "pct_change", 5.0, f"Trigger on 5% daily move"),
+    ]
+    for col, label, ptype, thresh, desc in presets:
+        with col:
+            if st.button(label, key=f"preset_{ptype}_{ticker}", use_container_width=True, help=desc):
+                if not is_authed():
+                    st.warning("Sign in to set alerts.")
+                else:
+                    alerts = st.session_state.get("alerts", [])
+                    new_a = {
+                        "id": f"{ticker}_{ptype}_{int(time.time())}",
+                        "ticker": ticker, "type": ptype, "threshold": thresh,
+                        "label": f"{ticker} {label}", "channels": ["email"],
+                        "active": True, "created": datetime.now().strftime("%Y-%m-%d %H:%M")
+                    }
+                    alerts.append(new_a)
+                    st.session_state.alerts = alerts
+                    save_alerts_to_file(st.session_state.user["email"], alerts)
+                    st.toast(f"🔔 {label} alert set!", icon="✅")
+                    st.rerun()
+
+    st.markdown('<div class="disc" style="margin-top:14px;">⚠️ For educational purposes only. Not financial advice. Trading involves risk of loss.</div>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
+# PAGE: SIGNAL TRACK RECORD
+# ─────────────────────────────────────────────────────────────
+def page_signal_track():
+    render_topbar("signal_track")
+    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    back_button("st_back")
+
+    st.markdown(f"""
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:10px;">
+        <div>
+            <div style="font-size:24px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">📉 Signal Track Record</div>
+            <div style="font-size:13px;color:#374f6e;">Every time StockWins flags a stock, we track what happened next.
+            This is our public performance log — wins, losses, and everything in between.</div>
+        </div>
+        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);
+              font-size:11px;font-weight:700;padding:6px 14px;border-radius:20px;margin-top:4px;">
+            ✨ Proprietary StockWins Data
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Seed demo data if empty
+    if HAS_SIGNAL_ENGINE:
+        seed_demo_signal_history()
+
+    # Load all events
+    all_events = get_recent_signal_events(limit=200)
+    perf_stats  = get_category_performance_stats()
+
+    # ── Summary KPIs ──
+    resolved = [e for e in all_events if e.get("outcomes",{}).get("label","pending") != "pending"]
+    wins     = [e for e in resolved if e.get("outcomes",{}).get("label") == "success"]
+    losses   = [e for e in resolved if e.get("outcomes",{}).get("label") == "failure"]
+    win_rate = round(len(wins)/len(resolved)*100, 1) if resolved else 0
+    avg_5d   = round(sum(e["outcomes"].get("5d_pct",0) or 0 for e in resolved)/max(1,len(resolved)), 2)
+    avg_max_up = round(sum(e["outcomes"].get("max_upside",0) or 0 for e in resolved)/max(1,len(resolved)), 2)
+    pending  = [e for e in all_events if e.get("outcomes",{}).get("label","pending") == "pending"]
+
+    kc = st.columns(5)
+    for col, val, lbl, color in [
+        (kc[0], len(all_events),                      "Total Signals",    "#60a5fa"),
+        (kc[1], f"{win_rate}%",                        "Win Rate",         "#4ade80"),
+        (kc[2], f"{len(wins)} / {len(resolved)}",      "Wins / Resolved",  "#4ade80"),
+        (kc[3], f"+{avg_5d}%" if avg_5d>=0 else f"{avg_5d}%", "Avg 5-Day Return", "#4ade80" if avg_5d>=0 else "#f87171"),
+        (kc[4], len(pending),                          "Pending Outcomes", "#fbbf24"),
+    ]:
+        col.markdown(f"""<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:900;color:{color};">{val}</div>
+            <div style="font-size:11px;color:#374f6e;margin-top:3px;">{lbl}</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+
+    # ── Tabs: Recent Signals | By Category | P&L Calculator ──
+    tr_tabs = st.tabs(["📋 Recent Signals", "📊 Category Performance", "💰 P&L Calculator", "🔎 Lookup by Ticker"])
+
+    # ── TAB 1: Recent Signals ──
+    with tr_tabs[0]:
+        if not all_events:
+            st.info("No signal history yet. Signal events are recorded as StockWins detects composite setups.")
+        else:
+            # Filter controls
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                filter_label = st.selectbox("Filter by outcome", ["All", "Success ✅", "Failure ❌", "Pending ⏳", "Mixed"], key="tr_filter")
+            with fc2:
+                filter_cats = list(set(e.get("category","") for e in all_events))
+                sel_cat = st.selectbox("Filter by category", ["All"] + sorted(filter_cats), key="tr_cat")
+            with fc3:
+                sort_by = st.selectbox("Sort by", ["Newest first", "Best return", "Worst return"], key="tr_sort")
+
+            label_map = {"All": None, "Success ✅": "success", "Failure ❌": "failure", "Pending ⏳": "pending", "Mixed": "mixed"}
+            filtered = all_events.copy()
+            if label_map.get(filter_label): filtered = [e for e in filtered if e.get("outcomes",{}).get("label") == label_map[filter_label]]
+            if sel_cat != "All": filtered = [e for e in filtered if e.get("category") == sel_cat]
+            if sort_by == "Best return":    filtered.sort(key=lambda x: x.get("outcomes",{}).get("current_pct",0) or 0, reverse=True)
+            elif sort_by == "Worst return": filtered.sort(key=lambda x: x.get("outcomes",{}).get("current_pct",0) or 0)
+
+            st.caption(f"Showing {len(filtered)} signal events")
+
+            for ev in filtered[:25]:
+                outs = ev.get("outcomes", {})
+                curr_pct = outs.get("current_pct", 0) or 0
+                label = outs.get("label", "pending")
+                trigger_price = ev.get("trigger_price", 0)
+                trigger_dt = datetime.fromisoformat(ev.get("triggered_at", datetime.now().isoformat()))
+                days_ago = (datetime.now() - trigger_dt).days
+
+                lc = "#4ade80" if label=="success" else "#f87171" if label=="failure" else "#fbbf24" if label=="pending" else "#94a3b8"
+                if label == "success":    lb = "rgba(34,197,94,0.07)"
+                elif label == "failure":  lb = "rgba(239,68,68,0.07)"
+                elif label == "pending":  lb = "rgba(251,191,36,0.07)"
+                else:                     lb = "rgba(255,255,255,0.03)"
+                conf = ev.get("confidence", {}).get("confidence", "N/A")
+                risk = ev.get("confidence", {}).get("risk", "N/A")
+
+                lifecycle = ev.get("lifecycle_stage", "candidate")
+                lc_colors = {"candidate":"#6b7fa0","confirmed":"#fbbf24","active":"#4ade80","extended":"#60a5fa","completed":"#4ade80","failed":"#f87171"}
+
+                ev_col1, ev_col2 = st.columns([3,1], gap="small")
+                with ev_col1:
+                    st.markdown(f"""<div style="background:{lb};border:1px solid {lc}33;border-radius:10px;padding:12px 16px;margin-bottom:6px;">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px;flex-wrap:wrap;">
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:#60a5fa;">{ev.get("ticker","?")}</span>
+                            <span style="font-size:12px;color:#e2e8f0;font-weight:600;">{ev.get("category","")}</span>
+                            <span style="font-size:10px;color:#374f6e;">{trigger_dt.strftime("%b %d, %Y")} · {days_ago}d ago · ${trigger_price:.2f} entry</span>
+                            <span style="background:{lc_colors.get(lifecycle,'#6b7fa0')}22;color:{lc_colors.get(lifecycle,'#6b7fa0')};
+                                   font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid {lc_colors.get(lifecycle,'#6b7fa0')}44;">
+                                {lifecycle.upper()}
+                            </span>
+                        </div>
+                        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#374f6e;">
+                            <span>Score: <strong style="color:#e2e8f0;">{ev.get("score_at_trigger",0)}</strong></span>
+                            <span>Confidence: <strong style="color:#e2e8f0;">{conf}</strong></span>
+                            <span>Risk: <strong style="color:#e2e8f0;">{risk}</strong></span>
+                            <span>Regime: <strong style="color:#e2e8f0;">{ev.get("regime_at_trigger","—")}</strong></span>
+                            <span>Short Float: <strong style="color:#e2e8f0;">{ev.get("info_snapshot",{}).get("short_float") or "—"}{"%" if ev.get("info_snapshot",{}).get("short_float") else ""}</strong></span>
+                        </div>
+                        <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap;">
+                            {f'<span style="font-size:11px;color:#374f6e;">1d: <strong style="color:{"#4ade80" if (outs.get("1d_pct") or 0)>=0 else "#f87171"};font-family:\'JetBrains Mono\',monospace;">{("+"+str(outs["1d_pct"])) if outs.get("1d_pct") is not None else "—"}%</strong></span>' if True else ""}
+                            {f'<span style="font-size:11px;color:#374f6e;">3d: <strong style="color:{"#4ade80" if (outs.get("3d_pct") or 0)>=0 else "#f87171"};font-family:\'JetBrains Mono\',monospace;">{("+"+str(outs["3d_pct"])) if outs.get("3d_pct") is not None else "—"}%</strong></span>' if True else ""}
+                            {f'<span style="font-size:11px;color:#374f6e;">5d: <strong style="color:{"#4ade80" if (outs.get("5d_pct") or 0)>=0 else "#f87171"};font-family:\'JetBrains Mono\',monospace;">{("+"+str(outs["5d_pct"])) if outs.get("5d_pct") is not None else "—"}%</strong></span>' if True else ""}
+                            {f'<span style="font-size:11px;color:#374f6e;">Max ↑ <strong style="color:#4ade80;font-family:\'JetBrains Mono\',monospace;">+{outs["max_upside"]:.1f}%</strong></span>' if outs.get("max_upside") is not None else ""}
+                            {f'<span style="font-size:11px;color:#374f6e;">Max ↓ <strong style="color:#f87171;font-family:\'JetBrains Mono\',monospace;">{outs["max_drawdown"]:.1f}%</strong></span>' if outs.get("max_drawdown") is not None else ""}
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                with ev_col2:
+                    st.markdown(f"""<div style="background:#080b14;border:1px solid {lc}44;border-radius:10px;padding:14px;text-align:center;margin-bottom:6px;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:900;color:{lc};">{'+' if curr_pct>=0 else ''}{curr_pct:.1f}%</div>
+                        <div style="font-size:10px;color:#374f6e;margin-top:4px;">Current P&L</div>
+                        <div style="font-size:10px;font-weight:700;color:{lc};margin-top:3px;">{label.upper()}</div>
+                    </div>""", unsafe_allow_html=True)
+                    if st.button(f"View {ev.get('ticker','')}", key=f"tr_view_{ev.get('id','')[:20]}", use_container_width=True):
+                        st.session_state.detail_ticker = ev.get("ticker")
+                        st.session_state.detail_data = {}
+                        nav("stock_detail")
+
+    # ── TAB 2: Category Performance ──
+    with tr_tabs[1]:
+        if not perf_stats:
+            st.info("Category performance data accumulates as signals are tracked. Check back once more signals have resolved.")
+        else:
+            st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:14px;">Historical win rate and average returns per composite signal category.</div>', unsafe_allow_html=True)
+            for cat, stats in sorted(perf_stats.items(), key=lambda x: x[1]["win_rate"], reverse=True):
+                wr = stats["win_rate"]
+                a5 = stats.get("avg_5d")
+                wr_color = "#4ade80" if wr>=60 else "#fbbf24" if wr>=45 else "#f87171"
+                a5_color = "#4ade80" if (a5 or 0)>=0 else "#f87171"
+                st.markdown(f"""
+                <div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+                    <div style="flex:1;min-width:200px;">
+                        <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:3px;">{cat}</div>
+                        <div style="font-size:11px;color:#374f6e;">{stats["count"]} signals · {stats["wins"]}W / {stats["losses"]}L</div>
+                    </div>
+                    <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+                        <div style="text-align:center;">
+                            <div style="font-size:11px;color:#374f6e;">Win Rate</div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:{wr_color};">{wr}%</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:11px;color:#374f6e;">Avg 5-Day</div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:{a5_color};">{('+' if (a5 or 0)>=0 else '')+str(a5)+'%' if a5 is not None else '—'}</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:11px;color:#374f6e;">Best 5-Day</div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:#4ade80;">{'+'+str(stats.get('best_5d'))+'%' if stats.get('best_5d') is not None else '—'}</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:11px;color:#374f6e;">Worst 5-Day</div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:#f87171;">{str(stats.get('worst_5d'))+'%' if stats.get('worst_5d') is not None else '—'}</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.03);border-radius:30px;height:8px;width:120px;overflow:hidden;">
+                            <div style="background:{wr_color};height:8px;width:{wr}%;border-radius:30px;"></div>
+                        </div>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+    # ── TAB 3: P&L Calculator ──
+    with tr_tabs[2]:
+        st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">💰 Hypothetical P&L Calculator</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:16px;">Pick any recorded signal and see what you would have made with a given investment. <span style="color:#fbbf24;">Educational only — not financial advice.</span></div>',unsafe_allow_html=True)
+
+        if not all_events:
+            st.info("No signal history to calculate against yet.")
+        else:
+            resolved_evs = [e for e in all_events if e.get("outcomes",{}).get("current_pct") is not None]
+            if not resolved_evs:
+                st.info("No resolved signals yet. Check back in a day or two.")
+            else:
+                ev_labels = [f"{e['ticker']} — {e['category'][:30]} ({datetime.fromisoformat(e['triggered_at']).strftime('%b %d')})" for e in resolved_evs]
+
+                sel_ev_idx = st.selectbox("Select a signal event", range(len(ev_labels)), format_func=lambda i: ev_labels[i], key="calc_ev")
+                sel_ev = resolved_evs[sel_ev_idx]
+
+                calc_col1, calc_col2, calc_col3 = st.columns(3)
+                with calc_col1:
+                    calc_inv = st.number_input("Investment ($)", min_value=100.0, max_value=500000.0, value=1000.0, step=100.0, key="calc_inv")
+                with calc_col2:
+                    calc_dir = st.selectbox("Direction", ["Long (Buy)", "Short (Short-Sell)"], key="calc_dir")
+                with calc_col3:
+                    calc_as_of = st.selectbox("Measure return as of", ["Current price", "1-day return", "3-day return", "5-day return", "10-day return"], key="calc_period")
+
+                entry_px = sel_ev.get("trigger_price", 0)
+                period_map = {"Current price":"current_pct","1-day return":"1d_pct","3-day return":"3d_pct","5-day return":"5d_pct","10-day return":"10d_pct"}
+                period_key = period_map.get(calc_as_of, "current_pct")
+                period_pct = sel_ev["outcomes"].get(period_key, sel_ev["outcomes"].get("current_pct", 0)) or 0
+
+                # Back-calculate exit price
+                dir_key = "long" if "Long" in calc_dir else "short"
+                exit_px = entry_px * (1 + period_pct/100)
+                calc_result = calculate_pnl(calc_inv, entry_px, exit_px, dir_key)
+
+                if calc_result:
+                    pnl_pos = calc_result.get("pnl_usd", 0) >= 0
+                    pnl_c = "#4ade80" if pnl_pos else "#f87171"
+
+                    st.markdown(f"""
+                    <div style="background:{"rgba(34,197,94,0.08)" if pnl_pos else "rgba(239,68,68,0.08)"};border:1px solid {pnl_c}44;border-radius:14px;padding:24px;margin-top:12px;">
+                        <div style="font-size:12px;color:#374f6e;margin-bottom:12px;">
+                            {sel_ev.get('ticker')} · {sel_ev.get('category','Signal')} · Entry ${entry_px:.2f} → Exit ${exit_px:.2f} · {calc_as_of}
+                        </div>
+                        <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end;">
+                            <div>
+                                <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Total P&L</div>
+                                <div style="font-family:'JetBrains Mono',monospace;font-size:36px;font-weight:900;color:{pnl_c};">
+                                    {'+' if pnl_pos else ''}${calc_result['pnl_usd']:,.2f}
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Return</div>
+                                <div style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:800;color:{pnl_c};">
+                                    {'+' if pnl_pos else ''}{calc_result['pnl_pct']:.2f}%
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Shares/Units</div>
+                                <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#e2e8f0;">{calc_result['shares']:.2f}</div>
+                            </div>
+                            <div>
+                                <div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Final Value</div>
+                                <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#e2e8f0;">${calc_result['current_value']:,.2f}</div>
+                            </div>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+
+                # Options estimate
+                if is_premium():
+                    days_held = max(1, (datetime.now() - datetime.fromisoformat(sel_ev.get("triggered_at", datetime.now().isoformat()))).days)
+                    opt_type = "call" if dir_key == "long" else "put"
+                    opt_res = estimate_options_pnl(calc_inv, entry_px, exit_px, min(days_held, 20), opt_type)
+                    if opt_res:
+                        opt_pos = opt_res["pnl_usd"] >= 0
+                        oc = "#4ade80" if opt_pos else "#f87171"
+                        st.markdown(f"""
+                        <div style="background:rgba(255,255,255,0.03);border:1px solid {BORDER};border-radius:12px;padding:18px;margin-top:10px;">
+                            <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📊 Options {opt_type.upper()} Estimate (ATM ~30 DTE)</div>
+                            <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:#374f6e;">
+                                <span>P&L: <strong style="color:{oc};font-family:'JetBrains Mono',monospace;">${opt_res['pnl_usd']:+,.0f}</strong></span>
+                                <span>Return: <strong style="color:{oc};font-family:'JetBrains Mono',monospace;">{opt_res['pnl_pct']:+.1f}%</strong></span>
+                                <span>Contracts: <strong style="color:#e2e8f0;">{opt_res['contracts']}</strong></span>
+                                <span>Premium/contract: <strong style="color:#e2e8f0;">${opt_res['premium_per_contract']:.0f}</strong></span>
+                                <span>Leverage: <strong style="color:#fbbf24;">{opt_res['leverage_multiple']:.1f}×</strong></span>
+                            </div>
+                            <div style="font-size:10px;color:#2a3a52;margin-top:8px;">{opt_res.get('disclaimer','')}</div>
+                        </div>""", unsafe_allow_html=True)
+
+        st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:11px;color:#2a3a52;line-height:1.7;">⚠️ <strong style="color:#374f6e;">Educational purposes only.</strong> Past signal performance does not guarantee future results. Options estimates use simplified Black-Scholes delta approximation and ignore bid/ask spread, early exercise, assignment risk, and tax implications. Always consult a licensed financial advisor before trading.</div>', unsafe_allow_html=True)
+
+    # ── TAB 4: Lookup by Ticker ──
+    with tr_tabs[3]:
+        lookup_ticker = st.text_input("Enter ticker symbol", placeholder="GME, NVDA, TSLA…", key="tr_lookup").upper().strip()
+        if lookup_ticker:
+            ticker_hist = get_ticker_signal_history(lookup_ticker, limit=20)
+            if ticker_hist:
+                st.caption(f"Found {len(ticker_hist)} signal events for {lookup_ticker}")
+                for ev in ticker_hist:
+                    outs = ev.get("outcomes", {})
+                    curr_pct = outs.get("current_pct", 0) or 0
+                    lc = "#4ade80" if curr_pct>=0 else "#f87171"
+                    trigger_dt = datetime.fromisoformat(ev.get("triggered_at", datetime.now().isoformat()))
+                    days_ago = (datetime.now() - trigger_dt).days
+                    st.markdown(f"""
+                    <div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:8px;
+                                display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+                        <div>
+                            <div style="font-size:13px;font-weight:700;color:#e2e8f0;">{ev.get("category","Signal")}</div>
+                            <div style="font-size:11px;color:#374f6e;">{trigger_dt.strftime("%b %d, %Y")} · {days_ago}d ago · Entry: ${ev.get("trigger_price",0):.2f}</div>
+                            <div style="font-size:11px;color:#374f6e;margin-top:3px;">
+                                Score: {ev.get("score_at_trigger","?")} · Conf: {ev.get("confidence",{}).get("confidence","?")} · Risk: {ev.get("confidence",{}).get("risk","?")}
+                            </div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:{lc};">{'+' if curr_pct>=0 else ''}{curr_pct:.1f}%</div>
+                            <div style="font-size:10px;color:#374f6e;">{outs.get("label","pending").upper()}</div>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(f"""<div style="background:#0d1525;border:1px solid {BORDER};border-radius:10px;padding:20px;text-align:center;">
+                    <div style="font-size:24px;margin-bottom:8px;">🔍</div>
+                    <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">No signals found for {lookup_ticker}</div>
+                    <div style="font-size:12px;color:#374f6e;">StockWins hasn't flagged this ticker via a composite signal yet.</div>
+                </div>""", unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: BI ANALYTICS
@@ -2595,7 +3574,7 @@ def page_detail():
 def page_bi():
     render_topbar("bi_dashboard")
     st.markdown('<div class="pg">',unsafe_allow_html=True)
-    if st.button("← Back", key="bi_back"): go_back()
+    back_button("bi_back")
 
     # ── Page intro ──
     st.markdown(f"""
@@ -2630,7 +3609,10 @@ def page_bi():
         col.markdown(f'<div class="stat"><div style="font-family:\'JetBrains Mono\',monospace;font-size:18px;font-weight:800;color:{c};margin-bottom:3px;">{v}</div><div style="font-size:11px;color:#374f6e;">{l}</div></div>',unsafe_allow_html=True)
 
     st.markdown("<br>",unsafe_allow_html=True)
-    tabs=st.tabs(["📈 Leaderboards","🗺️ Sector","📡 Sentiment","🔊 Volume","🎯 Opportunity Matrix"])
+    tabs=st.tabs([
+        "📈 Leaderboards","🗺️ Sector Heatmap","📡 Sentiment","🔊 Volume","🎯 Opportunity Matrix",
+        "💥 Squeeze Radar","🌪️ Risk vs Reward","📊 Score Distribution","🔄 Sector Rotation","⭐ Watchlist Analytics"
+    ])
 
     CHART_LAYOUT = dict(
         paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
@@ -2745,6 +3727,185 @@ def page_bi():
             mc_=st.columns(len(signal_types))
             for col,sig in zip(mc_,signal_types):
                 col.markdown(f'<div style="text-align:center;font-size:11px;color:#374f6e;padding:6px 4px;background:#080b14;border-radius:6px;"><div style="font-weight:700;color:#94a3b8;margin-bottom:2px;">{sig}</div>{descs[sig]}</div>',unsafe_allow_html=True)
+
+    # ── Module 6: Squeeze Radar ──
+    with tabs[5]:
+        st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">💥 Short Squeeze Radar</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Tickers ranked by short interest, days-to-cover, and momentum. Bigger bubbles = higher squeeze potential.</div>',unsafe_allow_html=True)
+        if not is_premium():
+            st.markdown(f'<div class="card card-gold"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Analytics</div><div style="font-size:12px;color:#374f6e;">Squeeze Radar combines short interest data, momentum, and sentiment.</div></div>',unsafe_allow_html=True)
+            if gold_btn("Upgrade for Squeeze Radar","bi_sq_up"): nav("pricing")
+        else:
+            sq_universe=["GME","AMC","MULN","SPCE","BBIG","FFIE","ATER","MSTR","BBAI","SOUN","HOOD","TSLA","AMD"]
+            sq_data=[]; sq_prog=st.progress(0,"Scanning…")
+            for i,t in enumerate(sq_universe):
+                sq_prog.progress((i+1)/len(sq_universe))
+                info=yf_fund(t); q=get_quote(t); sent=st_sent(t)
+                if not info or not q: continue
+                sf=(info.get("sf",0) or 0)*100
+                dtc=info.get("dtc",0) or 0
+                if sf<5: continue
+                sq_score=min(100,int(sf*2+dtc*3+max(0,q["pct"])*2+sent["bull"]*0.3))
+                sq_data.append({"t":t,"sf":sf,"dtc":dtc,"pct":q["pct"],"bull":sent["bull"],"score":sq_score,"price":q["price"]})
+            sq_prog.empty()
+            if sq_data and HAS_PLOTLY:
+                sq_data.sort(key=lambda x:x["score"],reverse=True)
+                df_sq=pd.DataFrame(sq_data)
+                fig=go.Figure(go.Scatter(
+                    x=df_sq["sf"],y=df_sq["dtc"],mode="markers+text",
+                    marker=dict(size=[max(s/3,12) for s in df_sq["score"]],color=df_sq["score"],
+                                colorscale=[[0,"#374f6e"],[0.5,GOLD],[1,RED]],showscale=True,
+                                colorbar=dict(title="Squeeze",tickfont=dict(color="#6b7fa0",size=11))),
+                    text=df_sq["t"],textposition="top center",textfont=dict(color="#e2e8f0",size=11,family="JetBrains Mono")))
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=60,t=20,b=20),height=420,
+                    xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#94a3b8",title="Short Float %"),
+                    yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#94a3b8",title="Days to Cover"))
+                st.plotly_chart(fig,use_container_width=True)
+                st.markdown('<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin:10px 0 6px;">🏆 Top Squeeze Candidates</div>',unsafe_allow_html=True)
+                for r in sq_data[:5]:
+                    sc=RED if r["score"]>=70 else GOLD if r["score"]>=50 else "#6b7fa0"
+                    st.markdown(f'<div class="card" style="padding:10px 14px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;"><div><span style="font-family:\'JetBrains Mono\',monospace;font-size:14px;font-weight:800;color:#60a5fa;">{r["t"]}</span><span style="font-size:11px;color:#374f6e;margin-left:10px;">SF: {r["sf"]:.1f}% · DTC: {r["dtc"]:.1f}d · Bull: {r["bull"]}%</span></div><div style="display:flex;align-items:center;gap:14px;"><span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#e2e8f0;">${r["price"]:,.2f}</span><span style="background:{sc}22;color:{sc};font-size:11px;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid {sc}44;">{r["score"]}/100</span></div></div>',unsafe_allow_html=True)
+            else: st.info("No squeeze candidates above threshold right now.")
+
+    # ── Module 7: Risk vs Reward Quadrant ──
+    with tabs[6]:
+        st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">🌪️ Risk vs Reward Quadrant</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Stocks plotted by StockWins score (reward) vs volatility (risk). Top-right = best opportunities.</div>',unsafe_allow_html=True)
+        if not is_premium():
+            st.markdown(f'<div class="card card-gold"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Analytics</div></div>',unsafe_allow_html=True)
+            if gold_btn("Upgrade for Risk Analysis","bi_rr_up"): nav("pricing")
+        else:
+            rr_tickers=["NVDA","TSLA","AMD","AAPL","MSTR","GME","PLTR","META","MSFT","ARM","SMCI","NIO","RIVN","HOOD"]
+            rr_data=[]; rr_prog=st.progress(0,"Computing risk/reward…")
+            for i,t in enumerate(rr_tickers):
+                rr_prog.progress((i+1)/len(rr_tickers))
+                df=yf_ohlcv(t,30); info=yf_fund(t); sent=st_sent(t); q=get_quote(t)
+                if df is None or df.empty or not q: continue
+                sc,bd,op,risk,conf=compute_scores(df,info,sent)
+                returns=df["close"].pct_change().dropna()
+                volatility=float(returns.std()*100) if len(returns)>0 else 0
+                rr_data.append({"t":t,"score":sc,"vol":volatility,"price":q["price"]})
+            rr_prog.empty()
+            if rr_data and HAS_PLOTLY:
+                df_rr=pd.DataFrame(rr_data)
+                colors_rr=[GREEN if r["score"]>=65 else GOLD if r["score"]>=45 else RED for _,r in df_rr.iterrows()]
+                fig=go.Figure(go.Scatter(
+                    x=df_rr["vol"],y=df_rr["score"],mode="markers+text",
+                    marker=dict(size=22,color=colors_rr,line=dict(width=2,color="#0d1525")),
+                    text=df_rr["t"],textposition="middle center",textfont=dict(color="#0d1525",size=11,family="JetBrains Mono")))
+                med_vol=df_rr["vol"].median()
+                fig.add_vline(x=med_vol,line=dict(color="rgba(255,255,255,0.1)",width=1,dash="dash"))
+                fig.add_hline(y=50,line=dict(color="rgba(255,255,255,0.1)",width=1,dash="dash"))
+                fig.add_annotation(x=df_rr["vol"].max()*0.9,y=90,text="🏆 HIGH/HIGH",showarrow=False,font=dict(color=RED,size=10))
+                fig.add_annotation(x=df_rr["vol"].min()*1.1,y=90,text="⭐ HIGH/LOW",showarrow=False,font=dict(color=GREEN,size=10))
+                fig.add_annotation(x=df_rr["vol"].max()*0.9,y=15,text="⚠️ LOW/HIGH",showarrow=False,font=dict(color="#6b7fa0",size=10))
+                fig.add_annotation(x=df_rr["vol"].min()*1.1,y=15,text="😴 LOW/LOW",showarrow=False,font=dict(color="#6b7fa0",size=10))
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=20,t=10,b=20),height=440,
+                    xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#94a3b8",title="Volatility (Risk) %"),
+                    yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#94a3b8",title="StockWins Score (Reward)",range=[0,105]))
+                st.plotly_chart(fig,use_container_width=True)
+
+    # ── Module 8: Score Distribution ──
+    with tabs[7]:
+        st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">📊 Score Distribution</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">How tickers in the StockWins universe distribute by composite score.</div>',unsafe_allow_html=True)
+        if not is_premium():
+            st.markdown(f'<div class="card card-gold"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Analytics</div></div>',unsafe_allow_html=True)
+            if gold_btn("Upgrade for Distribution Analysis","bi_sd_up"): nav("pricing")
+        else:
+            sd_tickers=["NVDA","TSLA","AMD","AAPL","MSTR","GME","PLTR","META","MSFT","ARM","SMCI","NIO","RIVN","HOOD","CRM","ORCL","BBAI","ASTS","IONQ","SOUN"]
+            sd_scores=[]; sd_prog=st.progress(0,"Computing scores…")
+            for i,t in enumerate(sd_tickers):
+                sd_prog.progress((i+1)/len(sd_tickers))
+                df=yf_ohlcv(t,60); info=yf_fund(t); sent=st_sent(t)
+                if df is None or df.empty: continue
+                sc,_,_,_,_=compute_scores(df,info,sent)
+                sd_scores.append({"t":t,"score":sc})
+            sd_prog.empty()
+            if sd_scores and HAS_PLOTLY:
+                df_sd=pd.DataFrame(sd_scores)
+                bins=[0,20,40,60,80,100]
+                df_sd["bucket"]=pd.cut(df_sd["score"],bins=bins,labels=["0-20","20-40","40-60","60-80","80-100"])
+                bucket_counts=df_sd["bucket"].value_counts().sort_index()
+                colors_sd=[RED,"#fb923c",GOLD,"#84cc16",GREEN]
+                fig=go.Figure(go.Bar(x=list(bucket_counts.index),y=list(bucket_counts.values),
+                    marker_color=colors_sd[:len(bucket_counts)],
+                    text=[f"{v} stocks" for v in bucket_counts.values],textposition="outside",
+                    textfont=dict(color="#94a3b8",size=12,family="JetBrains Mono")))
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=20,b=0),height=320,
+                    xaxis=dict(showgrid=False,color="#94a3b8"),
+                    yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#4a5e7a",title="Number of Stocks"))
+                st.plotly_chart(fig,use_container_width=True)
+                st.markdown('<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin:10px 0 6px;">🏆 Top Scoring Stocks</div>',unsafe_allow_html=True)
+                top_scored=sorted(sd_scores,key=lambda x:x["score"],reverse=True)[:5]
+                for r in top_scored:
+                    sc=GREEN if r["score"]>=65 else GOLD if r["score"]>=45 else RED
+                    st.markdown(f'<div class="card" style="padding:10px 14px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;"><span style="font-family:\'JetBrains Mono\',monospace;font-size:14px;font-weight:800;color:#60a5fa;">{r["t"]}</span><span style="background:{sc}22;color:{sc};font-size:13px;font-weight:800;padding:4px 14px;border-radius:6px;border:1px solid {sc}44;font-family:\'JetBrains Mono\',monospace;">{r["score"]}/100</span></div>',unsafe_allow_html=True)
+
+    # ── Module 9: Sector Rotation ──
+    with tabs[8]:
+        st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">🔄 Sector Rotation Analysis</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Which sectors are gaining/losing momentum. Identifies where money is flowing.</div>',unsafe_allow_html=True)
+        if not is_premium():
+            st.markdown(f'<div class="card card-gold"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Analytics</div></div>',unsafe_allow_html=True)
+            if gold_btn("Upgrade for Sector Rotation","bi_rot_up"): nav("pricing")
+        else:
+            sec_sorted2=sorted(secs.items(),key=lambda x:x[1],reverse=True)
+            lc_r,rc_r=st.columns(2)
+            with lc_r:
+                st.markdown(f'<div style="font-size:13px;font-weight:700;color:{GREEN};margin-bottom:8px;">🚀 SECTOR LEADERS</div>',unsafe_allow_html=True)
+                top_secs=sec_sorted2[:5]
+                for sec,chg in top_secs:
+                    intensity=min(abs(chg)/3,1.0)
+                    bg=f"rgba(34,197,94,{0.1+intensity*0.4})"
+                    st.markdown(f'<div style="background:{bg};border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:12px 16px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;"><div><div style="font-size:13px;font-weight:700;color:#e2e8f0;">{sec}</div><div style="font-size:11px;color:#374f6e;">Money flowing in</div></div><div style="font-family:\'JetBrains Mono\',monospace;font-size:18px;font-weight:800;color:{GREEN};">▲{chg:.2f}%</div></div>',unsafe_allow_html=True)
+            with rc_r:
+                st.markdown(f'<div style="font-size:13px;font-weight:700;color:{RED};margin-bottom:8px;">📉 SECTOR LAGGARDS</div>',unsafe_allow_html=True)
+                bottom_secs=sec_sorted2[-5:][::-1]
+                for sec,chg in bottom_secs:
+                    intensity=min(abs(chg)/3,1.0)
+                    bg=f"rgba(239,68,68,{0.1+intensity*0.4})"
+                    st.markdown(f'<div style="background:{bg};border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:12px 16px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;"><div><div style="font-size:13px;font-weight:700;color:#e2e8f0;">{sec}</div><div style="font-size:11px;color:#374f6e;">Money flowing out</div></div><div style="font-family:\'JetBrains Mono\',monospace;font-size:18px;font-weight:800;color:{RED};">▼{abs(chg):.2f}%</div></div>',unsafe_allow_html=True)
+            if top_secs and bottom_secs:
+                st.markdown(f'<div style="background:#0d1525;border:1px solid rgba(37,99,235,0.25);border-radius:10px;padding:16px;margin-top:16px;"><div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:6px;">💡 Rotation Insight</div><div style="font-size:12px;color:#374f6e;line-height:1.7;">Money appears to be rotating <strong style="color:#4ade80;">into {top_secs[0][0]}</strong> and <strong style="color:#f87171;">out of {bottom_secs[0][0]}</strong>. This shift can suggest changing investor sentiment or sector-specific catalysts.</div></div>',unsafe_allow_html=True)
+
+    # ── Module 10: Watchlist Analytics ──
+    with tabs[9]:
+        st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">⭐ Your Watchlist Analytics</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Performance and signal analysis for stocks you\'re tracking.</div>',unsafe_allow_html=True)
+        wl=st.session_state.get("watchlist",[])
+        if not wl:
+            st.markdown(f'<div style="background:#0d1525;border:1px solid {BORDER};border-radius:10px;padding:32px;text-align:center;"><div style="font-size:32px;margin-bottom:10px;">📋</div><div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">Your watchlist is empty</div><div style="font-size:12px;color:#374f6e;margin-bottom:16px;">Add stocks to see analytics here.</div></div>',unsafe_allow_html=True)
+            if st.button("→ Browse Stocks to Add",key="bi_wl_empty",type="primary",use_container_width=True): nav("discover")
+        else:
+            wl_data=[]; wl_prog=st.progress(0,f"Loading {len(wl)} watchlist stocks…")
+            for i,t in enumerate(wl):
+                wl_prog.progress((i+1)/len(wl))
+                df=yf_ohlcv(t,30); info=yf_fund(t); sent=st_sent(t); q=get_quote(t)
+                if df is None or df.empty or not q: continue
+                sc,bd,op,risk,conf=compute_scores(df,info,sent)
+                wl_data.append({"t":t,"price":q["price"],"pct":q["pct"],"score":sc,"risk":risk,"bull":sent["bull"]})
+            wl_prog.empty()
+            if wl_data:
+                avg_score=sum(r["score"] for r in wl_data)/len(wl_data)
+                avg_pct=sum(r["pct"] for r in wl_data)/len(wl_data)
+                bull_count=sum(1 for r in wl_data if r["pct"]>0)
+                ws_cols=st.columns(4)
+                ws_cols[0].markdown(f'<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:14px;border-radius:10px;"><div style="font-family:\'JetBrains Mono\',monospace;font-size:18px;font-weight:800;color:#e2e8f0;">{len(wl_data)}</div><div style="font-size:11px;color:#374f6e;">Stocks Tracked</div></div>',unsafe_allow_html=True)
+                ws_cols[1].markdown(f'<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:14px;border-radius:10px;"><div style="font-family:\'JetBrains Mono\',monospace;font-size:18px;font-weight:800;color:{GREEN if avg_score>=60 else GOLD if avg_score>=40 else RED};">{avg_score:.0f}</div><div style="font-size:11px;color:#374f6e;">Avg Score</div></div>',unsafe_allow_html=True)
+                ws_cols[2].markdown(f'<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:14px;border-radius:10px;"><div style="font-family:\'JetBrains Mono\',monospace;font-size:18px;font-weight:800;color:{GREEN if avg_pct>0 else RED};">{avg_pct:+.2f}%</div><div style="font-size:11px;color:#374f6e;">Avg Today</div></div>',unsafe_allow_html=True)
+                ws_cols[3].markdown(f'<div class="stat" style="background:#080b14;border:1px solid {BORDER};padding:14px;border-radius:10px;"><div style="font-family:\'JetBrains Mono\',monospace;font-size:18px;font-weight:800;color:{GREEN};">{bull_count}/{len(wl_data)}</div><div style="font-size:11px;color:#374f6e;">Bullish Today</div></div>',unsafe_allow_html=True)
+                st.markdown('<div style="height:14px;"></div>',unsafe_allow_html=True)
+                if HAS_PLOTLY:
+                    df_wl=pd.DataFrame(wl_data).sort_values("score",ascending=False)
+                    colors_wl=[GREEN if s>=65 else GOLD if s>=45 else RED for s in df_wl["score"]]
+                    fig=go.Figure(go.Bar(x=df_wl["t"],y=df_wl["score"],marker_color=colors_wl,
+                        text=[f"{s}" for s in df_wl["score"]],textposition="outside",
+                        textfont=dict(size=13,family="JetBrains Mono",color="#94a3b8")))
+                    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=10,b=0),height=300,
+                        yaxis=dict(range=[0,110],showgrid=False,color="#4a5e7a",title="Score"),
+                        xaxis=dict(showgrid=False,color="#60a5fa",tickfont=dict(family="JetBrains Mono",size=12)))
+                    st.plotly_chart(fig,use_container_width=True)
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -2755,7 +3916,7 @@ def page_watchlist():
     st.markdown('<div class="pg">',unsafe_allow_html=True)
 
     wl=st.session_state.get("watchlist",[])
-    if st.button("← Back", key="wl_back"): go_back()
+    back_button("wl_back")
     hdr1,hdr2=st.columns([3,1])
     with hdr1: st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:4px;">⭐ My Watchlist</div>',unsafe_allow_html=True)
     with hdr2:
@@ -2799,6 +3960,28 @@ def page_watchlist():
         st.markdown('</div>',unsafe_allow_html=True)
         return
 
+    # ── Summary stats strip ──
+    avg_score = sum(r["Score"] for r in rows) / len(rows) if rows else 0
+    bull_count = sum(1 for r in rows if r["_pct"] > 0)
+    avg_pct = sum(r["_pct"] for r in rows) / len(rows) if rows else 0
+    best_perf = max(rows, key=lambda x: x["_pct"]) if rows else {}
+    worst_perf = min(rows, key=lambda x: x["_pct"]) if rows else {}
+
+    summary_cols = st.columns(5)
+    summary_data = [
+        (len(rows), "Stocks", "#60a5fa"),
+        (f"{avg_score:.0f}", "Avg Score", GREEN if avg_score >= 60 else GOLD if avg_score >= 40 else RED),
+        (f"{avg_pct:+.2f}%", "Avg Today", GREEN if avg_pct >= 0 else RED),
+        (f"{best_perf.get('Ticker','—')}", f"Best ({best_perf.get('_pct',0):+.1f}%)" if best_perf else "Best", GREEN),
+        (f"{bull_count}/{len(rows)}", "Bullish", GREEN),
+    ]
+    for col, (val, lbl, color) in zip(summary_cols, summary_data):
+        col.markdown(f"""<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px;text-align:center;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:{color};">{val}</div>
+            <div style="font-size:11px;color:#374f6e;margin-top:3px;">{lbl}</div>
+        </div>""", unsafe_allow_html=True)
+    st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+
     # Premium score chart
     if is_premium() and HAS_PLOTLY:
         st.markdown('<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📊 Score Distribution</div>',unsafe_allow_html=True)
@@ -2819,33 +4002,150 @@ def page_watchlist():
     with ex1:
         export_button(display_rows, "stockwins_watchlist.xlsx", "📥 Export Watchlist", "wl_export")
 
-    st.dataframe(pd.DataFrame(display_rows),use_container_width=True,hide_index=True)
+    # Sort selector
+    with ex2:
+        sort_options = ["Score (high→low)", "Change % (best→worst)", "Change % (worst→best)", "Ticker A→Z", "Risk (low→high)"]
+        sort_choice = st.selectbox("Sort by", sort_options, key="wl_sort", label_visibility="collapsed")
+        if sort_choice == "Score (high→low)":           rows.sort(key=lambda x: x["Score"], reverse=True)
+        elif sort_choice == "Change % (best→worst)":     rows.sort(key=lambda x: x["_pct"], reverse=True)
+        elif sort_choice == "Change % (worst→best)":     rows.sort(key=lambda x: x["_pct"])
+        elif sort_choice == "Ticker A→Z":                rows.sort(key=lambda x: x["Ticker"])
+        elif sort_choice == "Risk (low→high)":
+            risk_order = {"Low":1, "Medium":2, "High":3, "Very High":4}
+            rows.sort(key=lambda x: risk_order.get(x["Risk"], 5))
 
-    # Quick actions
+    st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+
+    # ── Load notes (per ticker) ──
+    db_user_wl = st.session_state.users_db.get(st.session_state.user.get("email",""),{}) if is_authed() else {}
+    wl_notes = db_user_wl.get("watchlist_notes", {})
+
+    # ── Card-style rows ──
     st.markdown('<div style="margin-top:12px;">',unsafe_allow_html=True)
     for r in rows:
         t=r["Ticker"]; cc_=r["_cc"]; rec_clr=r["_rec_clr"]
-        r1,r2,r3=st.columns([3,1,1],gap="small")
+        existing_note = wl_notes.get(t, "")
+        r1,r2,r3,r4=st.columns([3,1,1,1],gap="small")
         with r1:
+            note_badge = f'<span style="background:rgba(168,85,247,0.15);color:#c084fc;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid rgba(168,85,247,0.3);margin-left:6px;">📝 Note</span>' if existing_note else ''
             st.markdown(f'''<div class="sr" style="padding:10px 14px;">
-                <div style="display:flex;align-items:center;gap:8px;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <span class="sr-tick">{t}</span>
                     <span style="font-size:11px;color:#374f6e;">{r["Name"]}</span>
                     <span style="background:{rec_clr}22;color:{rec_clr};font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid {rec_clr}44;">{r["Signal"]}</span>
+                    {note_badge}
                 </div>
-                <div style="display:flex;gap:16px;margin-top:4px;font-size:12px;">
+                <div style="display:flex;gap:16px;margin-top:4px;font-size:12px;flex-wrap:wrap;">
                     <span style="font-family:'JetBrains Mono',monospace;color:#e2e8f0;font-weight:700;">{r["Price"]}</span>
                     <span style="font-weight:700;color:{cc_};">{r["Change"]}</span>
                     <span style="color:#374f6e;">Score: {r["Score"]}</span>
                     <span style="color:#374f6e;">{r["Risk"]} Risk</span>
+                    <span style="color:#374f6e;">{r["Sector"]}</span>
                 </div>
             </div>''',unsafe_allow_html=True)
         with r2:
             if st.button("📊 Report",key=f"wl_rep_{t}",use_container_width=True,type="primary"):
                 st.session_state.detail_ticker=t; st.session_state.detail_data={}; nav("stock_detail")
         with r3:
+            if st.button("📝 Note",key=f"wl_note_{t}",use_container_width=True):
+                st.session_state[f"_editing_note_{t}"] = True
+                st.rerun()
+        with r4:
             if st.button("✕ Remove",key=f"wl_rm_{t}",use_container_width=True):
-                wl.remove(t); st.session_state.watchlist=wl; st.rerun()
+                wl.remove(t)
+                st.session_state.watchlist=wl
+                if is_authed():
+                    uemail = st.session_state.user["email"]
+                    if uemail in st.session_state.users_db:
+                        st.session_state.users_db[uemail]["watchlist"] = wl
+                        save_user_to_file(uemail, st.session_state.users_db[uemail])
+                st.toast(f"Removed {t}", icon="✅")
+                st.rerun()
+
+        # Inline note editor
+        if st.session_state.get(f"_editing_note_{t}"):
+            with st.form(f"note_form_{t}", clear_on_submit=False):
+                note_text = st.text_area(f"Note for {t}", value=existing_note,
+                                          placeholder="e.g. Watching for earnings catalyst on Nov 15. Entry zone: $145-150.",
+                                          height=80, key=f"note_text_{t}")
+                nc1, nc2 = st.columns(2)
+                with nc1:
+                    save_note = st.form_submit_button("💾 Save Note", type="primary", use_container_width=True)
+                with nc2:
+                    cancel_note = st.form_submit_button("Cancel", use_container_width=True)
+                if save_note:
+                    if is_authed():
+                        uemail = st.session_state.user["email"]
+                        if uemail in st.session_state.users_db:
+                            if "watchlist_notes" not in st.session_state.users_db[uemail]:
+                                st.session_state.users_db[uemail]["watchlist_notes"] = {}
+                            if note_text.strip():
+                                st.session_state.users_db[uemail]["watchlist_notes"][t] = note_text.strip()
+                            else:
+                                st.session_state.users_db[uemail]["watchlist_notes"].pop(t, None)
+                            save_user_to_file(uemail, st.session_state.users_db[uemail])
+                            st.toast(f"📝 Note saved for {t}", icon="✅")
+                    st.session_state.pop(f"_editing_note_{t}", None)
+                    st.rerun()
+                if cancel_note:
+                    st.session_state.pop(f"_editing_note_{t}", None)
+                    st.rerun()
+        elif existing_note:
+            # Show note preview
+            st.markdown(f'''<div style="background:rgba(168,85,247,0.06);border-left:3px solid #c084fc;
+                        padding:8px 14px;margin:2px 0 8px;font-size:12px;color:#cbd5e1;font-style:italic;">
+                📝 {existing_note}
+            </div>''', unsafe_allow_html=True)
+
+    # ── Compare Mode (Premium) ──
+    if is_premium() and len(rows) >= 2:
+        st.markdown('<div class="div-line"></div>', unsafe_allow_html=True)
+        cmp_header_col1, cmp_header_col2 = st.columns([3,1])
+        with cmp_header_col1:
+            st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;">⚖️ Compare Mode</div><div style="font-size:11px;color:#374f6e;">Select 2-4 stocks to compare side-by-side</div>', unsafe_allow_html=True)
+        with cmp_header_col2:
+            cmp_active = st.toggle("Enable", key="cmp_toggle", value=st.session_state.get("_cmp_active", False))
+            st.session_state["_cmp_active"] = cmp_active
+
+        if cmp_active:
+            all_tickers = [r["Ticker"] for r in rows]
+            sel_compare = st.multiselect("Pick 2-4 tickers", all_tickers,
+                                          default=all_tickers[:min(3, len(all_tickers))],
+                                          max_selections=4, key="cmp_sel")
+            if len(sel_compare) >= 2:
+                cmp_data = [r for r in rows if r["Ticker"] in sel_compare]
+
+                # Comparison columns
+                cmp_cols = st.columns(len(cmp_data))
+                for cc, r in zip(cmp_cols, cmp_data):
+                    rec_clr = r["_rec_clr"]
+                    cc_color = r["_cc"]
+                    cc.markdown(f"""<div style="background:#080b14;border:1px solid {rec_clr}44;border-radius:12px;padding:16px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:900;color:#60a5fa;">{r['Ticker']}</span>
+                            <span style="background:{rec_clr}22;color:{rec_clr};font-size:9px;font-weight:800;padding:3px 8px;border-radius:5px;border:1px solid {rec_clr}44;">{r['Signal']}</span>
+                        </div>
+                        <div style="font-size:11px;color:#6b7fa0;margin-bottom:12px;line-height:1.5;">{r['Name'][:24]}</div>
+                        <table style="width:100%;font-size:12px;color:#e2e8f0;border-collapse:collapse;">
+                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Price</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">{r['Price']}</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Today</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{cc_color};">{r['Change']}</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">SW Score</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{'#4ade80' if r['Score']>=65 else '#fbbf24' if r['Score']>=45 else '#f87171'};">{r['Score']}/100</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Risk</td><td style="padding:6px 0;text-align:right;font-weight:700;">{r['Risk']}</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Short Float</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;">{r['Short Float']}</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Sector</td><td style="padding:6px 0;text-align:right;font-size:11px;">{r['Sector'][:18]}</td></tr>
+                        </table>
+                    </div>""", unsafe_allow_html=True)
+
+                # Winner banner
+                best_cmp = max(cmp_data, key=lambda x: x["Score"])
+                st.markdown(f"""<div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);
+                            border-radius:10px;padding:12px 16px;margin-top:14px;text-align:center;font-size:12px;color:#4ade80;">
+                    🏆 <strong>{best_cmp['Ticker']}</strong> has the highest StockWins score in this comparison
+                    ({best_cmp['Score']}/100, {best_cmp['Signal']})
+                </div>""", unsafe_allow_html=True)
+            else:
+                st.info("Select at least 2 tickers to compare.")
+
     st.markdown('</div>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -2855,63 +4155,192 @@ def page_watchlist():
 def page_screener():
     render_topbar("screener")
     st.markdown('<div class="pg">',unsafe_allow_html=True)
-    if st.button("← Back", key="scr_back"): go_back()
-    st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:4px;">🔍 Advanced Stock Screener</div>',unsafe_allow_html=True)
-    st.markdown('<div style="font-size:13px;color:#374f6e;margin-bottom:16px;">Filter stocks by RSI, MACD, volume, sentiment, and more. Save your best screens.</div>',unsafe_allow_html=True)
+    back_button("scr_back")
+    st.markdown(f'<div style="font-size:24px;font-weight:800;color:#e2e8f0;margin-bottom:4px;">🔍 Advanced Stock Screener</div>',unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:13px;color:#374f6e;margin-bottom:16px;">Filter stocks by RSI, MACD, volume, sentiment, and more. Save your screens for one-click access.</div>',unsafe_allow_html=True)
+
     if not is_premium():
         render_lock("Advanced Stock Screener")
         st.markdown('</div>',unsafe_allow_html=True); return
+
+    # ── Built-in preset templates ──
+    BUILTIN_PRESETS = {
+        "🔥 Squeeze Candidates":      {"min_sc":50,"min_rsi":35,"max_rsi":85,"min_sf":15,"req_bull":False,"req_above":False,"req_vol":True,"req_hot":False,"cats":["💻 Tech","🚗 EV","🏥 Biotech"]},
+        "🚀 Strong Buys":              {"min_sc":65,"min_rsi":50,"max_rsi":75,"min_sf":0,"req_bull":True,"req_above":True,"req_vol":False,"req_hot":False,"cats":["💻 Tech","🤖 AI","🚗 EV"]},
+        "💎 Hidden Gems":              {"min_sc":55,"min_rsi":40,"max_rsi":65,"min_sf":0,"req_bull":True,"req_above":True,"req_vol":True,"req_hot":False,"cats":["💻 Tech","🤖 AI"]},
+        "📉 Oversold Bounces":         {"min_sc":40,"min_rsi":0,"max_rsi":35,"min_sf":0,"req_bull":False,"req_above":False,"req_vol":False,"req_hot":False,"cats":list(CATEGORIES.keys())[:6]},
+        "🌊 Momentum Plays":           {"min_sc":60,"min_rsi":55,"max_rsi":80,"min_sf":0,"req_bull":True,"req_above":True,"req_vol":True,"req_hot":True,"cats":["💻 Tech","🤖 AI"]},
+        "🎭 Social Buzz Movers":       {"min_sc":45,"min_rsi":40,"max_rsi":80,"min_sf":0,"req_bull":False,"req_above":False,"req_vol":False,"req_hot":True,"cats":list(CATEGORIES.keys())[:5]},
+    }
+
+    # ── Load user's saved screeners ──
+    if is_authed() and "saved_screeners" not in st.session_state:
+        uemail = st.session_state.user.get("email","")
+        db_u = st.session_state.users_db.get(uemail,{})
+        st.session_state.saved_screeners = db_u.get("saved_screeners", [])
+
+    saved_screeners = st.session_state.get("saved_screeners", [])
+
+    # ── Preset library ──
+    st.markdown(f'<div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px;">⚡ QUICK PRESETS</div>',unsafe_allow_html=True)
+    preset_cols = st.columns(3, gap="small")
+    for i, (preset_name, preset_data) in enumerate(BUILTIN_PRESETS.items()):
+        with preset_cols[i % 3]:
+            if st.button(preset_name, key=f"scr_preset_{i}", use_container_width=True):
+                st.session_state["_scr_loaded"] = preset_data
+                st.session_state["_scr_loaded_name"] = preset_name
+                st.toast(f"Loaded preset: {preset_name}", icon="⚡")
+                st.rerun()
+
+    # User saved screeners
+    if saved_screeners:
+        st.markdown(f'<div style="font-size:13px;font-weight:700;color:#94a3b8;margin:14px 0 8px;">💾 YOUR SAVED SCREENERS</div>',unsafe_allow_html=True)
+        for si, scr in enumerate(saved_screeners):
+            sc_c1, sc_c2, sc_c3 = st.columns([4,1,1])
+            with sc_c1:
+                if st.button(f"📂 {scr.get('name','Untitled')}",
+                              key=f"scr_load_{si}", use_container_width=True):
+                    st.session_state["_scr_loaded"] = scr
+                    st.session_state["_scr_loaded_name"] = scr.get('name','Untitled')
+                    st.toast(f"Loaded: {scr.get('name')}", icon="📂")
+                    st.rerun()
+            with sc_c2:
+                if st.button("🔄 Run", key=f"scr_runsaved_{si}", use_container_width=True):
+                    st.session_state["_scr_loaded"] = scr
+                    st.session_state["_scr_loaded_name"] = scr.get('name','Untitled')
+                    st.session_state["_scr_autorun"] = True
+                    st.rerun()
+            with sc_c3:
+                if st.button("🗑", key=f"scr_del_{si}", use_container_width=True, help="Delete this screener"):
+                    saved_screeners.pop(si)
+                    st.session_state.saved_screeners = saved_screeners
+                    if is_authed():
+                        uemail = st.session_state.user["email"]
+                        if uemail in st.session_state.users_db:
+                            st.session_state.users_db[uemail]["saved_screeners"] = saved_screeners
+                            save_user_to_file(uemail, st.session_state.users_db[uemail])
+                    st.toast("Screener deleted", icon="🗑️")
+                    st.rerun()
+
+    # ── Filter UI with loaded values applied ──
+    loaded = st.session_state.get("_scr_loaded", {})
+    loaded_name = st.session_state.get("_scr_loaded_name","")
+    if loaded_name:
+        st.markdown(f'<div style="background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.3);border-radius:8px;padding:8px 14px;margin:14px 0 4px;font-size:12px;color:#93b4fd;">📌 Loaded: <strong>{loaded_name}</strong></div>',unsafe_allow_html=True)
+
+    st.markdown('<div style="height:14px;"></div>',unsafe_allow_html=True)
+
     with st.expander("⚙️ Screener Filters",expanded=True):
-        c1,c2,c3,c4=st.columns(4)
+        c1,c2,c3,c4 = st.columns(4)
         with c1:
-            min_sc=st.slider("Min SW Score",0,100,40,help="StockWins composite score (0-100). 65+ = strong signal")
-            min_rsi=st.slider("Min RSI",0,100,20,help="Minimum RSI. Below 30 = oversold")
-        with c2: max_rsi=st.slider("Max RSI",0,100,80); min_sf=st.slider("Min Short Float %",0,50,0)
+            min_sc = st.slider("Min SW Score", 0, 100, loaded.get("min_sc",40), help="StockWins composite score. 65+ = strong signal")
+            min_rsi = st.slider("Min RSI", 0, 100, loaded.get("min_rsi",20), help="Below 30 = oversold")
+        with c2:
+            max_rsi = st.slider("Max RSI", 0, 100, loaded.get("max_rsi",80))
+            min_sf = st.slider("Min Short Float %", 0, 50, loaded.get("min_sf",0))
         with c3:
-            req_bull=st.checkbox("MACD Bullish only"); req_above=st.checkbox("Above 20-day MA")
-            req_vol=st.checkbox("Volume spike >1.5×"); req_hot=st.checkbox("StockTwits trending")
+            req_bull = st.checkbox("MACD Bullish only", value=loaded.get("req_bull",False))
+            req_above = st.checkbox("Above 20-day MA", value=loaded.get("req_above",False))
+            req_vol = st.checkbox("Volume spike >1.5×", value=loaded.get("req_vol",False))
+            req_hot = st.checkbox("StockTwits trending", value=loaded.get("req_hot",False))
         with c4:
-            sel_cats=st.multiselect("Categories",list(CATEGORIES.keys()),default=["💻 Tech","🤖 AI"])
-    sn,sb=st.columns([3,1])
-    with sn: scr_name=st.text_input("Name this screener",placeholder="My Growth Screen",label_visibility="visible")
+            sel_cats = st.multiselect("Categories", list(CATEGORIES.keys()),
+                                       default=loaded.get("cats",["💻 Tech","🤖 AI"]))
+
+    # ── Save current settings ──
+    sn, sb = st.columns([3,1])
+    with sn:
+        scr_name = st.text_input("Name this screener", placeholder="My Growth Screen",
+                                   value=loaded_name if loaded_name and loaded_name not in BUILTIN_PRESETS else "")
     with sb:
-        if st.button("💾 Save",key="scr_save",use_container_width=True) and scr_name:
-            st.session_state.saved_screeners=st.session_state.get("saved_screeners",[])
-            st.session_state.saved_screeners.append({"name":scr_name,"cats":sel_cats,"min_sc":min_sc})
-            st.success("Saved!")
-    if st.button("🔍 Run Screener",key="scr_run",type="primary",use_container_width=True):
-        hot_list=st_hot() if req_hot else []
-        universe=list(set([t for c in sel_cats for t in CATEGORIES.get(c,[])]))[:30]
-        results=[]; prog=st.progress(0,"Screening…")
-        for i,t in enumerate(universe):
-            prog.progress((i+1)/len(universe))
-            if req_hot and t not in hot_list: continue
-            q=get_quote(t); df=yf_ohlcv(t,60); info=yf_fund(t); sent=st_sent(t)
-            sc,bd,op,risk,_=compute_scores(df,info,sent); rec_lbl,rec_clr,_=get_recommendation(sc,bd,info)
-            if df is None or len(df)<20: continue
-            try:
-                rsi=ta.momentum.RSIIndicator(df["close"].copy(),14).rsi().iloc[-1]
-                ma20=df["close"].rolling(20).mean().iloc[-1]
-                mac_ind=ta.trend.MACD(df["close"].copy()); mv=mac_ind.macd().iloc[-1]; ms=mac_ind.macd_signal().iloc[-1]
-                price=df["close"].iloc[-1]; avg_v=df["volume"].rolling(20).mean().iloc[-1]; cur_v=df["volume"].iloc[-1]
-                sf=(info.get("sf",0) or 0)*100
-                if sc<min_sc or sf<min_sf: continue
-                if pd.notna(rsi) and (rsi<min_rsi or rsi>max_rsi): continue
-                if req_bull and pd.notna(mv) and mv<ms: continue
-                if req_above and pd.notna(ma20) and price<ma20: continue
-                if req_vol and pd.notna(avg_v) and avg_v>0 and cur_v<avg_v*1.5: continue
-                results.append({"Ticker":t,"Price":f"${price:,.2f}","Signal":rec_lbl,"RSI":round(rsi,1) if pd.notna(rsi) else "N/A","Score":sc,"Risk":risk,"Short Float":f"{sf:.1f}%","MACD":"Bullish" if (pd.notna(mv) and mv>ms) else "Bearish","vs MA20":"Above" if price>ma20 else "Below","Vol Ratio":f"{cur_v/avg_v:.1f}×" if pd.notna(avg_v) and avg_v>0 else "N/A"})
-            except: continue
-        prog.empty()
-        if results:
-            st.success(f"✅ {len(results)} stocks passed your filters!")
-            sorted_results = pd.DataFrame(results).sort_values("Score",ascending=False)
-            sc_ex1,sc_ex2=st.columns([1,3])
-            with sc_ex1:
-                scr_rows=sorted_results.to_dict("records")
-                export_button(scr_rows, "stockwins_screener.xlsx", "📥 Export Results", "scr_export")
-            st.dataframe(sorted_results,use_container_width=True,hide_index=True)
-        else: st.info("No matches. Try relaxing filters.")
+        if st.button("💾 Save Screener", key="scr_save", use_container_width=True):
+            if not scr_name:
+                st.warning("Enter a name for your screener first.")
+            else:
+                new_scr = {"name":scr_name, "min_sc":min_sc, "min_rsi":min_rsi, "max_rsi":max_rsi,
+                            "min_sf":min_sf, "req_bull":req_bull, "req_above":req_above,
+                            "req_vol":req_vol, "req_hot":req_hot, "cats":sel_cats,
+                            "created":datetime.now().strftime("%Y-%m-%d")}
+                # Replace if name exists
+                saved_screeners = [s for s in saved_screeners if s.get("name") != scr_name]
+                saved_screeners.append(new_scr)
+                st.session_state.saved_screeners = saved_screeners
+                if is_authed():
+                    uemail = st.session_state.user["email"]
+                    if uemail in st.session_state.users_db:
+                        st.session_state.users_db[uemail]["saved_screeners"] = saved_screeners
+                        save_user_to_file(uemail, st.session_state.users_db[uemail])
+                st.toast(f"💾 Saved: {scr_name}", icon="✅")
+                st.success(f"✅ Saved as '{scr_name}'")
+                time.sleep(0.5)
+                st.rerun()
+
+    # ── Run screener ──
+    auto_run = st.session_state.pop("_scr_autorun", False)
+    if auto_run or st.button("🔍 Run Screener", key="scr_run", type="primary", use_container_width=True):
+        hot_list = st_hot() if req_hot else []
+        universe = list(set([t for c in sel_cats for t in CATEGORIES.get(c,[])]))[:30]
+        if not universe:
+            st.warning("Select at least one category.")
+        else:
+            results = []
+            prog = st.progress(0, f"Screening {len(universe)} tickers…")
+            for i, t in enumerate(universe):
+                prog.progress((i+1)/len(universe))
+                if req_hot and t not in hot_list: continue
+                q = get_quote(t); df = yf_ohlcv(t,60); info = yf_fund(t); sent = st_sent(t)
+                sc, bd, op, risk, _ = compute_scores(df, info, sent)
+                rec_lbl, rec_clr, _ = get_recommendation(sc, bd, info)
+                if df is None or len(df) < 20: continue
+                try:
+                    rsi = ta.momentum.RSIIndicator(df["close"].copy(), 14).rsi().iloc[-1]
+                    ma20 = df["close"].rolling(20).mean().iloc[-1]
+                    mac_ind = ta.trend.MACD(df["close"].copy())
+                    mv = mac_ind.macd().iloc[-1]; ms = mac_ind.macd_signal().iloc[-1]
+                    price = df["close"].iloc[-1]
+                    avg_v = df["volume"].rolling(20).mean().iloc[-1]
+                    cur_v = df["volume"].iloc[-1]
+                    sf = (info.get("sf",0) or 0) * 100
+                    if sc < min_sc or sf < min_sf: continue
+                    if pd.notna(rsi) and (rsi < min_rsi or rsi > max_rsi): continue
+                    if req_bull and pd.notna(mv) and mv < ms: continue
+                    if req_above and pd.notna(ma20) and price < ma20: continue
+                    if req_vol and pd.notna(avg_v) and avg_v > 0 and cur_v < avg_v * 1.5: continue
+                    results.append({
+                        "Ticker": t,
+                        "Price": f"${price:,.2f}",
+                        "Signal": rec_lbl,
+                        "RSI": round(rsi,1) if pd.notna(rsi) else "N/A",
+                        "Score": sc,
+                        "Risk": risk,
+                        "Short Float": f"{sf:.1f}%",
+                        "MACD": "Bullish" if (pd.notna(mv) and mv > ms) else "Bearish",
+                        "vs MA20": "Above" if price > ma20 else "Below",
+                        "Vol Ratio": f"{cur_v/avg_v:.1f}×" if pd.notna(avg_v) and avg_v > 0 else "N/A",
+                    })
+                except: continue
+            prog.empty()
+            if results:
+                st.success(f"✅ {len(results)} stocks passed your filters!")
+                sorted_results = pd.DataFrame(results).sort_values("Score", ascending=False)
+                sc_ex1, sc_ex2 = st.columns([1,3])
+                with sc_ex1:
+                    scr_rows = sorted_results.to_dict("records")
+                    export_button(scr_rows, "stockwins_screener.xlsx", "📥 Export Results", "scr_export")
+                st.dataframe(sorted_results, use_container_width=True, hide_index=True)
+
+                # Quick view buttons for top 3
+                st.markdown('<div style="font-size:12px;color:#374f6e;margin:14px 0 8px;">⚡ View top results:</div>', unsafe_allow_html=True)
+                top3_cols = st.columns(3, gap="small")
+                for j, row in enumerate(sorted_results.head(3).to_dict("records")):
+                    with top3_cols[j]:
+                        if st.button(f"📈 {row['Ticker']} → Full Report", key=f"scr_view_{j}", use_container_width=True):
+                            st.session_state.detail_ticker = row["Ticker"]
+                            st.session_state.detail_data = {}
+                            nav("stock_detail")
+            else:
+                st.info("No matches. Try relaxing your filters or selecting more categories.")
+
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -2919,6 +4348,7 @@ def page_screener():
 # ─────────────────────────────────────────────────────────────
 def page_pricing():
     render_topbar("pricing")
+    back_button("pr_back")
 
     # ── Embedded Stripe checkout (show when session created) ──
     if st.session_state.get("_stripe_embed"):
@@ -3200,8 +4630,9 @@ def _do_checkout(plan):
 # PAGE: SETTINGS
 # ─────────────────────────────────────────────────────────────
 def page_settings():
-    render_topbar()
+    render_topbar("settings")
     st.markdown('<div class="pg">',unsafe_allow_html=True)
+    back_button("set_back")
     # Settings header with user info
     db_u_hdr = st.session_state.users_db.get(st.session_state.user["email"],{}) if is_authed() else {}
     role_disp = {"owner":"👑 Owner","admin":"🛡️ Admin","premium":"⭐ Premium","free":"👤 Free"}.get(st.session_state.get("role","free"),"👤 Free")
@@ -3219,30 +4650,157 @@ def page_settings():
     db_user=st.session_state.users_db.get(st.session_state.user["email"],{}) if is_authed() else {}
     email=st.session_state.user["email"] if is_authed() else ""
 
-    tabs=st.tabs(["👤 Profile","🔐 Security","🔔 Alerts","📧 Email Digest","📊 Subscription"])
+    tabs=st.tabs(["👤 Profile","🔐 Security","🔔 Alerts","📨 Notifications","📧 Email Digest","📊 Subscription"])
 
     with tabs[0]:
+        st.markdown(f'<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">👤 Personal Information</div>',unsafe_allow_html=True)
+
+        verified_email = db_user.get("verified", False)
+        phone_verified = db_user.get("phone_verified", False)
+        current_phone  = db_user.get("phone", "")
+
         with st.form("pf"):
-            nn=st.text_input("Display Name",value=st.session_state.user.get("name",""))
-            st.text_input("Email",value=email,disabled=True,label_visibility="visible")
-            if db_user.get("verified"): st.markdown(f'<div style="font-size:12px;color:{GREEN};margin:4px 0;">✅ Email verified</div>',unsafe_allow_html=True)
-            if st.form_submit_button("Save Changes",type="primary") and nn:
-                st.session_state.user["name"]=nn
-                if email in st.session_state.users_db: st.session_state.users_db[email]["name"]=nn
-                st.success("✅ Updated!")
+            nn = st.text_input("Display Name", value=st.session_state.user.get("name",""),
+                                help="Shown throughout the app")
+
+            ec1, ec2 = st.columns([4,1])
+            with ec1:
+                st.text_input("Email Address", value=email, disabled=True,
+                              help="Email cannot be changed. Contact support to migrate accounts.")
+            with ec2:
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                if verified_email:
+                    st.markdown(f'<div style="background:rgba(34,197,94,0.1);color:{GREEN};border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">✅ Verified</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div style="background:rgba(245,158,11,0.1);color:{GOLD};border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">⚠ Unverified</div>', unsafe_allow_html=True)
+
+            pc1, pc2 = st.columns([4,1])
+            with pc1:
+                ph = st.text_input("Phone Number (optional)", value=current_phone,
+                                    placeholder="+14155551234",
+                                    help="For SMS alerts on Premium. Format: +1 country code + number")
+            with pc2:
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                if current_phone and phone_verified:
+                    st.markdown(f'<div style="background:rgba(34,197,94,0.1);color:{GREEN};border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">✅ Verified</div>', unsafe_allow_html=True)
+                elif current_phone:
+                    st.markdown(f'<div style="background:rgba(245,158,11,0.1);color:{GOLD};border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">⚠ Unverified</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div style="background:rgba(255,255,255,0.04);color:#4a5e7a;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">— None —</div>', unsafe_allow_html=True)
+
+            if st.form_submit_button("💾 Save Profile Changes", type="primary", use_container_width=True):
+                changed = False
+                if nn and nn != st.session_state.user.get("name",""):
+                    st.session_state.user["name"] = nn
+                    if email in st.session_state.users_db:
+                        st.session_state.users_db[email]["name"] = nn
+                    changed = True
+                if ph != current_phone:
+                    clean_phone = "".join(c for c in ph if c.isdigit() or c == "+")
+                    if clean_phone and not (clean_phone.startswith("+") and len(clean_phone) >= 10):
+                        st.error("Phone must include country code (e.g. +14155551234) or leave blank.")
+                    else:
+                        st.session_state.users_db[email]["phone"] = clean_phone
+                        st.session_state.users_db[email]["phone_verified"] = False
+                        changed = True
+                if changed:
+                    _save_global_db(st.session_state.users_db)
+                    save_user_to_file(email, st.session_state.users_db[email])
+                    st.success("✅ Profile updated!")
+                    st.rerun()
+
+        # ── Phone verification flow ──
+        if current_phone and not phone_verified:
+            st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">📱 Verify Your Phone Number</div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">A 6-digit code will be sent to <strong style="color:#e2e8f0;">{current_phone}</strong> via SMS.</div>',unsafe_allow_html=True)
+            if st.button("📲 Send Verification Code", key="phone_send_code", type="primary", use_container_width=True):
+                code = str(random.randint(100000, 999999))
+                st.session_state["_phone_verify_code"] = code
+                st.session_state["_phone_verify_for"] = email
+                ok, info = _send_sms(current_phone, f"Your StockWins verification code is: {code}\n\nValid for 10 minutes.")
+                if ok:
+                    st.success(f"✅ Code sent to {current_phone}.")
+                else:
+                    st.session_state["_phone_demo_code"] = code
+                    st.warning(f"📱 SMS not configured. Demo code: **{code}**")
+                st.rerun()
+
+            if st.session_state.get("_phone_verify_code"):
+                if st.session_state.get("_phone_demo_code"):
+                    st.markdown(f'<div style="font-size:11px;color:#fbbf24;margin-bottom:6px;">Demo mode — code: <strong>{st.session_state["_phone_demo_code"]}</strong></div>', unsafe_allow_html=True)
+                with st.form("phone_verify_form", clear_on_submit=False):
+                    entered = st.text_input("Enter 6-digit code from SMS", placeholder="123456", max_chars=6)
+                    pvc1, pvc2 = st.columns(2)
+                    with pvc1:
+                        verify_btn = st.form_submit_button("✅ Verify Phone", type="primary", use_container_width=True)
+                    with pvc2:
+                        cancel_btn = st.form_submit_button("Cancel", use_container_width=True)
+                    if verify_btn:
+                        if entered == st.session_state.get("_phone_verify_code",""):
+                            st.session_state.users_db[email]["phone_verified"] = True
+                            _save_global_db(st.session_state.users_db)
+                            save_user_to_file(email, st.session_state.users_db[email])
+                            st.session_state.pop("_phone_verify_code", None)
+                            st.session_state.pop("_phone_verify_for", None)
+                            st.session_state.pop("_phone_demo_code", None)
+                            st.toast("📱 Phone verified!", icon="✅")
+                            st.success("✅ Phone number verified!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Incorrect code. Please try again.")
+                    if cancel_btn:
+                        st.session_state.pop("_phone_verify_code", None)
+                        st.session_state.pop("_phone_demo_code", None)
+                        st.rerun()
+
+        # ── Resend email verification if not verified ──
+        if not verified_email:
+            st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">📧 Verify Your Email</div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">Send a verification code to <strong style="color:#e2e8f0;">{email}</strong></div>',unsafe_allow_html=True)
+            if st.button("📧 Send Email Verification Code", key="email_send_code", type="primary", use_container_width=True):
+                code = str(random.randint(100000, 999999))
+                st.session_state["_verify_code"] = code
+                st.session_state["_verify_email"] = email
+                st.session_state["_verify_user"] = {"name": st.session_state.user.get("name","")}
+                ok, info = _send_verification_email(email, code)
+                if not ok and info and info.startswith("DEMO_CODE:"):
+                    st.session_state["_demo_code"] = info.split(":",1)[1]
+                nav("verify_email")
 
     with tabs[1]:
-        st.markdown(f'<div class="card card-blue"><div style="font-size:12px;font-weight:700;color:#f87171;margin-bottom:4px;">🔒 Security Notice</div><div style="font-size:12px;color:#374f6e;line-height:1.6;">For production: Set admin/owner credentials in Streamlit Cloud Secrets. Your session data is not persisted between deployments.</div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">🔐 Change Password</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:14px;font-size:12px;color:#374f6e;line-height:1.7;">Strong passwords protect your account. Use 8+ characters mixing letters, numbers, and symbols.</div>',unsafe_allow_html=True)
+
         with st.form("pwf"):
-            cp=st.text_input("Current Password",type="password",label_visibility="visible")
-            np_=st.text_input("New Password",type="password",label_visibility="visible")
-            np2=st.text_input("Confirm New",type="password",label_visibility="visible")
-            if st.form_submit_button("Update Password",type="primary"):
-                if hp(cp)!=db_user.get("pw",""): st.error("Current password incorrect.")
-                elif np_!=np2: st.error("Passwords don't match.")
-                elif len(np_)<6: st.error("Must be 6+ characters.")
-                else: st.session_state.users_db[email]["pw"]=hp(np_); st.success("✅ Password updated!")
-        if st.button("🚪 Logout",key="set_logout"): logout()
+            cp = st.text_input("Current Password", type="password", help="Required to change your password")
+            np_ = st.text_input("New Password", type="password", placeholder="Minimum 8 characters")
+            np2 = st.text_input("Confirm New Password", type="password")
+            if st.form_submit_button("🔐 Update Password", type="primary", use_container_width=True):
+                if not cp or not np_ or not np2:
+                    st.error("Please fill in all fields.")
+                elif hp(cp) != db_user.get("pw",""):
+                    st.error("❌ Current password is incorrect.")
+                elif np_ != np2:
+                    st.error("New passwords don't match.")
+                elif len(np_) < 8:
+                    st.error("Password must be at least 8 characters.")
+                elif np_ == cp:
+                    st.error("New password must be different from current.")
+                else:
+                    st.session_state.users_db[email]["pw"] = hp(np_)
+                    _save_global_db(st.session_state.users_db)
+                    save_user_to_file(email, st.session_state.users_db[email])
+                    st.toast("🔐 Password changed!", icon="✅")
+                    st.success("✅ Password updated successfully!")
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">🚪 Account Sessions</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Currently signed in as <strong style="color:#e2e8f0;">{email}</strong></div>',unsafe_allow_html=True)
+        if st.button("🚪 Sign Out of This Session", key="set_logout", use_container_width=True):
+            logout()
 
     with tabs[2]:
         # ── Section 1: Proprietary Signals (default ON for premium) ──
@@ -3383,6 +4941,76 @@ def page_settings():
             st.markdown(f'<div class="card card-gold" style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:{GOLD};margin-bottom:4px;">👑 Premium Alert Channels</div><div style="font-size:12px;color:#374f6e;">Upgrade to Premium for instant Telegram alerts and real-time browser push notifications on composite category signals.</div></div>',unsafe_allow_html=True)
 
     with tabs[3]:
+        # ── Notification Preferences (master toggles) ──
+        st.markdown(f'<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📨 Notification Preferences</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:18px;">Master controls for all notifications. Use Alerts tab for specific ticker alerts.</div>',unsafe_allow_html=True)
+
+        # Default preferences if not set
+        notif_prefs = db_user.get("notif_prefs", {
+            "email_enabled": True,
+            "sms_enabled": True if db_user.get("phone_verified",False) else False,
+            "daily_digest": False,
+            "weekly_digest": False,
+            "proprietary_signals": True,
+            "watchlist_alerts": True,
+            "category_alerts": True,
+            "marketing": False,
+        })
+
+        # ── Channel Toggles ──
+        st.markdown(f'<div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:10px;">📡 DELIVERY CHANNELS</div>',unsafe_allow_html=True)
+        nc1, nc2 = st.columns(2)
+        with nc1:
+            new_email = st.toggle("📧 Email notifications", value=notif_prefs["email_enabled"], key="np_email")
+        with nc2:
+            sms_disabled = not (db_user.get("phone","") and db_user.get("phone_verified",False))
+            sms_help = "Verify your phone first" if sms_disabled else "Master switch for all SMS"
+            new_sms = st.toggle("📱 SMS notifications", value=notif_prefs["sms_enabled"], key="np_sms", disabled=sms_disabled, help=sms_help)
+        if sms_disabled:
+            st.caption("⚠️ Add and verify your phone in the Profile tab to enable SMS.")
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+
+        # ── Digest Toggles ──
+        st.markdown(f'<div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:10px;">📨 DIGESTS</div>',unsafe_allow_html=True)
+        dc1, dc2 = st.columns(2)
+        with dc1:
+            new_daily = st.toggle("📅 Daily digest", value=notif_prefs["daily_digest"], key="np_daily", help="Daily email at 7am ET with top opportunities")
+        with dc2:
+            new_weekly = st.toggle("📆 Weekly digest", value=notif_prefs["weekly_digest"], key="np_weekly", help="Weekly email Monday 7am ET")
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+
+        # ── Alert Type Toggles ──
+        st.markdown(f'<div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:10px;">🔔 ALERT CATEGORIES</div>',unsafe_allow_html=True)
+        ac1, ac2 = st.columns(2)
+        with ac1:
+            new_prop = st.toggle("✨ Proprietary signal alerts", value=notif_prefs["proprietary_signals"], key="np_prop", disabled=not is_premium(), help="Squeeze, Hidden Mover, Sentiment Flip, etc.")
+            new_wl = st.toggle("⭐ Watchlist alerts", value=notif_prefs["watchlist_alerts"], key="np_wl")
+        with ac2:
+            new_cat = st.toggle("📊 Category alerts", value=notif_prefs["category_alerts"], key="np_cat", disabled=not is_premium())
+            new_mkt = st.toggle("📢 Product updates & news", value=notif_prefs["marketing"], key="np_mkt")
+
+        if not is_premium():
+            st.caption("👑 Some alert categories require Premium.")
+
+        st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+
+        # ── Save button ──
+        if st.button("💾 Save Notification Preferences", key="save_notif_prefs", type="primary", use_container_width=True):
+            new_prefs = {
+                "email_enabled": new_email, "sms_enabled": new_sms,
+                "daily_digest": new_daily, "weekly_digest": new_weekly,
+                "proprietary_signals": new_prop, "watchlist_alerts": new_wl,
+                "category_alerts": new_cat, "marketing": new_mkt,
+            }
+            st.session_state.users_db[email]["notif_prefs"] = new_prefs
+            _save_global_db(st.session_state.users_db)
+            save_user_to_file(email, st.session_state.users_db[email])
+            st.toast("📨 Preferences saved!", icon="✅")
+            st.success("✅ Notification preferences updated!")
+
+    with tabs[4]:
         st.markdown('<div class="sec-hd" style="font-size:13px;">📧 Email Digest Settings</div>',unsafe_allow_html=True)
         if not is_premium():
             st.markdown(f'<div class="card card-gold"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Feature</div><div style="font-size:13px;color:#374f6e;">Email digests require a Premium subscription. Upgrade to receive daily or weekly summaries of your watchlist signals and new BUY opportunities.</div></div>',unsafe_allow_html=True)
@@ -3394,10 +5022,13 @@ def page_settings():
                 freq=st.selectbox("Frequency",["Daily (7am ET)","Weekly (Monday 7am ET)","Real-time Alerts"])
                 st.session_state.digest_frequency=freq
                 st.text_input("Send to",value=email,disabled=True,label_visibility="visible")
-                st.markdown('<div style="font-size:12px;color:#374f6e;margin-top:8px;line-height:1.7;">Digest includes: Top BUY signals from your watchlist · New composite category hits · Volume surge alerts · Squeeze setup notifications<br><span style="color:#2a3a52;">(Email delivery requires backend integration — currently simulated)</span></div>',unsafe_allow_html=True)
-                if st.button("Save Digest Settings",type="primary"): st.success("✅ Digest preferences saved!")
+                st.markdown('<div style="font-size:12px;color:#374f6e;margin-top:8px;line-height:1.7;">Digest includes: Top BUY signals from your watchlist · New composite category hits · Volume surge alerts · Squeeze setup notifications<br><span style="color:#2a3a52;">(Email delivery handled by alerts_worker.py)</span></div>',unsafe_allow_html=True)
+                if st.button("Save Digest Settings",type="primary"):
+                    st.session_state.users_db[email]["digest_prefs"] = {"frequency": freq, "enabled": True}
+                    save_user_to_file(email, st.session_state.users_db[email])
+                    st.success("✅ Digest preferences saved!")
 
-    with tabs[4]:
+    with tabs[5]:
         role = st.session_state.get("role","free")
         rl   = {"free":"Free","premium":"Premium Monthly","admin":"Admin","owner":"Owner"}.get(role,"Free")
         rc_  = {"free":"#6b7fa0","premium":"#a78bfa","admin":"#93b4fd","owner":GOLD}.get(role,"#6b7fa0")
@@ -3463,6 +5094,7 @@ def page_settings():
 def page_admin():
     if not is_admin(): st.error("Access denied."); return
     render_topbar("admin")
+    back_button("ad_back")
     st.markdown('<div class="pg">',unsafe_allow_html=True)
     st.markdown('<div class="sec-hd">🛠️ Admin Panel</div>',unsafe_allow_html=True)
 
@@ -3486,7 +5118,7 @@ def page_admin():
         ✅ Change demo account passwords before public launch
         </div></div>""",unsafe_allow_html=True)
 
-    tabs=st.tabs(["📊 Overview","👥 Users","🔑 API & Secrets","📈 Analytics","🔧 Site Config"])
+    tabs=st.tabs(["📊 Overview","👥 Users","🔑 API & Secrets","📈 Analytics","🔧 Site Config","📉 Signal Engine"])
 
     with tabs[0]:
         ss=st.session_state.site_stats
@@ -3634,6 +5266,117 @@ APP_URL = "https://your-app.streamlit.app"</pre>
                         st.success(f"✅ {downgrade_email} downgraded")
                     elif downgrade_email: st.error("User not found")
 
+    # ── Tab 5: Signal Engine ──
+    with tabs[5]:
+        st.markdown(f'<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">📉 Signal Engine Health & Performance</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:14px;">Monitor the proprietary signal tracking system. View aggregate performance, recent triggers, and signal health.</div>',unsafe_allow_html=True)
+
+        # Get stats from signal engine
+        try:
+            all_events = get_recent_signal_events(limit=500)
+            perf_stats = get_category_performance_stats()
+        except Exception:
+            all_events = []
+            perf_stats = {}
+
+        # KPI strip
+        total_signals = len(all_events)
+        resolved = [e for e in all_events if e.get("outcomes",{}).get("label","pending") != "pending"]
+        wins = [e for e in resolved if e.get("outcomes",{}).get("label") == "success"]
+        win_rate = round(len(wins)/len(resolved)*100, 1) if resolved else 0
+        avg_5d = round(sum(e["outcomes"].get("5d_pct",0) or 0 for e in resolved)/max(1,len(resolved)), 2)
+        pending = [e for e in all_events if e.get("outcomes",{}).get("label","pending") == "pending"]
+        unique_tickers = len(set(e.get("ticker") for e in all_events))
+
+        adm_cols = st.columns(5)
+        adm_kpis = [
+            (total_signals, "Total Signals", "#60a5fa"),
+            (f"{win_rate}%", "Win Rate", "#4ade80" if win_rate >= 55 else "#fbbf24"),
+            (f"+{avg_5d}%" if avg_5d >= 0 else f"{avg_5d}%", "Avg 5-Day", "#4ade80" if avg_5d >= 0 else "#f87171"),
+            (len(pending), "Pending", "#fbbf24"),
+            (unique_tickers, "Unique Tickers", "#a78bfa"),
+        ]
+        for col, (val, lbl, color) in zip(adm_cols, adm_kpis):
+            col.markdown(f"""<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px;">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:900;color:{color};">{val}</div>
+                <div style="font-size:11px;color:#374f6e;margin-top:3px;">{lbl}</div>
+            </div>""", unsafe_allow_html=True)
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+
+        # Category performance table
+        if perf_stats:
+            st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:10px;">📊 Performance by Category</div>',unsafe_allow_html=True)
+            for cat, stats in sorted(perf_stats.items(), key=lambda x: x[1].get("win_rate",0), reverse=True):
+                wr = stats.get("win_rate", 0)
+                wr_color = "#4ade80" if wr>=60 else "#fbbf24" if wr>=45 else "#f87171"
+                st.markdown(f"""<div style="background:#080b14;border:1px solid {BORDER};border-radius:8px;padding:10px 14px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <span style="font-size:13px;font-weight:700;color:#e2e8f0;">{cat}</span>
+                        <span style="font-size:11px;color:#374f6e;margin-left:8px;">{stats.get("count",0)} signals · {stats.get("wins",0)}W/{stats.get("losses",0)}L</span>
+                    </div>
+                    <div style="display:flex;gap:14px;align-items:center;">
+                        <span style="font-size:11px;color:#374f6e;">Win: <strong style="color:{wr_color};">{wr}%</strong></span>
+                        <span style="font-size:11px;color:#374f6e;">5d Avg: <strong style="font-family:'JetBrains Mono',monospace;color:{'#4ade80' if (stats.get('avg_5d') or 0)>=0 else '#f87171'};">{('+' if (stats.get('avg_5d') or 0)>=0 else '')}{stats.get('avg_5d') or 0}%</strong></span>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.info("No signal performance data yet. Signals are recorded as users browse composite categories.")
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+
+        # Recent signals table
+        st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:10px;">🕒 Recent Signal Events (Last 20)</div>',unsafe_allow_html=True)
+        if all_events:
+            recent = sorted(all_events, key=lambda x: x.get("triggered_at",""), reverse=True)[:20]
+            for ev in recent:
+                outs = ev.get("outcomes", {})
+                curr_pct = outs.get("current_pct", 0) or 0
+                label = outs.get("label", "pending")
+                lc = "#4ade80" if label=="success" else "#f87171" if label=="failure" else "#fbbf24" if label=="pending" else "#94a3b8"
+                trigger_dt = datetime.fromisoformat(ev.get("triggered_at", datetime.now().isoformat()))
+                days_ago = (datetime.now() - trigger_dt).days
+                hours_ago = int((datetime.now() - trigger_dt).total_seconds() / 3600)
+                time_str = f"{days_ago}d ago" if days_ago >= 1 else f"{hours_ago}h ago"
+                st.markdown(f"""<div style="background:#080b14;border:1px solid {BORDER};border-radius:6px;padding:8px 12px;margin-bottom:3px;font-size:11px;display:flex;justify-content:space-between;">
+                    <div>
+                        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#60a5fa;">{ev.get("ticker","?")}</span>
+                        <span style="color:#94a3b8;margin-left:6px;">{ev.get("category","")[:30]}</span>
+                        <span style="color:#374f6e;margin-left:8px;">· {time_str}</span>
+                    </div>
+                    <div>
+                        <span style="color:#374f6e;">Score: <strong style="color:#e2e8f0;">{ev.get("score_at_trigger",0)}</strong></span>
+                        <span style="margin-left:10px;font-family:'JetBrains Mono',monospace;font-weight:700;color:{lc};">{'+' if curr_pct>=0 else ''}{curr_pct:.1f}%</span>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.caption("No signal events recorded yet.")
+
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+
+        # Demo data seeder
+        st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">🌱 Demo Data Tools</div>',unsafe_allow_html=True)
+        seed_c1, seed_c2 = st.columns(2)
+        with seed_c1:
+            if st.button("🌱 Seed Demo Signal History", key="adm_seed", use_container_width=True):
+                try:
+                    seed_demo_signal_history()
+                    st.success("✅ Demo data seeded")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Seed failed: {e}")
+        with seed_c2:
+            if st.button("🔄 Refresh Outcomes Now", key="adm_refresh", use_container_width=True):
+                try:
+                    def _price_fetch(t, days):
+                        df = yf_ohlcv(t, days)
+                        return df
+                    updated = update_signal_outcomes(_price_fetch)
+                    st.success(f"✅ Updated outcomes for {len(updated)} events")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Refresh failed: {e}")
+
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -3732,6 +5475,7 @@ def page_verify_email():
 # ─────────────────────────────────────────────────────────────
 def page_contact():
     render_topbar()
+    back_button("ct_back")
     st.markdown('<div class="pg">',unsafe_allow_html=True)
     st.markdown(f"""<div style="text-align:center;padding:32px 0 24px;">
         <div style="font-size:11px;font-weight:700;color:{BLUE};letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">We're Here to Help</div>
@@ -4012,10 +5756,26 @@ if is_authed() and st.session_state.get("_pending_checkout"):
     else:   st.error(f"Checkout error: {err}")
 
 page=st.session_state.get("page","landing")
-guard={"dashboard","discover","watchlist","screener","bi_dashboard","stock_detail","settings","admin"}
+auth_required={"dashboard","discover","watchlist","screener","bi_dashboard","stock_detail","settings","admin"}
+premium_required={"screener","bi_dashboard"}  # These show upgrade gate for free users
+admin_required={"admin"}
 
-if page in guard and not is_authed():
+# Auth check first
+if page in auth_required and not is_authed():
+    # Save intended destination then show login
+    st.session_state["_intended_page"] = page
     page_login()
+# Admin check
+elif page in admin_required and not is_admin():
+    st.markdown("""<div style="background:#200404;border:1px solid rgba(239,68,68,0.3);border-radius:14px;
+                padding:32px;text-align:center;margin:60px auto;max-width:520px;">
+        <div style="font-size:42px;margin-bottom:14px;">🛡️</div>
+        <div style="font-size:20px;font-weight:800;color:#f87171;margin-bottom:8px;">Admin Access Required</div>
+        <div style="font-size:13px;color:#374f6e;line-height:1.7;">This page is restricted to admin users only.
+        Contact support if you believe you should have access.</div>
+    </div>""", unsafe_allow_html=True)
+    if st.button("← Return to Dashboard", key="adm_deny_back", use_container_width=True):
+        nav("dashboard")
 elif page=="landing":      page_landing()
 elif page=="features":     page_features()
 elif page=="login":        page_login()
@@ -4027,11 +5787,21 @@ elif page=="contact":      page_contact()
 elif page=="dashboard":    page_dashboard()
 elif page=="discover":     page_discover()
 elif page=="watchlist":    page_watchlist()
-elif page=="screener":     page_screener()
-elif page=="bi_dashboard": page_bi()
+elif page=="screener":     page_screener()  # Page handles premium gating internally
+elif page=="bi_dashboard":
+    if is_premium():
+        page_bi()
+    else:
+        # Show premium upgrade gate (not blank page)
+        render_topbar("bi_dashboard")
+        st.markdown('<div class="pg">', unsafe_allow_html=True)
+        back_button("bi_lock_back")
+        st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:8px;">📊 BI Analytics Dashboard</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:13px;color:#374f6e;margin-bottom:20px;">Market-wide intelligence across gainers, sectors, sentiment, and composite signals.</div>', unsafe_allow_html=True)
+        render_lock("BI Analytics Dashboard")
+        st.markdown('</div>', unsafe_allow_html=True)
+elif page=="signal_track": page_signal_track() if is_authed() else page_login()
 elif page=="stock_detail": page_detail()
 elif page=="settings":     page_settings()
-elif page=="admin":
-    if is_admin(): page_admin()
-    else: st.error("Access denied."); nav("dashboard")
+elif page=="admin":        page_admin()  # Already guarded above
 else: page_landing()
