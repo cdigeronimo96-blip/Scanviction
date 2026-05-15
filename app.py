@@ -2354,11 +2354,58 @@ DEMO_BI = """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.0
 # ─────────────────────────────────────────────────────────────
 def page_landing():
     st.markdown(NAV_CSS, unsafe_allow_html=True)
-    # Topbar
+
+    # Mobile-specific CSS for hero reordering
+    st.markdown("""
+    <style>
+    /* On mobile: hero headline must appear BEFORE the demo widget */
+    @media (max-width: 992px) {
+        .sw-hero-row [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+        }
+        .sw-hero-row [data-testid="column"]:first-child {
+            order: 1 !important;
+        }
+        .sw-hero-row [data-testid="column"]:nth-child(2) {
+            order: 2 !important;
+        }
+        .sw-hero-left-block {
+            padding: 24px 0 16px !important;
+            text-align: center !important;
+        }
+        .hero-h1 {
+            font-size: 32px !important;
+            line-height: 1.15 !important;
+        }
+        .hero-sub {
+            font-size: 14px !important;
+            padding: 0 8px !important;
+        }
+        /* Hide the secondary demo widget on phones — too noisy for first impression */
+        .sw-hero-demo-wrap {
+            display: none !important;
+        }
+        /* Hide desktop topbar nav on mobile — use Streamlit's hamburger menu instead */
+        .sw-desktop-nav {
+            display: none !important;
+        }
+    }
+    /* Mobile-specific single CTA */
+    .sw-mobile-cta-stack {
+        display: none;
+    }
+    @media (max-width: 992px) {
+        .sw-mobile-cta-stack { display: block; }
+        .sw-desktop-cta-row { display: none !important; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── TOPBAR — Mobile shows logo + hamburger via Streamlit sidebar; Desktop gets full nav ──
     c1,_,c3=st.columns([2,5,4])
     with c1: render_logo_click("top_logo_land","landing")
     with c3:
-        st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
+        st.markdown('<div class="sw-nav sw-desktop-nav">', unsafe_allow_html=True)
         a1,a2,a3,a4=st.columns(4,gap="small")
         with a1:
             if st.button("Features",key="land_feat",use_container_width=True): nav("features")
@@ -2373,25 +2420,48 @@ def page_landing():
 
     # ── HERO ──
     p_idx=st.session_state.get("hero_panel",0)
+    st.markdown('<div class="sw-hero-row">', unsafe_allow_html=True)
     hl,hr=st.columns([5,5],gap="large")
     with hl:
         st.markdown(f"""
-        <div style="padding:48px 0 32px 48px;">
+        <div class="sw-hero-left-block" style="padding:48px 0 32px 48px;">
             <div style="font-size:11px;font-weight:700;color:{BLUE};letter-spacing:2.5px;text-transform:uppercase;margin-bottom:16px;">Smart Stock Discovery Platform</div>
             <div class="hero-h1">Spot Market<br>Opportunities<br><span class="hi">Before They</span><br><span class="hg">Get Crowded</span></div>
-            <div class="hero-sub">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring. No API key. No jargon. Just clear signals.</div>
+            <div class="hero-sub">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
         </div>
         """, unsafe_allow_html=True)
 
-        bc1,bc2,bc3=st.columns(3)
-        with bc1:
-            if st.button("Start Free →",key="h_su",type="primary",use_container_width=True): nav("signup")
-        with bc2:
-            if st.button("Try Dashboard",key="h_dash",use_container_width=True): nav("login")
-        with bc3:
-            if gold_btn("Go Premium","h_prem"): nav("pricing")
+        # ── Desktop CTAs: single primary + login link below ──
+        st.markdown('<div class="sw-desktop-cta-row">', unsafe_allow_html=True)
+        dc1, dc2 = st.columns([2, 1], gap="small")
+        with dc1:
+            if st.button("🚀 Create Free Account",key="h_su",type="primary",use_container_width=True): nav("signup")
+        with dc2:
+            if st.button("Sign In",key="h_login",use_container_width=True): nav("login")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Mobile CTA: single big button, login as text link below ──
+        st.markdown("""
+        <div class="sw-mobile-cta-stack" style="padding:0 8px;">
+        """, unsafe_allow_html=True)
+        if st.button("🚀 Create Free Account",key="h_su_mobile",type="primary",use_container_width=True): nav("signup")
+        st.markdown('<div style="text-align:center;font-size:13px;color:#6b7fa0;padding:14px 0 4px;">Already have an account?</div>', unsafe_allow_html=True)
+        if st.button("Sign In",key="h_login_mobile",use_container_width=True): nav("login")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Subtle trust line under CTA
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:18px;font-size:11px;color:#4a5e7a;flex-wrap:wrap;">
+            <span>✓ Free forever plan</span>
+            <span>·</span>
+            <span>✓ No credit card</span>
+            <span>·</span>
+            <span>✓ Setup in 30 seconds</span>
+        </div>
+        """, unsafe_allow_html=True)
 
     with hr:
+        st.markdown('<div class="sw-hero-demo-wrap">', unsafe_allow_html=True)
         # Self-contained auto-advancing slideshow — title above, demo below
         # Uses string concat to avoid f-string brace conflicts with DEMO HTML
         hero_comp = (
@@ -2450,6 +2520,8 @@ def page_landing():
         )
         import streamlit.components.v1 as components
         components.html(hero_comp, height=500, scrolling=False)
+        st.markdown('</div>', unsafe_allow_html=True)  # close sw-hero-demo-wrap
+    st.markdown('</div>', unsafe_allow_html=True)  # close sw-hero-row
 
     # ── Trust bar ──
     st.markdown(f"""
