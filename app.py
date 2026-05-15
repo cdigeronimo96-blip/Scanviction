@@ -56,6 +56,399 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────
+# PROGRESSIVE WEB APP (PWA) — Native app experience
+# ─────────────────────────────────────────────────────────────
+# Embedded SVG icon (no external hosting needed) — StockWins logo as SVG → base64
+_SW_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#1d4ed8"/><stop offset="1" stop-color="#2563eb"/>
+</linearGradient></defs>
+<rect width="512" height="512" rx="96" fill="url(#g)"/>
+<path d="M120 340 L120 380 L392 380 L392 340 L120 340 Z" fill="#fff" opacity=".3"/>
+<path d="M140 320 L200 240 L240 280 L320 160 L380 220 L380 240 L320 200 L240 320 L200 280 L160 340 Z" fill="#fff"/>
+<circle cx="380" cy="220" r="14" fill="#f59e0b"/>
+<text x="256" y="450" text-anchor="middle" fill="#fff" font-family="Inter,sans-serif" font-size="56" font-weight="900">SW</text>
+</svg>'''
+
+import base64 as _b64
+_icon_b64 = _b64.b64encode(_SW_ICON_SVG.encode()).decode()
+_icon_data_uri = f"data:image/svg+xml;base64,{_icon_b64}"
+
+PWA_MANIFEST_JSON = (
+    '{"name":"StockWins — Premium Stock Intelligence",'
+    '"short_name":"StockWins",'
+    '"description":"Proprietary stock signals, composite categories, and signal track record.",'
+    '"start_url":"/",'
+    '"display":"standalone",'
+    '"orientation":"portrait",'
+    '"background_color":"#07090f",'
+    '"theme_color":"#2563eb",'
+    '"categories":["finance","business","productivity"],'
+    '"icons":[{"src":"' + _icon_data_uri + '","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}]'
+    '}'
+)
+_manifest_data_uri = "data:application/json;base64," + _b64.b64encode(PWA_MANIFEST_JSON.encode()).decode()
+
+# ── Inject PWA head tags + native-feeling polish ──
+st.markdown(f"""
+<link rel="manifest" href="{_manifest_data_uri}">
+<link rel="icon" type="image/svg+xml" href="{_icon_data_uri}">
+<link rel="apple-touch-icon" href="{_icon_data_uri}">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="StockWins">
+<meta name="msapplication-TileColor" content="#2563eb">
+<meta name="msapplication-navbutton-color" content="#2563eb">
+<meta name="format-detection" content="telephone=no">
+
+<style>
+/* ════════════════════════════════════════════════════════════
+   NATIVE-APP POLISH — animations, safe areas, momentum scroll
+════════════════════════════════════════════════════════════ */
+
+/* Respect iOS notch / Android nav bar */
+html, body {{
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+}}
+
+/* Smooth iOS-style momentum scrolling everywhere */
+* {{
+    -webkit-overflow-scrolling: touch;
+}}
+
+/* Hide tap-highlight + selection styling for app feel */
+* {{
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+}}
+input, textarea, [contenteditable], .sw-allow-select {{
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+}}
+
+/* Disable pull-to-refresh on standalone PWAs (annoying on charts) */
+@media (display-mode: standalone) {{
+    body {{ overscroll-behavior-y: contain; }}
+}}
+
+/* Native-style button press animation */
+button, [role="button"], .stButton button {{
+    transition: transform 0.08s ease-out, opacity 0.15s ease-out !important;
+}}
+button:active, [role="button"]:active, .stButton button:active {{
+    transform: scale(0.97) !important;
+    opacity: 0.85 !important;
+}}
+
+/* Smooth page enter animation */
+.main .block-container {{
+    animation: pageFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}}
+@keyframes pageFadeIn {{
+    from {{ opacity: 0; transform: translateY(8px); }}
+    to   {{ opacity: 1; transform: translateY(0); }}
+}}
+
+/* Card hover/press = native feel */
+.card, .sr, .stat {{
+    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.15s ease-out,
+                border-color 0.15s ease-out !important;
+}}
+.card:active, .sr:active {{
+    transform: scale(0.99) !important;
+}}
+
+/* Smooth modal/dialog entry */
+[data-testid="stModal"], [data-testid="stDialog"] {{
+    animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}}
+@keyframes modalSlideUp {{
+    from {{ opacity: 0; transform: translateY(20px); }}
+    to   {{ opacity: 1; transform: translateY(0); }}
+}}
+
+/* Custom install banner */
+#sw-install-banner {{
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%) translateY(120%);
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    color: #fff;
+    padding: 14px 18px;
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(37,99,235,0.45);
+    font-family: 'Inter', sans-serif;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 92vw;
+    width: 360px;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid rgba(255,255,255,0.15);
+}}
+#sw-install-banner.visible {{
+    transform: translateX(-50%) translateY(0);
+}}
+#sw-install-banner-icon {{
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+}}
+#sw-install-banner-text {{
+    flex: 1;
+    line-height: 1.4;
+}}
+#sw-install-banner-text strong {{
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 2px;
+}}
+#sw-install-banner-text span {{
+    font-size: 11px;
+    opacity: 0.85;
+}}
+#sw-install-banner button {{
+    background: #fff;
+    color: #1d4ed8;
+    border: none;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+}}
+#sw-install-banner-close {{
+    background: transparent !important;
+    color: rgba(255,255,255,0.7) !important;
+    font-size: 18px !important;
+    padding: 0 6px !important;
+    margin-left: -8px;
+}}
+
+/* Offline banner */
+#sw-offline-banner {{
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: linear-gradient(135deg, #b45309, #f59e0b);
+    color: #fff;
+    padding: 8px 16px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    z-index: 999998;
+    transform: translateY(-100%);
+    transition: transform 0.3s ease-out;
+}}
+#sw-offline-banner.visible {{
+    transform: translateY(0);
+}}
+
+/* iOS standalone: hide install banner, add safe area top */
+@media (display-mode: standalone) {{
+    #sw-install-banner {{ display: none !important; }}
+}}
+
+/* PWA splash-style loading on first paint */
+#sw-pwa-splash {{
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(180deg, #07090f 0%, #0d1525 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000000;
+    opacity: 1;
+    transition: opacity 0.5s ease-out;
+    pointer-events: none;
+}}
+#sw-pwa-splash.hidden {{ opacity: 0; }}
+#sw-pwa-splash-logo {{
+    width: 84px; height: 84px;
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', monospace;
+    font-size: 32px;
+    font-weight: 900;
+    color: #fff;
+    box-shadow: 0 10px 40px rgba(37,99,235,0.4);
+    animation: splashPulse 1.4s ease-in-out infinite;
+}}
+@keyframes splashPulse {{
+    0%, 100% {{ transform: scale(1); }}
+    50% {{ transform: scale(1.05); }}
+}}
+#sw-pwa-splash-title {{
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 18px;
+    letter-spacing: 0.5px;
+}}
+#sw-pwa-splash-tagline {{
+    color: #4a5e7a;
+    font-size: 11px;
+    margin-top: 4px;
+    font-family: 'Inter', sans-serif;
+}}
+
+/* Only show splash when app launched in standalone mode (installed) */
+@media not (display-mode: standalone) {{
+    #sw-pwa-splash {{ display: none; }}
+}}
+</style>
+
+<!-- Splash screen (visible only when launched as installed app) -->
+<div id="sw-pwa-splash">
+    <div id="sw-pwa-splash-logo">SW</div>
+    <div id="sw-pwa-splash-title">StockWins</div>
+    <div id="sw-pwa-splash-tagline">Loading market intelligence…</div>
+</div>
+
+<!-- Offline indicator -->
+<div id="sw-offline-banner">⚠️ You're offline — some features may not work</div>
+
+<!-- Custom install banner (Android/Chrome) -->
+<div id="sw-install-banner">
+    <div id="sw-install-banner-icon">📲</div>
+    <div id="sw-install-banner-text">
+        <strong>Install StockWins</strong>
+        <span>Add to your home screen for instant access</span>
+    </div>
+    <button id="sw-install-banner-btn">Install</button>
+    <button id="sw-install-banner-close" aria-label="Dismiss">×</button>
+</div>
+
+<script>
+(function() {{
+    // ── Hide splash after page loads ──
+    setTimeout(() => {{
+        const splash = document.getElementById('sw-pwa-splash');
+        if (splash) {{
+            splash.classList.add('hidden');
+            setTimeout(() => splash.remove(), 600);
+        }}
+    }}, 800);
+
+    // ── Online/Offline detection ──
+    const offlineBanner = document.getElementById('sw-offline-banner');
+    function updateOnlineStatus() {{
+        if (!navigator.onLine) {{
+            offlineBanner.classList.add('visible');
+        }} else {{
+            offlineBanner.classList.remove('visible');
+        }}
+    }}
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+
+    // ── Install Prompt Handling (Android/Chrome desktop) ──
+    let deferredPrompt = null;
+    const installBanner = document.getElementById('sw-install-banner');
+    const installBtn = document.getElementById('sw-install-banner-btn');
+    const installClose = document.getElementById('sw-install-banner-close');
+
+    // Don't show again for 14 days if dismissed
+    const dismissedAt = localStorage.getItem('sw_install_dismissed');
+    const SHOULD_SUPPRESS = dismissedAt && (Date.now() - parseInt(dismissedAt) < 14 * 24 * 60 * 60 * 1000);
+
+    window.addEventListener('beforeinstallprompt', (e) => {{
+        e.preventDefault();
+        deferredPrompt = e;
+        if (!SHOULD_SUPPRESS) {{
+            // Wait a few seconds before showing (don't jump-scare on load)
+            setTimeout(() => {{
+                installBanner.classList.add('visible');
+            }}, 4500);
+        }}
+    }});
+
+    installBtn.addEventListener('click', async () => {{
+        if (!deferredPrompt) return;
+        installBanner.classList.remove('visible');
+        deferredPrompt.prompt();
+        const {{ outcome }} = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {{
+            console.log('StockWins installed!');
+        }} else {{
+            localStorage.setItem('sw_install_dismissed', Date.now().toString());
+        }}
+        deferredPrompt = null;
+    }});
+
+    installClose.addEventListener('click', () => {{
+        installBanner.classList.remove('visible');
+        localStorage.setItem('sw_install_dismissed', Date.now().toString());
+    }});
+
+    // Hide install banner if app gets installed
+    window.addEventListener('appinstalled', () => {{
+        installBanner.classList.remove('visible');
+        localStorage.removeItem('sw_install_dismissed');
+    }});
+
+    // ── iOS Safari install hint (no beforeinstallprompt support) ──
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    if (isIOS && !isInStandaloneMode && !SHOULD_SUPPRESS) {{
+        setTimeout(() => {{
+            const banner = document.getElementById('sw-install-banner');
+            const text = document.getElementById('sw-install-banner-text');
+            text.innerHTML = '<strong>Install StockWins</strong><span>Tap Share → Add to Home Screen</span>';
+            installBtn.textContent = 'Got it';
+            installBtn.addEventListener('click', () => {{
+                banner.classList.remove('visible');
+                localStorage.setItem('sw_install_dismissed', Date.now().toString());
+            }});
+            banner.classList.add('visible');
+        }}, 5000);
+    }}
+
+    // ── Service Worker registration for offline support ──
+    // Uses a tiny inline SW served as data: URI (since Streamlit has no static root)
+    if ('serviceWorker' in navigator) {{
+        const swCode = `
+            const CACHE_NAME = 'stockwins-v1';
+            self.addEventListener('install', e => self.skipWaiting());
+            self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+            self.addEventListener('fetch', e => {{
+                // Network-first strategy (Streamlit content is dynamic)
+                if (e.request.method !== 'GET') return;
+                e.respondWith(
+                    fetch(e.request).catch(() => caches.match(e.request))
+                );
+            }});
+        `;
+        const blob = new Blob([swCode], {{ type: 'application/javascript' }});
+        const swUrl = URL.createObjectURL(blob);
+        navigator.serviceWorker.register(swUrl).catch(() => {{}});
+    }}
+}})();
+</script>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
 # SECURITY
 # ─────────────────────────────────────────────────────────────
 def _hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
@@ -247,9 +640,30 @@ def create_portal_session(user_email):
         return None, f"Stripe error: {e}"
 
 def handle_payment_return():
-    """Check URL params for Stripe redirect. Returns True if handled."""
+    """Check URL params for Stripe redirect or push subscription. Returns True if handled."""
     try: params = st.query_params.to_dict()
     except: return False
+
+    # ── Push subscription registration (from OneSignal JS callback) ──
+    if params.get("push_sub_id") and is_authed():
+        sub_id = params.get("push_sub_id","").strip()
+        if sub_id:
+            try:
+                e = st.session_state.user["email"]
+                existing = st.session_state.users_db.get(e,{}).get("push_subscription_ids",[])
+                if sub_id not in existing:
+                    existing.append(sub_id)
+                    # Keep last 5 devices
+                    existing = existing[-5:]
+                st.session_state.users_db[e]["push_subscription_ids"] = existing
+                st.session_state.users_db[e]["push_subscribed"] = True
+                _save_global_db(st.session_state.users_db)
+                save_user_to_file(e, st.session_state.users_db[e])
+                st.session_state["_push_registered"] = True
+            except Exception:
+                pass
+        st.query_params.clear()
+        return True
 
     if params.get("payment") == "success":
         sid = params.get("sid",""); plan = params.get("plan","premium")
@@ -1475,8 +1889,104 @@ def render_logo_click(key,dest):
     st.markdown(LOGO_HTML, unsafe_allow_html=True)
     if st.button(" ",key=key): nav(dest)
 
+def _render_bottom_nav(active=""):
+    """Native-style bottom tab bar — appears only when app is launched in PWA standalone mode (installed)."""
+    # Use a unique URL param to navigate via the bottom bar
+    nav_items = [
+        ("home", "🏠", "Home", "dashboard"),
+        ("disc", "🔍", "Discover", "discover"),
+        ("watch", "⭐", "Watchlist", "watchlist"),
+        ("signals", "📊", "Signals", "signal_track"),
+        ("more", "⚙️", "Settings", "settings"),
+    ]
+
+    # Build HTML buttons with form-submit links via streamlit query params
+    nav_html = ['<nav class="sw-bottom-nav">']
+    for key, icon, label, page in nav_items:
+        is_active = (active == page)
+        active_cls = " active" if is_active else ""
+        nav_html.append(
+            f'<a href="?bottom_nav={page}" class="sw-bnav-item{active_cls}">'
+            f'<span class="sw-bnav-icon">{icon}</span>'
+            f'<span class="sw-bnav-label">{label}</span>'
+            f'</a>'
+        )
+    nav_html.append('</nav>')
+
+    # CSS for bottom nav - only shown in PWA standalone mode
+    bottom_nav_css = """
+    <style>
+    .sw-bottom-nav {
+        display: none;  /* Hidden by default - only show in standalone PWA */
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: rgba(8, 11, 20, 0.96);
+        backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        border-top: 1px solid rgba(255,255,255,0.06);
+        padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
+        z-index: 999990;
+        justify-content: space-around;
+        align-items: stretch;
+    }
+    @media (display-mode: standalone) {
+        .sw-bottom-nav { display: flex; }
+        /* Push main content up so nothing hides behind bottom nav */
+        .main .block-container { padding-bottom: 90px !important; }
+        /* On standalone, hide the top navigation row since bottom nav is primary */
+        .sw-nav { display: none !important; }
+        .sw-divider { display: none !important; }
+    }
+    .sw-bnav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 4px 4px;
+        text-decoration: none !important;
+        color: #6b7fa0 !important;
+        transition: color 0.15s ease-out, transform 0.1s ease-out;
+        min-height: 52px;
+    }
+    .sw-bnav-item:active {
+        transform: scale(0.94);
+    }
+    .sw-bnav-item.active {
+        color: #60a5fa !important;
+    }
+    .sw-bnav-icon {
+        font-size: 22px;
+        line-height: 1;
+        margin-bottom: 3px;
+    }
+    .sw-bnav-label {
+        font-size: 10px;
+        font-weight: 600;
+        font-family: 'Inter', sans-serif;
+        letter-spacing: 0.2px;
+    }
+    </style>
+    """
+    st.markdown(bottom_nav_css + "".join(nav_html), unsafe_allow_html=True)
+
+    # Handle bottom nav clicks via URL param
+    try:
+        params = st.query_params
+        if "bottom_nav" in params:
+            target = params.get("bottom_nav", "")
+            st.query_params.clear()
+            if target in {"dashboard","discover","watchlist","signal_track","settings","screener","bi_dashboard"}:
+                nav(target)
+    except Exception:
+        pass
+
+
 def render_topbar(active=""):
     st.markdown(NAV_CSS, unsafe_allow_html=True)
+    # ── PWA bottom nav (only visible when launched as installed app, hidden on desktop & in browser) ──
+    if is_authed():
+        _render_bottom_nav(active)
     if is_authed():
         pages=[("Dashboard","dashboard"),("Discover","discover"),("Watchlist","watchlist"),
                ("Screener","screener"),("BI Analytics","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
@@ -2171,24 +2681,52 @@ def page_signup():
                     else: st.error(msg)
         if st.button("Already have an account? Sign In",key="s2l",use_container_width=True): nav("login")
 
-def _send_sms(phone, message):
-    """Send SMS via Twilio. Returns (True, None) or (False, error_msg)."""
+def _send_telegram(chat_id, message):
+    """Send a Telegram message via the StockWins bot. Returns (True, None) or (False, error)."""
     try:
-        sid   = st.secrets.get("TWILIO_ACCOUNT_SID","")
-        token = st.secrets.get("TWILIO_AUTH_TOKEN","")
-        from_ = st.secrets.get("TWILIO_PHONE_NUMBER","")
-        if not all([sid, token, from_]):
-            return False, "DEMO_SMS"
+        bot_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+        if not bot_token or not chat_id:
+            return False, "TELEGRAM_NOT_CONFIGURED"
         import requests as _r
         resp = _r.post(
-            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-            auth=(sid, token),
-            data={"From": from_, "To": phone, "Body": message},
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return True, None
+        return False, f"Telegram error {resp.status_code}: {resp.text[:120]}"
+    except Exception as e:
+        return False, str(e)
+
+def _send_push_notification(player_ids, title, message, url=None):
+    """Send a OneSignal web/mobile push notification. player_ids: list of OneSignal subscription IDs.
+    Returns (True, None) or (False, error)."""
+    try:
+        app_id  = st.secrets.get("ONESIGNAL_APP_ID", "")
+        api_key = st.secrets.get("ONESIGNAL_REST_API_KEY", "")
+        if not app_id or not api_key:
+            return False, "ONESIGNAL_NOT_CONFIGURED"
+        if not player_ids:
+            return False, "NO_RECIPIENTS"
+        import requests as _r
+        payload = {
+            "app_id": app_id,
+            "include_player_ids": player_ids if isinstance(player_ids, list) else [player_ids],
+            "headings": {"en": title},
+            "contents": {"en": message},
+        }
+        if url:
+            payload["url"] = url
+        resp = _r.post(
+            "https://onesignal.com/api/v1/notifications",
+            headers={"Authorization": f"Basic {api_key}", "Content-Type": "application/json"},
+            json=payload,
             timeout=10
         )
         if resp.status_code in (200, 201):
             return True, None
-        return False, f"Twilio error {resp.status_code}"
+        return False, f"OneSignal error {resp.status_code}: {resp.text[:200]}"
     except Exception as e:
         return False, str(e)
 
@@ -4656,8 +5194,8 @@ def page_settings():
         st.markdown(f'<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">👤 Personal Information</div>',unsafe_allow_html=True)
 
         verified_email = db_user.get("verified", False)
-        phone_verified = db_user.get("phone_verified", False)
-        current_phone  = db_user.get("phone", "")
+        current_tg_id  = db_user.get("telegram_chat_id", "")
+        push_subscribed = db_user.get("push_subscribed", False)
 
         with st.form("pf"):
             nn = st.text_input("Display Name", value=st.session_state.user.get("name",""),
@@ -4674,88 +5212,150 @@ def page_settings():
                 else:
                     st.markdown(f'<div style="background:rgba(245,158,11,0.1);color:{GOLD};border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">⚠ Unverified</div>', unsafe_allow_html=True)
 
-            pc1, pc2 = st.columns([4,1])
-            with pc1:
-                ph = st.text_input("Phone Number (optional)", value=current_phone,
-                                    placeholder="+14155551234",
-                                    help="For SMS alerts on Premium. Format: +1 country code + number")
-            with pc2:
-                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                if current_phone and phone_verified:
-                    st.markdown(f'<div style="background:rgba(34,197,94,0.1);color:{GREEN};border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">✅ Verified</div>', unsafe_allow_html=True)
-                elif current_phone:
-                    st.markdown(f'<div style="background:rgba(245,158,11,0.1);color:{GOLD};border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">⚠ Unverified</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown(f'<div style="background:rgba(255,255,255,0.04);color:#4a5e7a;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;">— None —</div>', unsafe_allow_html=True)
-
             if st.form_submit_button("💾 Save Profile Changes", type="primary", use_container_width=True):
-                changed = False
                 if nn and nn != st.session_state.user.get("name",""):
                     st.session_state.user["name"] = nn
                     if email in st.session_state.users_db:
                         st.session_state.users_db[email]["name"] = nn
-                    changed = True
-                if ph != current_phone:
-                    clean_phone = "".join(c for c in ph if c.isdigit() or c == "+")
-                    if clean_phone and not (clean_phone.startswith("+") and len(clean_phone) >= 10):
-                        st.error("Phone must include country code (e.g. +14155551234) or leave blank.")
-                    else:
-                        st.session_state.users_db[email]["phone"] = clean_phone
-                        st.session_state.users_db[email]["phone_verified"] = False
-                        changed = True
-                if changed:
                     _save_global_db(st.session_state.users_db)
                     save_user_to_file(email, st.session_state.users_db[email])
                     st.success("✅ Profile updated!")
                     st.rerun()
 
-        # ── Phone verification flow ──
-        if current_phone and not phone_verified:
-            st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
-            st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">📱 Verify Your Phone Number</div>',unsafe_allow_html=True)
-            st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">A 6-digit code will be sent to <strong style="color:#e2e8f0;">{current_phone}</strong> via SMS.</div>',unsafe_allow_html=True)
-            if st.button("📲 Send Verification Code", key="phone_send_code", type="primary", use_container_width=True):
-                code = str(random.randint(100000, 999999))
-                st.session_state["_phone_verify_code"] = code
-                st.session_state["_phone_verify_for"] = email
-                ok, info = _send_sms(current_phone, f"Your StockWins verification code is: {code}\n\nValid for 10 minutes.")
-                if ok:
-                    st.success(f"✅ Code sent to {current_phone}.")
+        # ── 🔔 PUSH NOTIFICATIONS Setup (OneSignal Web Push) ──
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+        os_app_id = ""
+        try: os_app_id = st.secrets.get("ONESIGNAL_APP_ID","")
+        except Exception: pass
+
+        push_status_color = GREEN if push_subscribed else GOLD
+        push_status_text  = "✅ Active on this device" if push_subscribed else "⚠️ Not Enabled"
+        st.markdown(f'''<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+            <div>
+                <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">🔔 Push Notifications — The App-Style Experience</div>
+                <div style="font-size:12px;color:#374f6e;line-height:1.7;">Instant push to your phone or desktop. Tap "Add to Home Screen" on mobile for a real app feel — zero install, zero fees.</div>
+            </div>
+            <div style="background:rgba({"34,197,94" if push_subscribed else "245,158,11"},0.1);color:{push_status_color};
+                        border:1px solid rgba({"34,197,94" if push_subscribed else "245,158,11"},0.3);
+                        border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;">{push_status_text}</div>
+        </div>''', unsafe_allow_html=True)
+
+        if not os_app_id:
+            st.markdown(f'''<div style="background:#0d1525;border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:1.7;">
+                ⚠️ <strong style="color:{GOLD};">Push notifications not yet configured.</strong> The app owner needs to set up <code style="background:#060a12;color:#4ade80;padding:1px 6px;border-radius:3px;">ONESIGNAL_APP_ID</code> and <code style="background:#060a12;color:#4ade80;padding:1px 6px;border-radius:3px;">ONESIGNAL_REST_API_KEY</code> in Streamlit Secrets. Sign up free at <a href="https://onesignal.com" target="_blank" style="color:#60a5fa;">onesignal.com</a>.
+            </div>''', unsafe_allow_html=True)
+        else:
+            # Inject OneSignal SDK init when configured
+            push_html = f"""
+            <div id="onesignal-bell-container" style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:1.7;">
+                <strong style="color:#e2e8f0;">How to enable on this device:</strong><br>
+                <strong style="color:#93b4fd;">1.</strong> Click the button below — your browser will ask permission to send notifications<br>
+                <strong style="color:#93b4fd;">2.</strong> Click <strong style="color:#4ade80;">Allow</strong> in the browser pop-up<br>
+                <strong style="color:#93b4fd;">3.</strong> On mobile: tap the share icon → <strong style="color:#4ade80;">Add to Home Screen</strong> for the full app feel
+                <br><br>
+                <button id="ps-enable-btn" style="background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;width:100%;">
+                    🔔 Enable Push Notifications
+                </button>
+                <div id="ps-status" style="font-size:11px;color:#6b7fa0;margin-top:8px;text-align:center;"></div>
+            </div>
+            <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+            <script>
+            window.OneSignalDeferred = window.OneSignalDeferred || [];
+            OneSignalDeferred.push(async function(OneSignal) {{
+                await OneSignal.init({{
+                    appId: "{os_app_id}",
+                    allowLocalhostAsSecureOrigin: true,
+                    notifyButton: {{ enable: false }},
+                }});
+                document.getElementById("ps-enable-btn").onclick = async () => {{
+                    const status = document.getElementById("ps-status");
+                    status.textContent = "Requesting permission...";
+                    try {{
+                        await OneSignal.Notifications.requestPermission();
+                        const isSubscribed = OneSignal.User.PushSubscription.optedIn;
+                        if (isSubscribed) {{
+                            const subId = OneSignal.User.PushSubscription.id;
+                            // Tag the user with their email for targeting
+                            await OneSignal.login("{email}");
+                            status.innerHTML = "✅ Push enabled! Registering with StockWins...";
+                            // Redirect with push_sub_id so the Python backend can save it
+                            setTimeout(() => {{
+                                window.location.href = window.location.pathname + "?push_sub_id=" + encodeURIComponent(subId);
+                            }}, 800);
+                        }} else {{
+                            status.textContent = "⚠️ Permission denied. Check browser settings.";
+                        }}
+                    }} catch (e) {{
+                        status.textContent = "❌ Error: " + e.message;
+                    }}
+                }};
+            }});
+            </script>
+            """
+            try:
+                import streamlit.components.v1 as components
+                components.html(push_html, height=240)
+            except Exception:
+                st.markdown(push_html, unsafe_allow_html=True)
+            st.caption("📲 Tip: On iPhone, you need iOS 16.4+ and to install the app via Safari → Share → Add to Home Screen for push to work.")
+
+        # ── ✈️ TELEGRAM Setup ──
+        st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
+        tg_status_color = GREEN if current_tg_id else GOLD
+        tg_status_text  = "✅ Connected" if current_tg_id else "⚠️ Not Connected"
+        st.markdown(f'''<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+            <div>
+                <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">✈️ Telegram — Backup Channel</div>
+                <div style="font-size:12px;color:#374f6e;line-height:1.7;">Prefer Telegram? Use it instead of (or alongside) push notifications.</div>
+            </div>
+            <div style="background:rgba({"34,197,94" if current_tg_id else "245,158,11"},0.1);color:{tg_status_color};
+                        border:1px solid rgba({"34,197,94" if current_tg_id else "245,158,11"},0.3);
+                        border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;">{tg_status_text}</div>
+        </div>''', unsafe_allow_html=True)
+
+        if not current_tg_id:
+            st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:2;">
+                <strong style="color:#93b4fd;">1.</strong> Open <a href="https://t.me/StockWinsAlertsBot" target="_blank" style="color:#60a5fa;text-decoration:none;">@StockWinsAlertsBot</a> in Telegram
+                · <strong style="color:#93b4fd;">2.</strong> Tap <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">/start</code>
+                · <strong style="color:#93b4fd;">3.</strong> Paste the Chat ID it replies with below
+            </div>''', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div style="font-size:11px;color:#4a5e7a;margin-bottom:8px;">Linked Chat ID: <code style="background:#080b14;color:#4ade80;padding:2px 8px;border-radius:4px;">{current_tg_id}</code></div>', unsafe_allow_html=True)
+
+        with st.form("tg_setup"):
+            tg_id = st.text_input("Telegram Chat ID", value=current_tg_id,
+                                    placeholder="e.g. 1234567890",
+                                    help="The number @StockWinsAlertsBot replied with")
+            tg_c1, tg_c2 = st.columns(2)
+            with tg_c1:
+                tg_save = st.form_submit_button(
+                    "✅ Save & Test" if not current_tg_id else "💾 Update",
+                    type="primary", use_container_width=True)
+            with tg_c2:
+                tg_remove = st.form_submit_button("🗑 Disconnect", use_container_width=True,
+                                                    disabled=not current_tg_id)
+            if tg_save:
+                clean = "".join(c for c in tg_id if c.isdigit() or c == "-")
+                if not clean:
+                    st.error("Chat ID must be a number. Get it from @StockWinsAlertsBot.")
                 else:
-                    st.session_state["_phone_demo_code"] = code
-                    st.warning(f"📱 SMS not configured. Demo code: **{code}**")
-                st.rerun()
+                    st.session_state.users_db[email]["telegram_chat_id"] = clean
+                    _save_global_db(st.session_state.users_db)
+                    save_user_to_file(email, st.session_state.users_db[email])
+                    ok, info = _send_telegram(clean, "✅ <b>StockWins Telegram alerts connected!</b>\n\nYou'll get instant alerts here.")
+                    if ok:
+                        st.toast("✈️ Telegram connected — check your phone!", icon="✅")
+                        st.success("✅ Test message just sent to your Telegram.")
+                    else:
+                        st.warning(f"Saved, but test failed: {info}. Make sure you started the bot.")
+                    time.sleep(1); st.rerun()
+            if tg_remove:
+                st.session_state.users_db[email]["telegram_chat_id"] = ""
+                _save_global_db(st.session_state.users_db)
+                save_user_to_file(email, st.session_state.users_db[email])
+                st.toast("✈️ Telegram disconnected", icon="✅"); st.rerun()
 
-            if st.session_state.get("_phone_verify_code"):
-                if st.session_state.get("_phone_demo_code"):
-                    st.markdown(f'<div style="font-size:11px;color:#fbbf24;margin-bottom:6px;">Demo mode — code: <strong>{st.session_state["_phone_demo_code"]}</strong></div>', unsafe_allow_html=True)
-                with st.form("phone_verify_form", clear_on_submit=False):
-                    entered = st.text_input("Enter 6-digit code from SMS", placeholder="123456", max_chars=6)
-                    pvc1, pvc2 = st.columns(2)
-                    with pvc1:
-                        verify_btn = st.form_submit_button("✅ Verify Phone", type="primary", use_container_width=True)
-                    with pvc2:
-                        cancel_btn = st.form_submit_button("Cancel", use_container_width=True)
-                    if verify_btn:
-                        if entered == st.session_state.get("_phone_verify_code",""):
-                            st.session_state.users_db[email]["phone_verified"] = True
-                            _save_global_db(st.session_state.users_db)
-                            save_user_to_file(email, st.session_state.users_db[email])
-                            st.session_state.pop("_phone_verify_code", None)
-                            st.session_state.pop("_phone_verify_for", None)
-                            st.session_state.pop("_phone_demo_code", None)
-                            st.toast("📱 Phone verified!", icon="✅")
-                            st.success("✅ Phone number verified!")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("Incorrect code. Please try again.")
-                    if cancel_btn:
-                        st.session_state.pop("_phone_verify_code", None)
-                        st.session_state.pop("_phone_demo_code", None)
-                        st.rerun()
-
-        # ── Resend email verification if not verified ──
+        # ── Email verification ──
         if not verified_email:
             st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
             st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">📧 Verify Your Email</div>',unsafe_allow_html=True)
@@ -4948,7 +5548,8 @@ def page_settings():
         # Default preferences if not set
         notif_prefs = db_user.get("notif_prefs", {
             "email_enabled": True,
-            "sms_enabled": True if db_user.get("phone_verified",False) else False,
+            "push_enabled": True,
+            "telegram_enabled": True if db_user.get("telegram_chat_id","") else False,
             "daily_digest": False,
             "weekly_digest": False,
             "proprietary_signals": True,
@@ -4957,17 +5558,26 @@ def page_settings():
             "marketing": False,
         })
 
-        # ── Channel Toggles ──
+        # ── Channel Toggles (3 channels: Push, Telegram, Email) ──
         st.markdown(f'<div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:10px;">📡 DELIVERY CHANNELS</div>',unsafe_allow_html=True)
-        nc1, nc2 = st.columns(2)
+        nc1, nc2, nc3 = st.columns(3)
         with nc1:
-            new_email = st.toggle("📧 Email notifications", value=notif_prefs["email_enabled"], key="np_email")
+            new_push = st.toggle("🔔 Push notifications",
+                                  value=notif_prefs.get("push_enabled", True),
+                                  key="np_push",
+                                  help="Browser/mobile push via OneSignal — enable on the Profile tab first")
         with nc2:
-            sms_disabled = not (db_user.get("phone","") and db_user.get("phone_verified",False))
-            sms_help = "Verify your phone first" if sms_disabled else "Master switch for all SMS"
-            new_sms = st.toggle("📱 SMS notifications", value=notif_prefs["sms_enabled"], key="np_sms", disabled=sms_disabled, help=sms_help)
-        if sms_disabled:
-            st.caption("⚠️ Add and verify your phone in the Profile tab to enable SMS.")
+            tg_disabled = not bool(db_user.get("telegram_chat_id",""))
+            tg_help = "Connect Telegram in Profile tab first" if tg_disabled else "Push messages via @StockWinsAlertsBot"
+            new_telegram = st.toggle("✈️ Telegram alerts",
+                                       value=notif_prefs.get("telegram_enabled", False),
+                                       key="np_telegram", disabled=tg_disabled, help=tg_help)
+        with nc3:
+            new_email = st.toggle("📧 Email notifications",
+                                    value=notif_prefs.get("email_enabled", True),
+                                    key="np_email")
+        if tg_disabled:
+            st.caption("⚠️ Connect Telegram in the Profile tab to enable @StockWinsAlertsBot alerts.")
 
         st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
 
@@ -4975,9 +5585,9 @@ def page_settings():
         st.markdown(f'<div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:10px;">📨 DIGESTS</div>',unsafe_allow_html=True)
         dc1, dc2 = st.columns(2)
         with dc1:
-            new_daily = st.toggle("📅 Daily digest", value=notif_prefs["daily_digest"], key="np_daily", help="Daily email at 7am ET with top opportunities")
+            new_daily = st.toggle("📅 Daily digest", value=notif_prefs.get("daily_digest",False), key="np_daily", help="Daily email at 7am ET with top opportunities")
         with dc2:
-            new_weekly = st.toggle("📆 Weekly digest", value=notif_prefs["weekly_digest"], key="np_weekly", help="Weekly email Monday 7am ET")
+            new_weekly = st.toggle("📆 Weekly digest", value=notif_prefs.get("weekly_digest",False), key="np_weekly", help="Weekly email Monday 7am ET")
 
         st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
 
@@ -4985,11 +5595,11 @@ def page_settings():
         st.markdown(f'<div style="font-size:13px;font-weight:700;color:#93b4fd;margin-bottom:10px;">🔔 ALERT CATEGORIES</div>',unsafe_allow_html=True)
         ac1, ac2 = st.columns(2)
         with ac1:
-            new_prop = st.toggle("✨ Proprietary signal alerts", value=notif_prefs["proprietary_signals"], key="np_prop", disabled=not is_premium(), help="Squeeze, Hidden Mover, Sentiment Flip, etc.")
-            new_wl = st.toggle("⭐ Watchlist alerts", value=notif_prefs["watchlist_alerts"], key="np_wl")
+            new_prop = st.toggle("✨ Proprietary signal alerts", value=notif_prefs.get("proprietary_signals",True), key="np_prop", disabled=not is_premium(), help="Squeeze, Hidden Mover, Sentiment Flip, etc.")
+            new_wl = st.toggle("⭐ Watchlist alerts", value=notif_prefs.get("watchlist_alerts",True), key="np_wl")
         with ac2:
-            new_cat = st.toggle("📊 Category alerts", value=notif_prefs["category_alerts"], key="np_cat", disabled=not is_premium())
-            new_mkt = st.toggle("📢 Product updates & news", value=notif_prefs["marketing"], key="np_mkt")
+            new_cat = st.toggle("📊 Category alerts", value=notif_prefs.get("category_alerts",True), key="np_cat", disabled=not is_premium())
+            new_mkt = st.toggle("📢 Product updates & news", value=notif_prefs.get("marketing",False), key="np_mkt")
 
         if not is_premium():
             st.caption("👑 Some alert categories require Premium.")
@@ -4999,7 +5609,9 @@ def page_settings():
         # ── Save button ──
         if st.button("💾 Save Notification Preferences", key="save_notif_prefs", type="primary", use_container_width=True):
             new_prefs = {
-                "email_enabled": new_email, "sms_enabled": new_sms,
+                "push_enabled": new_push,
+                "telegram_enabled": new_telegram,
+                "email_enabled": new_email,
                 "daily_digest": new_daily, "weekly_digest": new_weekly,
                 "proprietary_signals": new_prop, "watchlist_alerts": new_wl,
                 "category_alerts": new_cat, "marketing": new_mkt,
@@ -5662,6 +6274,26 @@ if st.session_state.get("_redirect_url"):
     st.stop()
 
 # ── 3. Payment notifications ──
+if st.session_state.get("_push_registered"):
+    st.session_state.pop("_push_registered", None)
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#04200d,#0d1525);
+                border:1px solid rgba(34,197,94,0.4);border-radius:14px;
+                padding:20px 24px;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+            <div style="font-size:32px;">🔔</div>
+            <div>
+                <div style="font-size:16px;font-weight:800;color:#4ade80;margin-bottom:4px;">
+                    Push Notifications Enabled!
+                </div>
+                <div style="font-size:13px;color:#374f6e;line-height:1.6;">
+                    You'll receive instant push alerts when StockWins detects new opportunities on stocks you follow.
+                    <br><strong style="color:#e2e8f0;">Pro tip:</strong> On mobile, tap the share icon and "Add to Home Screen" to install StockWins as an app.
+                </div>
+            </div>
+        </div>
+    </div>""", unsafe_allow_html=True)
+
 if st.session_state.get("_pay_success"):
     plan = st.session_state.pop("_pay_success")
     plan_name = "Annual Plan" if plan=="annual" else "Premium"
