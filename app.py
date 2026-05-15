@@ -1143,6 +1143,11 @@ button[role="tab"][aria-selected="true"]{{
 
 /* ── Mobile & Tablet Responsive ── */
 @media (max-width:900px) {{
+    /* ════════════════════════════════════════════════════════════
+       MOBILE: Hide ALL desktop topbar navs across every page
+    ════════════════════════════════════════════════════════════ */
+    .sw-desktop-nav {{ display: none !important; }}
+
     /* Hero text */
     .hero-h1{{font-size:32px !important;letter-spacing:-1px !important;}}
     .hero-sub{{font-size:14px !important;}}
@@ -2125,7 +2130,7 @@ def render_topbar(active=""):
         c1,c2,c3=st.columns([2,8,3])
         with c1: render_logo_click("top_logo","dashboard")
         with c2:
-            st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
+            st.markdown('<div class="sw-nav sw-desktop-nav">', unsafe_allow_html=True)
             nc=st.columns(len(pages))
             for col,(lbl,pg) in zip(nc,pages):
                 with col:
@@ -2134,17 +2139,20 @@ def render_topbar(active=""):
             st.markdown('</div>', unsafe_allow_html=True)
         with c3:
             ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
+            st.markdown('<div class="sw-desktop-nav">', unsafe_allow_html=True)
             uc1,uc2,uc3=st.columns([4,1,1])
             with uc1: st.markdown(f'<div style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {st.session_state.user["name"]}</div>',unsafe_allow_html=True)
             with uc2:
                 if st.button("⚙️",key="top_set",help="Account settings"): nav("settings")
             with uc3:
                 if st.button("↩️",key="top_out",help="Log out"): logout()
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
+        # Logged-out topbar: logo + desktop nav buttons (hidden on mobile)
         c1,_,c3=st.columns([2,5,4])
         with c1: render_logo_click("top_logo","landing")
         with c3:
-            st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
+            st.markdown('<div class="sw-nav sw-desktop-nav">', unsafe_allow_html=True)
             a1,a2,a3,a4,a5=st.columns(5,gap="small")
             with a1:
                 if st.button("Features",key="top_features",use_container_width=True): nav("features")
@@ -2203,9 +2211,16 @@ def render_sidebar():
             if st.button("Log Out",key="sb_logout",use_container_width=True): logout()
         else:
             st.markdown('<div style="padding:12px 18px;font-size:12px;color:#374f6e;margin-bottom:8px;">Sign in to access the full dashboard.</div>',unsafe_allow_html=True)
+            if st.button("🚀 Sign Up Free",key="sb_signup",use_container_width=True,type="primary"): nav("signup")
             if st.button("Login →",key="sb_login",use_container_width=True): nav("login")
-            if gold_btn("Sign Up Free","sb_signup_gold"): nav("signup")
-            st.markdown("""<div style="margin:12px 10px;background:#080c18;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 14px;">
+
+            # ── Navigation links (replaces topbar nav on mobile) ──
+            st.markdown('<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1.5px;text-transform:uppercase;padding:14px 18px 5px;">Explore</div>',unsafe_allow_html=True)
+            if st.button("✨ Features",key="sb_features_link",use_container_width=True): nav("features")
+            if st.button("💰 Pricing",key="sb_pricing_link",use_container_width=True): nav("pricing")
+            if st.button("💬 Contact",key="sb_contact_link",use_container_width=True): nav("contact")
+
+            st.markdown("""<div style="margin:14px 10px;background:#080c18;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 14px;">
                 <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1px;text-transform:uppercase;margin-bottom:7px;">Free Includes</div>
                 <div style="font-size:12px;color:#2a3a52;line-height:2.2;">✅ Live market data<br>✅ 7 composite categories<br>✅ Social sentiment<br>✅ Plain-English insights<br>✅ Watchlist</div>
             </div>""",unsafe_allow_html=True)
@@ -2390,14 +2405,6 @@ def page_landing():
             display: none !important;
         }
     }
-    /* Mobile-specific single CTA */
-    .sw-mobile-cta-stack {
-        display: none;
-    }
-    @media (max-width: 992px) {
-        .sw-mobile-cta-stack { display: block; }
-        .sw-desktop-cta-row { display: none !important; }
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -2431,25 +2438,12 @@ def page_landing():
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Desktop CTAs: single primary + login link below ──
-        st.markdown('<div class="sw-desktop-cta-row">', unsafe_allow_html=True)
-        dc1, dc2 = st.columns([2, 1], gap="small")
-        with dc1:
-            if st.button("🚀 Create Free Account",key="h_su",type="primary",use_container_width=True): nav("signup")
-        with dc2:
-            if st.button("Sign In",key="h_login",use_container_width=True): nav("login")
-        st.markdown('</div>', unsafe_allow_html=True)
+        # ── Single CTA section (works on all screens) ──
+        if st.button("🚀 Create Free Account", key="h_su", type="primary", use_container_width=True): nav("signup")
+        st.markdown('<div style="text-align:center;font-size:13px;color:#6b7fa0;padding:14px 0 6px;">Already have an account?</div>', unsafe_allow_html=True)
+        if st.button("Sign In", key="h_login", use_container_width=True): nav("login")
 
-        # ── Mobile CTA: single big button, login as text link below ──
-        st.markdown("""
-        <div class="sw-mobile-cta-stack" style="padding:0 8px;">
-        """, unsafe_allow_html=True)
-        if st.button("🚀 Create Free Account",key="h_su_mobile",type="primary",use_container_width=True): nav("signup")
-        st.markdown('<div style="text-align:center;font-size:13px;color:#6b7fa0;padding:14px 0 4px;">Already have an account?</div>', unsafe_allow_html=True)
-        if st.button("Sign In",key="h_login_mobile",use_container_width=True): nav("login")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Subtle trust line under CTA
+        # Trust line under CTA
         st.markdown(f"""
         <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:18px;font-size:11px;color:#4a5e7a;flex-wrap:wrap;">
             <span>✓ Free forever plan</span>
@@ -2525,12 +2519,97 @@ def page_landing():
 
     # ── Trust bar ──
     st.markdown(f"""
-    <div style="background:#080b14;border-top:1px solid {BORDER};border-bottom:1px solid {BORDER};padding:20px 48px;display:flex;gap:48px;align-items:center;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">📊</span><div><div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#e2e8f0;">5,000+</div><div style="font-size:11px;color:#2a3a52;">US Stocks Covered</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">🎯</span><div><div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#e2e8f0;">17</div><div style="font-size:11px;color:#2a3a52;">Composite Categories</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">⚡</span><div><div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#e2e8f0;">Real-Time</div><div style="font-size:11px;color:#2a3a52;">Sentiment Data</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">💰</span><div><div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#e2e8f0;">$0</div><div style="font-size:11px;color:#2a3a52;">To Get Started</div></div></div>
-        <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+    <style>
+    .sw-trust-bar {{
+        background:#080b14;
+        border-top:1px solid {BORDER};
+        border-bottom:1px solid {BORDER};
+        padding:20px 48px;
+        display:grid;
+        grid-template-columns: repeat(4, 1fr) auto;
+        gap:24px;
+        align-items:center;
+    }}
+    .sw-trust-stat {{
+        display:flex;
+        align-items:center;
+        gap:10px;
+    }}
+    .sw-trust-stat-icon {{ font-size:18px; flex-shrink:0; }}
+    .sw-trust-stat-num {{
+        font-family:'JetBrains Mono',monospace;
+        font-size:20px;
+        font-weight:700;
+        color:#e2e8f0;
+        line-height:1.1;
+    }}
+    .sw-trust-stat-lbl {{
+        font-size:11px;
+        color:#2a3a52;
+        line-height:1.3;
+    }}
+    .sw-trust-traders {{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        justify-self:end;
+    }}
+    /* Mobile: 2x2 grid, centered, traders moves below */
+    @media (max-width:992px) {{
+        .sw-trust-bar {{
+            grid-template-columns: 1fr 1fr !important;
+            padding:18px 16px !important;
+            gap:16px !important;
+        }}
+        .sw-trust-stat {{
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            padding: 12px 14px;
+            justify-content: flex-start;
+        }}
+        .sw-trust-stat-num {{ font-size: 18px !important; }}
+        .sw-trust-traders {{
+            grid-column: 1 / -1;
+            justify-self: center !important;
+            background: rgba(245,158,11,0.08);
+            border: 1px solid rgba(245,158,11,0.2);
+            border-radius: 10px;
+            padding: 8px 14px;
+            margin-top: 4px;
+        }}
+    }}
+    </style>
+    <div class="sw-trust-bar">
+        <div class="sw-trust-stat">
+            <span class="sw-trust-stat-icon">📊</span>
+            <div>
+                <div class="sw-trust-stat-num">5,000+</div>
+                <div class="sw-trust-stat-lbl">US Stocks Covered</div>
+            </div>
+        </div>
+        <div class="sw-trust-stat">
+            <span class="sw-trust-stat-icon">🎯</span>
+            <div>
+                <div class="sw-trust-stat-num">17</div>
+                <div class="sw-trust-stat-lbl">Composite Categories</div>
+            </div>
+        </div>
+        <div class="sw-trust-stat">
+            <span class="sw-trust-stat-icon">⚡</span>
+            <div>
+                <div class="sw-trust-stat-num">Real-Time</div>
+                <div class="sw-trust-stat-lbl">Sentiment Data</div>
+            </div>
+        </div>
+        <div class="sw-trust-stat">
+            <span class="sw-trust-stat-icon">💰</span>
+            <div>
+                <div class="sw-trust-stat-num">$0</div>
+                <div class="sw-trust-stat-lbl">To Get Started</div>
+            </div>
+        </div>
+        <div class="sw-trust-traders">
             <span style="font-size:12px;color:#2a3a52;">Trusted by</span>
             <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:{GOLD};">1,847+</span>
             <span style="font-size:12px;color:#2a3a52;">traders</span>
@@ -2543,42 +2622,50 @@ def page_landing():
     st.markdown(f"""
     <style>
     .sw-feat-grid{{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:0 48px;align-items:stretch;}}
-    @media(max-width:900px){{.sw-feat-grid{{grid-template-columns:1fr;gap:20px;padding:0 20px;}}}}
-    /* Both content boxes same fixed height */
+    @media(max-width:992px){{
+        .sw-feat-grid{{grid-template-columns:1fr !important;gap:32px !important;padding:0 16px !important;}}
+        .sw-feat-grid h1, .sw-feat-grid .feat-title{{font-size:22px !important;line-height:1.2 !important;}}
+        .sw-feat-grid .feat-title-block{{min-height:auto !important;text-align:center;}}
+        .sw-feat-grid .sw-demo-wrap{{height:380px !important;}}
+        .sw-feat-grid .sw-prem-box{{height:auto !important;min-height:380px !important;}}
+    }}
+    /* Both content boxes same fixed height on desktop */
     .sw-demo-wrap{{overflow:hidden;height:320px;box-sizing:border-box;flex:none!important;}}
     .sw-demo-wrap>div{{height:100%;}}
     .sw-prem-box{{height:320px;box-sizing:border-box;display:flex;flex-direction:column;flex:none!important;}}
+    .feat-title{{font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;}}
+    .feat-title-block{{min-height:105px;margin-bottom:16px;}}
     </style>
     <div class="sw-feat-grid" style="margin-bottom:28px;">
       <div style="display:flex;flex-direction:column;height:100%;">
-        <div style="min-height:105px;margin-bottom:16px;">
-          <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Find Trending Stocks<br><span style="color:{BLUE};">Before the Crowd</span></div>
+        <div class="feat-title-block">
+          <div class="feat-title">Find Trending Stocks<br><span style="color:{BLUE};">Before the Crowd</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Discover top stocks making waves across social media and the market.</div>
         </div>
-        <div class="sw-demo-wrap" style="flex:none;height:320px;overflow:hidden;">{DEMO[0]}</div>
+        <div class="sw-demo-wrap">{DEMO[0]}</div>
       </div>
       <div style="display:flex;flex-direction:column;height:100%;">
-        <div style="min-height:105px;margin-bottom:16px;">
-          <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Scan For Short Squeeze<br><span style="color:{BLUE};">Candidates</span></div>
+        <div class="feat-title-block">
+          <div class="feat-title">Scan For Short Squeeze<br><span style="color:{BLUE};">Candidates</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Spot stocks with heavy short interest and growing momentum before the move.</div>
         </div>
-        <div class="sw-demo-wrap" style="flex:none;height:320px;overflow:hidden;">{DEMO[1]}</div>
+        <div class="sw-demo-wrap">{DEMO[1]}</div>
       </div>
     </div>
     <div class="sw-feat-grid">
       <div style="display:flex;flex-direction:column;height:100%;">
-        <div style="min-height:105px;margin-bottom:16px;">
-          <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Smart Insights<br>in Simple <span style="color:{BLUE};">Language</span></div>
+        <div class="feat-title-block">
+          <div class="feat-title">Smart Insights<br>in Simple <span style="color:{BLUE};">Language</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Every technical signal explained in plain English. No finance degree needed.</div>
         </div>
-        <div class="sw-demo-wrap" style="flex:none;height:320px;overflow:hidden;">{DEMO[2]}</div>
+        <div class="sw-demo-wrap">{DEMO[2]}</div>
       </div>
       <div style="display:flex;flex-direction:column;height:100%;">
-        <div style="min-height:105px;margin-bottom:16px;">
-          <div style="font-size:26px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;line-height:1.15;margin-bottom:8px;">Go Premium For<br><span style="color:{GOLD};">Real-Time Signals &amp;<br>Deeper Analysis</span></div>
+        <div class="feat-title-block">
+          <div class="feat-title">Go Premium For<br><span style="color:{GOLD};">Real-Time Signals &amp;<br>Deeper Analysis</span></div>
           <div style="font-size:13px;color:#374f6e;line-height:1.7;">Upgrade to unlock advanced screening, unlimited alerts, and premium watchlists.</div>
         </div>
-        <div class="sw-prem-box" style="flex:1;height:320px;background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;">
+        <div class="sw-prem-box" style="background:#0d1525;border:1px solid rgba(245,158,11,.25);border-radius:11px;overflow:hidden;">
           <div style="background:linear-gradient(135deg,#1a0d00,#0d1525);border-bottom:1px solid rgba(245,158,11,.2);padding:10px 16px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:13px;">👑</span>
             <span style="font-size:11px;font-weight:700;color:{GOLD};letter-spacing:1px;">PREMIUM FEATURES</span>
@@ -5156,10 +5243,12 @@ def page_pricing():
     st.markdown(f"""<style>
     .sw-pc-col {{
         background:{CARD};border:1px solid rgba(255,255,255,0.1);
-        border-radius:14px;padding:24px 20px;
+        border-radius:14px 14px 0 0;
+        padding:24px 20px;
         transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
         display:flex;flex-direction:column;box-sizing:border-box;
         min-height:560px;
+        margin-bottom:0!important;
     }}
     .sw-pc-col:hover{{border-color:rgba(37,99,235,0.35);}}
     .sw-pc-sel-blue{{
@@ -5177,31 +5266,35 @@ def page_pricing():
     .sw-pc-badge{{font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;letter-spacing:1px;margin-bottom:10px;}}
     .sw-pc-feats{{font-size:12px;color:#374f6e;line-height:2.3;flex:1;}}
     .sw-pc-dim{{color:#1e3050;}}
-    /* CTA button integrated into card bottom */
-    /* CTA button sits flush under each card via negative margin */
-    .sw-pc-cta,.sw-pc-cta-active,.sw-pc-cta-gold-active{{margin-top:-2px!important;}}
+
+    /* CTA button integrated into card bottom — looks like part of the card */
+    .sw-pc-cta,.sw-pc-cta-active,.sw-pc-cta-gold-active{{margin-top:-2px!important;margin-bottom:0!important;}}
     .sw-pc-cta .stButton>button,
     .sw-pc-cta-active .stButton>button,
     .sw-pc-cta-gold-active .stButton>button{{
         border-radius:0 0 14px 14px!important;
         margin-top:0!important;
         font-size:14px!important;font-weight:700!important;
-        padding:15px 0!important;
-        min-height:52px!important;
+        padding:16px 0!important;
+        min-height:56px!important;
         letter-spacing:0.3px!important;
         border-top:none!important;
         border-left:1px solid rgba(255,255,255,0.1)!important;
         border-right:1px solid rgba(255,255,255,0.1)!important;
         border-bottom:1px solid rgba(255,255,255,0.1)!important;
-        background:rgba(255,255,255,0.04)!important;
-        color:#6b7fa0!important;
         transition:all 0.2s ease!important;
+    }}
+    /* Free plan button - subtle */
+    .sw-pc-cta .stButton>button{{
+        background:rgba(255,255,255,0.04)!important;
+        color:#a8bdd4!important;
     }}
     .sw-pc-cta .stButton>button:hover{{
         background:rgba(37,99,235,0.1)!important;
         color:#93b4fd!important;
         border-color:rgba(37,99,235,0.3)!important;
     }}
+    /* Premium button - bold blue */
     .sw-pc-cta-active .stButton>button{{
         background:linear-gradient(135deg,#1d4ed8,#2563eb)!important;
         color:#fff!important;
@@ -5211,6 +5304,7 @@ def page_pricing():
     .sw-pc-cta-active .stButton>button:hover{{
         background:linear-gradient(135deg,#1e40af,#1d4ed8)!important;
     }}
+    /* Annual button - gold */
     .sw-pc-cta-gold-active .stButton>button{{
         background:linear-gradient(135deg,#92400e,#d97706,#f59e0b)!important;
         color:#1a0800!important;
@@ -5218,9 +5312,33 @@ def page_pricing():
         box-shadow:0 4px 20px rgba(245,158,11,0.4)!important;
         font-weight:800!important;
     }}
-    /* Remove gap between card and button */
-    .sw-pc-col{{border-radius:14px 14px 0 0!important;margin-bottom:0!important;}}
     [data-testid="stHorizontalBlock"]:has(.sw-pc-col){{align-items:flex-end!important;}}
+
+    /* ── MOBILE PRICING ── */
+    @media (max-width: 992px) {{
+        [data-testid="stHorizontalBlock"]:has(.sw-pc-col) {{
+            flex-direction: column !important;
+            gap: 28px !important;
+        }}
+        [data-testid="stHorizontalBlock"]:has(.sw-pc-col) [data-testid="column"] {{
+            width: 100% !important;
+            min-width: 100% !important;
+        }}
+        .sw-pc-col {{
+            min-height: auto !important;
+            transform: none !important;
+            margin-bottom: 0 !important;
+        }}
+        .sw-pc-sel-blue, .sw-pc-sel-gold {{
+            transform: none !important;
+        }}
+        .sw-pc-cta .stButton>button,
+        .sw-pc-cta-active .stButton>button,
+        .sw-pc-cta-gold-active .stButton>button {{
+            min-height: 60px !important;
+            font-size: 15px !important;
+        }}
+    }}
     </style>""", unsafe_allow_html=True)
 
     if "sel_plan" not in st.session_state:
@@ -5228,8 +5346,6 @@ def page_pricing():
     sel = st.session_state.sel_plan
 
     def card_badge(plan):
-        if plan == sel:
-            return f'<span class="sw-pc-badge" style="background:#1e3a8a;color:#93b4fd;">✓ SELECTED</span>'
         if plan == "premium":
             return f'<span class="sw-pc-badge" style="background:rgba(37,99,235,0.15);color:{BLUE};">⭐ MOST POPULAR</span>'
         if plan == "annual":
@@ -5240,8 +5356,7 @@ def page_pricing():
 
     # ── FREE ──
     with c1:
-        cls = "sw-pc-sel-blue" if sel=="free" else ""
-        st.markdown(f"""<div class="sw-pc-col {cls}">
+        st.markdown(f"""<div class="sw-pc-col">
             {card_badge("free")}
             <div style="font-size:14px;font-weight:600;color:#94a3b8;margin-bottom:2px;">Free</div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:#e2e8f0;line-height:1.1;margin-bottom:2px;">$0</div>
@@ -5260,20 +5375,16 @@ def page_pricing():
             ❌&nbsp; BI analytics &amp; score details</span>
             </div>
         </div>""", unsafe_allow_html=True)
-        cta_cls = "sw-pc-cta-active" if sel=="free" else "sw-pc-cta"
+        cta_cls = "sw-pc-cta"
         st.markdown(f'<div class="{cta_cls}">', unsafe_allow_html=True)
-        btn_lbl = "Get Started Free →" if sel=="free" else "Select Free Plan"
-        if st.button(btn_lbl, key="pc_free", use_container_width=True, type="primary" if sel=="free" else "secondary"):
-            if sel != "free":
-                st.session_state.sel_plan = "free"; st.rerun()
-            else:
-                nav("signup" if not is_authed() else "dashboard")
+        # ONE-TAP: directly go to signup/dashboard, no "select first" step
+        if st.button("Get Started Free →", key="pc_free", use_container_width=True):
+            nav("signup" if not is_authed() else "dashboard")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ── PREMIUM ──
     with c2:
-        cls = "sw-pc-sel-blue" if sel=="premium" else ""
-        st.markdown(f"""<div class="sw-pc-col {cls}">
+        st.markdown(f"""<div class="sw-pc-col sw-pc-sel-blue">
             {card_badge("premium")}
             <div style="font-size:14px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">Premium Monthly</div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:#e2e8f0;line-height:1.1;margin-bottom:2px;">$29</div>
@@ -5292,21 +5403,20 @@ def page_pricing():
             ✅&nbsp; Saved screener configs
             </div>
         </div>""", unsafe_allow_html=True)
-        cta_cls = "sw-pc-cta-active" if sel=="premium" else "sw-pc-cta"
+        cta_cls = "sw-pc-cta-active"
         st.markdown(f'<div class="{cta_cls}">', unsafe_allow_html=True)
-        btn_lbl = "🚀 Get Premium →" if sel=="premium" else "🚀 Select Premium"
-        if st.button(btn_lbl, key="pc_premium", use_container_width=True, type="primary" if sel=="premium" else "secondary"):
-            if sel != "premium":
-                st.session_state.sel_plan = "premium"; st.rerun()
+        # ONE-TAP: directly start checkout (or signup if not authed)
+        if st.button("🚀 Get Premium — $29/mo", key="pc_premium", use_container_width=True):
+            if not is_authed():
+                st.session_state["_pending_checkout"]="premium"
+                nav("signup")
             else:
-                if not is_authed(): st.session_state["_pending_checkout"]="premium"; nav("signup")
-                else: _do_checkout("premium")
+                _do_checkout("premium")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ── ANNUAL ──
     with c3:
-        cls = "sw-pc-sel-gold" if sel=="annual" else ""
-        st.markdown(f"""<div class="sw-pc-col {cls}">
+        st.markdown(f"""<div class="sw-pc-col sw-pc-sel-gold">
             {card_badge("annual")}
             <div style="font-size:14px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">Annual Plan</div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:{GOLD};line-height:1.1;margin-bottom:2px;">$199</div>
@@ -5323,15 +5433,15 @@ def page_pricing():
             ✅&nbsp; Portfolio tracker (coming)
             </div>
         </div>""", unsafe_allow_html=True)
-        cta_cls = "sw-pc-cta-gold-active" if sel=="annual" else "sw-pc-cta"
+        cta_cls = "sw-pc-cta-gold-active"
         st.markdown(f'<div class="{cta_cls}">', unsafe_allow_html=True)
-        btn_lbl = "👑 Get Annual — Best Value →" if sel=="annual" else "👑 Select Annual Plan"
-        if st.button(btn_lbl, key="pc_annual", use_container_width=True, type="primary" if sel=="annual" else "secondary"):
-            if sel != "annual":
-                st.session_state.sel_plan = "annual"; st.rerun()
+        # ONE-TAP: directly start checkout
+        if st.button("👑 Get Annual — $199/yr", key="pc_annual", use_container_width=True):
+            if not is_authed():
+                st.session_state["_pending_checkout"]="annual"
+                nav("signup")
             else:
-                if not is_authed(): st.session_state["_pending_checkout"]="annual"; nav("signup")
-                else: _do_checkout("annual")
+                _do_checkout("annual")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Stripe status bar ──
