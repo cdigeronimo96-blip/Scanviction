@@ -207,12 +207,49 @@ def send_email(to, subject, msg):
         log.error(f"  ❌ Email {r.status_code}: {r.text[:100]}"); return False
     except Exception as e: log.error(f"  ❌ Email: {e}"); return False
 
+def send_push(player_ids, title, msg):
+    """Send OneSignal web/mobile push to a list of subscription IDs."""
+    app_id  = os.environ.get("ONESIGNAL_APP_ID","")
+    api_key = os.environ.get("ONESIGNAL_REST_API_KEY","")
+    if not app_id or not api_key or not player_ids: return False
+    try:
+        import requests
+        payload = {
+            "app_id": app_id,
+            "include_player_ids": player_ids if isinstance(player_ids,list) else [player_ids],
+            "headings": {"en": title},
+            "contents": {"en": msg},
+            "url": "https://stockwins.streamlit.app",
+        }
+        r = requests.post("https://onesignal.com/api/v1/notifications",
+            headers={"Authorization":f"Basic {api_key}","Content-Type":"application/json"},
+            json=payload, timeout=10)
+        if r.status_code in (200,201):
+            log.info(f"  ✅ Push → {len(player_ids) if isinstance(player_ids,list) else 1} device(s)")
+            return True
+        log.error(f"  ❌ Push {r.status_code}: {r.text[:100]}"); return False
+    except Exception as e: log.error(f"  ❌ Push: {e}"); return False
+
 def deliver(email, user, subject, msg, channels):
-    tg_id=user.get("telegram_chat_id",""); is_prem=user.get("role","free") in ("premium","admin","owner")
-    if "email" in channels: send_email(email, subject, msg)
-    if "telegram" in channels and is_prem and tg_id:
+    tg_id=user.get("telegram_chat_id","")
+    push_ids=user.get("push_subscription_ids",[])
+    is_prem=user.get("role","free") in ("premium","admin","owner")
+    notif_prefs=user.get("notif_prefs",{})
+
+    # Email always allowed (free + premium)
+    if "email" in channels and notif_prefs.get("email_enabled", True):
+        send_email(email, subject, msg)
+
+    # Telegram (premium only, user-configured)
+    if "telegram" in channels and is_prem and tg_id and notif_prefs.get("telegram_enabled", True):
         full=msg+"\n\n─────────────────\n📊 [Open StockWins](https://stockwins.streamlit.app)\n⚠️ _Not financial advice._"
         send_telegram(tg_id, full)
+
+    # Push (premium only, user-enabled in browser)
+    if "push" in channels and is_prem and push_ids and notif_prefs.get("push_enabled", True):
+        # Strip Markdown from msg for push (push doesn't render it)
+        plain_msg = msg.replace("*","").replace("_","")[:200]  # 200 char limit
+        send_push(push_ids, subject, plain_msg)
 
 # ── Main ───────────────────────────────────────────────────────
 
@@ -323,7 +360,11 @@ def process_all_alerts():
                     if wanted!="all" and cat_name not in wanted: continue
                     fkey=fire_key(email,f"{ticker}_{det_id}")
                     if already_fired(fkey): continue
-                    channels=["telegram"] if user.get("telegram_chat_id") else ["email"]
+                    # Pick channels based on what user has set up (prefer push → telegram → email)
+                    channels = []
+                    if user.get("push_subscription_ids"): channels.append("push")
+                    if user.get("telegram_chat_id"):       channels.append("telegram")
+                    channels.append("email")  # always include email as fallback
                     deliver(email,user,f"📊 {cat_name}: {ticker}",message,channels)
                     mark_fired(fkey)
 
