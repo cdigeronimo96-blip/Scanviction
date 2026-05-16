@@ -3231,13 +3231,26 @@ def _send_password_reset(email, reset_token):
 
         import requests as _r
 
-        html = f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;">
-            <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
-            <h3 style="color:#e2e8f0;">Reset your password</h3>
-            <p style="color:#6b7fa0;">Click below to reset. Expires in 1 hour.</p>
-            <a href="{reset_url}" style="display:inline-block;padding:12px 28px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Reset Password →</a>
-            <p style="color:#374f6e;font-size:11px;margin-top:16px;">Or copy: {reset_url}</p>
+        html = f"""<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;line-height:1.5;">
+            <h2 style="margin:0 0 16px;color:#111827;font-size:22px;">MarketSignalPro</h2>
+            <p style="font-size:16px;margin:0 0 14px;">Reset your password</p>
+            <p style="font-size:14px;margin:0 0 20px;color:#374151;">Click the button below to reset your MarketSignalPro password. This link expires in 1 hour.</p>
+            <p style="margin:0 0 22px;">
+                <a href="{reset_url}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;padding:12px 18px;font-weight:700;font-size:14px;">Reset password</a>
+            </p>
+            <p style="font-size:13px;margin:0 0 8px;color:#374151;">If the button does not work, copy and paste this link into your browser:</p>
+            <p style="font-size:12px;word-break:break-all;color:#4b5563;margin:0 0 20px;">{reset_url}</p>
+            <p style="font-size:12px;margin:0;color:#6b7280;">If you did not request this, you can ignore this email.</p>
         </div>"""
+
+        text_body = f"""MarketSignalPro
+
+Reset your password
+
+Click this link to reset your password. This link expires in 1 hour:
+{reset_url}
+
+If you did not request this, you can ignore this email."""
 
         resp = _r.post(
             "https://api.resend.com/emails",
@@ -3250,6 +3263,8 @@ def _send_password_reset(email, reset_token):
                 "to": [email],
                 "subject": "Reset your MarketSignalPro password",
                 "html": html,
+                "text": text_body,
+                "reply_to": ["support@marketsignalpro.com"],
             },
             timeout=10,
         )
@@ -3262,7 +3277,6 @@ def _send_password_reset(email, reset_token):
     except Exception as e:
         return False, f"Email exception: {e}"
 
-
 def _send_verification_email(email, code):
     """Send 6-digit email verification code through Resend. Returns (True, None) or (False, info)."""
     try:
@@ -3272,6 +3286,25 @@ def _send_verification_email(email, code):
             return False, "RESEND_API_KEY missing from Streamlit Secrets"
 
         import requests as _r
+
+        html = f"""<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#111827;line-height:1.5;">
+            <h2 style="margin:0 0 16px;color:#111827;font-size:22px;">MarketSignalPro</h2>
+            <p style="font-size:16px;margin:0 0 14px;">Verify your email</p>
+            <p style="font-size:14px;margin:0 0 16px;color:#374151;">Your verification code is:</p>
+            <p style="font-size:30px;font-weight:700;letter-spacing:4px;margin:0 0 20px;color:#111827;">{code}</p>
+            <p style="font-size:13px;margin:0 0 8px;color:#374151;">This code expires in 10 minutes.</p>
+            <p style="font-size:12px;margin:0;color:#6b7280;">If you did not request this, you can ignore this email.</p>
+        </div>"""
+
+        text_body = f"""MarketSignalPro
+
+Verify your email
+
+Your verification code is: {code}
+
+This code expires in 10 minutes.
+
+If you did not request this, you can ignore this email."""
 
         resp = _r.post(
             "https://api.resend.com/emails",
@@ -3283,13 +3316,9 @@ def _send_verification_email(email, code):
                 "from": "MarketSignalPro <support@marketsignalpro.com>",
                 "to": [email],
                 "subject": "Your MarketSignalPro verification code",
-                "html": f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">
-                    <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
-                    <h3>Verify your email</h3>
-                    <p style="color:#6b7fa0;">Your verification code is:</p>
-                    <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
-                    <p style="color:#6b7fa0;margin-top:20px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
-                </div>""",
+                "html": html,
+                "text": text_body,
+                "reply_to": ["support@marketsignalpro.com"],
             },
             timeout=10,
         )
@@ -6559,6 +6588,25 @@ def _send_verification_email(email, code):
 
         import requests as _r
 
+        html = f"""<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#111827;line-height:1.5;">
+            <h2 style="margin:0 0 16px;color:#111827;font-size:22px;">MarketSignalPro</h2>
+            <p style="font-size:16px;margin:0 0 14px;">Verify your email</p>
+            <p style="font-size:14px;margin:0 0 16px;color:#374151;">Your verification code is:</p>
+            <p style="font-size:30px;font-weight:700;letter-spacing:4px;margin:0 0 20px;color:#111827;">{code}</p>
+            <p style="font-size:13px;margin:0 0 8px;color:#374151;">This code expires in 10 minutes.</p>
+            <p style="font-size:12px;margin:0;color:#6b7280;">If you did not request this, you can ignore this email.</p>
+        </div>"""
+
+        text_body = f"""MarketSignalPro
+
+Verify your email
+
+Your verification code is: {code}
+
+This code expires in 10 minutes.
+
+If you did not request this, you can ignore this email."""
+
         resp = _r.post(
             "https://api.resend.com/emails",
             headers={
@@ -6569,13 +6617,9 @@ def _send_verification_email(email, code):
                 "from": "MarketSignalPro <support@marketsignalpro.com>",
                 "to": [email],
                 "subject": "Your MarketSignalPro verification code",
-                "html": f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">
-                    <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
-                    <h3>Verify your email</h3>
-                    <p style="color:#6b7fa0;">Your verification code is:</p>
-                    <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
-                    <p style="color:#6b7fa0;margin-top:20px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
-                </div>""",
+                "html": html,
+                "text": text_body,
+                "reply_to": ["support@marketsignalpro.com"],
             },
             timeout=10,
         )
