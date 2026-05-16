@@ -3223,7 +3223,7 @@ def _send_password_reset(email, reset_token):
         if resend_key:
             import requests as _r
             html = f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;">
-                <h2 style="color:#2563eb;">Stock<span style="color:#f59e0b;">W</span>ins</h2>
+                <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
                 <h3 style="color:#e2e8f0;">Reset your password</h3>
                 <p style="color:#6b7fa0;">Click below to reset. Expires in 1 hour.</p>
                 <a href="{reset_url}" style="display:inline-block;padding:12px 28px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Reset Password →</a>
@@ -3231,7 +3231,7 @@ def _send_password_reset(email, reset_token):
             </div>"""
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":"MarketSignalPro <noreply@marketsignalpro.com>","to":[email],
+                json={"from":"MarketSignalPro <support@marksignalpro.com>","to":[email],
                       "subject":"Reset your MarketSignalPro password","html":html},
                 timeout=10)
             if resp.status_code in (200,201): return True, None
@@ -3246,10 +3246,10 @@ def _send_verification_email(email, code):
             import requests as _r
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":"MarketSignalPro <noreply@marketsignalpro.com>","to":[email],
+                json={"from":"MarketSignalPro <support@marksignalpro.com>","to":[email],
                       "subject":"Your MarketSignalPro verification code",
                       "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">
-                        <h2>Stock<span style="color:#f59e0b;">W</span>ins</h2>
+                        <h2>Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
                         <h3>Verify your email</h3>
                         <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
                         <p style="color:#6b7fa0;margin-top:20px;">Expires in 10 minutes.</p>
@@ -5649,7 +5649,7 @@ def page_pricing():
         st.markdown(f"""<div style="background:#0e1421;border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:12px;color:#374f6e;">
         ⚙️ <strong style="color:{GOLD};">Payment processing not yet configured.</strong>
         Add <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PRICE_MONTHLY</code>, <code>STRIPE_PRICE_ANNUAL</code>, <code>APP_URL</code> to Streamlit Secrets, then reboot.
-        In the meantime email <a href="mailto:support@marketsignalpro.com" style="color:#93b4fd;">support@marketsignalpro.com</a> to upgrade manually.
+        In the meantime email <a href="mailto:support@marksignalpro.com" style="color:#93b4fd;">support@marksignalpro.com</a> to upgrade manually.
         </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="disc" style="margin-top:14px;">⚠️ Educational platform only. Not financial advice. Trading involves risk.</div>', unsafe_allow_html=True)
@@ -6196,7 +6196,7 @@ def page_settings():
                         st.error(err)
                 st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-top:8px;line-height:1.7;">The billing portal lets you: update payment method · view invoices · cancel subscription · download receipts</div>',unsafe_allow_html=True)
             else:
-                st.markdown(f'<div style="background:#0e1421;border:1px solid {BORDER};border-radius:7px;padding:12px 14px;font-size:12px;color:#374f6e;">To manage your subscription, email <a href="mailto:support@marketsignalpro.com" style="color:#93b4fd;">support@marketsignalpro.com</a></div>',unsafe_allow_html=True)
+                st.markdown(f'<div style="background:#0e1421;border:1px solid {BORDER};border-radius:7px;padding:12px 14px;font-size:12px;color:#374f6e;">To manage your subscription, email <a href="mailto:support@marksignalpro.com" style="color:#93b4fd;">support@marksignalpro.com</a></div>',unsafe_allow_html=True)
 
         if is_premium():
             st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
@@ -6514,11 +6514,11 @@ def _send_verification_email(email, code):
             import requests as _r
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":"MarketSignalPro <noreply@marketsignalpro.com>",
+                json={"from":"MarketSignalPro <support@marksignalpro.com>",
                       "to":[email],
                       "subject":"Your MarketSignalPro verification code",
                       "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;color:#e2e8f0;padding:40px;">
-                        <h2 style="color:#2563eb;">Stock<span style="color:#f59e0b;">W</span>ins</h2>
+                        <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
                         <h3>Verify your email</h3>
                         <p style="color:#6b7fa0;">Your verification code is:</p>
                         <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
@@ -6608,7 +6608,7 @@ def page_contact():
             <div style="font-size:28px;margin-bottom:10px;">📧</div>
             <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">Email Support</div>
             <div style="font-size:12px;color:#374f6e;margin-bottom:12px;">For account, billing, and general questions</div>
-            <a href="mailto:support@marketsignalpro.com" style="font-size:13px;font-weight:700;color:#93b4fd;text-decoration:none;">support@marketsignalpro.com</a>
+            <a href="mailto:support@marksignalpro.com" style="font-size:13px;font-weight:700;color:#93b4fd;text-decoration:none;">support@marksignalpro.com</a>
             <div style="font-size:11px;color:#2a3a52;margin-top:6px;">Response within 24 hours</div>
         </div>''',unsafe_allow_html=True)
     with top2:
@@ -6672,7 +6672,7 @@ Key facts:
 - Data sources: Yahoo Finance (free), Twelve Data (optional), StockTwits (social sentiment)
 - Signals are educational/algorithmic only — NOT financial advice
 - Back button works to go to previous page
-- For billing: support@marketsignalpro.com
+- For billing: support@marksignalpro.com
 
 Be helpful, concise, and friendly. If asked about a specific stock or investment advice, remind them signals are educational only."""
                     msgs = [{"role":m["role"],"content":m["content"]} for m in st.session_state.support_chat]
@@ -6680,7 +6680,7 @@ Be helpful, concise, and friendly. If asked about a specific stock or investment
                     try: anth_key = st.secrets.get("ANTHROPIC_API_KEY","")
                     except: anth_key = ""
                     if not anth_key:
-                        answer = "Support chat requires ANTHROPIC_API_KEY in Streamlit Secrets. In the meantime, email support@marketsignalpro.com — we respond within 24 hours!"
+                        answer = "Support chat requires ANTHROPIC_API_KEY in Streamlit Secrets. In the meantime, email support@marksignalpro.com — we respond within 24 hours!"
                     else:
                         resp = _r.post("https://api.anthropic.com/v1/messages",
                             headers={"Content-Type":"application/json",
@@ -6692,9 +6692,9 @@ Be helpful, concise, and friendly. If asked about a specific stock or investment
                         if resp.status_code==200:
                             answer = resp.json()["content"][0]["text"]
                         else:
-                            answer = f"I'm having trouble right now (status {resp.status_code}). Please email support@marketsignalpro.com for immediate help."
+                            answer = f"I'm having trouble right now (status {resp.status_code}). Please email support@marksignalpro.com for immediate help."
                 except Exception as e:
-                    answer = f"Connection issue. Please email support@marketsignalpro.com — we typically respond within 24 hours."
+                    answer = f"Connection issue. Please email support@marksignalpro.com — we typically respond within 24 hours."
             st.session_state.support_chat.append({"role":"assistant","content":answer})
             st.rerun()
 
@@ -6711,7 +6711,7 @@ Be helpful, concise, and friendly. If asked about a specific stock or investment
         ("What are the composite signal categories?","MarketSignalPro has 17 proprietary categories combining multiple signals simultaneously — like RSI + short float + social sentiment — to surface setups not visible through standard TA."),
         ("Is this financial advice?","No. MarketSignalPro provides algorithmic, educational signals only. Nothing constitutes financial advice. Always consult a licensed financial advisor."),
         ("How do I cancel my subscription?","Go to Settings → Subscription → Open Billing Portal. You can cancel anytime with no questions asked."),
-        ("Can I get a refund?","Yes — contact support@marketsignalpro.com within 30 days of your subscription start date."),
+        ("Can I get a refund?","Yes — contact support@marksignalpro.com within 30 days of your subscription start date."),
     ]
     for q,a in faqs:
         with st.expander(q):
@@ -6776,7 +6776,7 @@ if st.session_state.get("_redirect_url"):
             <div style="font-size:12px;font-weight:700;color:{GREEN};margin-bottom:8px;">After Payment ✓</div>
             <div style="font-size:12px;color:#374f6e;line-height:2.2;">1. Account upgrades instantly<br>2. All premium categories unlock<br>3. Set up watchlist &amp; alerts<br>4. Explore BI Analytics<br>5. Configure email digests</div>
         </div>
-        <div style="margin-top:12px;text-align:center;font-size:12px;color:#2a3a52;">Questions? <a href="mailto:support@marketsignalpro.com" style="color:#93b4fd;">support@marketsignalpro.com</a></div>
+        <div style="margin-top:12px;text-align:center;font-size:12px;color:#2a3a52;">Questions? <a href="mailto:support@marksignalpro.com" style="color:#93b4fd;">support@marksignalpro.com</a></div>
         """, unsafe_allow_html=True)
     st.stop()
 
@@ -6855,7 +6855,7 @@ if st.session_state.get("_pay_error"):
         </div>
         <div style="font-size:13px;color:#374f6e;margin-bottom:8px;">{err}</div>
         <div style="font-size:12px;color:#2a3a52;">
-            Need help? Email <a href="mailto:support@marketsignalpro.com" style="color:#93b4fd;">support@marketsignalpro.com</a>
+            Need help? Email <a href="mailto:support@marksignalpro.com" style="color:#93b4fd;">support@marksignalpro.com</a>
             and we'll sort it out within 24 hours.
         </div>
     </div>
