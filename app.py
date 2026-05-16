@@ -480,65 +480,10 @@ button:active, [role="button"]:active, .stButton button:active {{
         const isInside = sidebar.contains(e.target);
         const isToggle = e.target.closest('[data-testid="collapsedControl"], [data-testid="stSidebarCollapseButton"]');
         if (!isInside && !isToggle) {{
-            // Find the collapse button and click it
             const btn = document.querySelector('[data-testid="stSidebarCollapseButton"]');
             if (btn) btn.click();
         }}
     }}, true);
-
-    // ── TOPBAR VISIBILITY MANAGER ──
-    // Hide desktop topbar on mobile and vice versa by finding the marker anchor
-    // and walking up to its st.container() parent (stVerticalBlockBorderWrapper).
-    function manageTopbarVisibility() {{
-        const isMobile = window.innerWidth <= 900;
-
-        // Find all marker anchors and toggle their PARENT CONTAINER's visibility
-        document.querySelectorAll('.sw-desktop-nav-anchor').forEach(anchor => {{
-            // Walk up to find the closest st.container wrapper
-            let container = anchor.closest('[data-testid="stVerticalBlockBorderWrapper"]');
-            if (!container) {{
-                // Fallback: closest stVerticalBlock that is NOT the main app
-                let el = anchor.parentElement;
-                while (el && el !== document.body) {{
-                    if (el.getAttribute && el.getAttribute('data-testid') === 'stVerticalBlock' &&
-                        !el.closest('.stMainBlockContainer > [data-testid="stVerticalBlock"]')) {{
-                        container = el;
-                        break;
-                    }}
-                    el = el.parentElement;
-                }}
-                if (!container) container = anchor.parentElement?.parentElement?.parentElement;
-            }}
-            if (container) {{
-                container.style.display = isMobile ? 'none' : '';
-            }}
-        }});
-
-        document.querySelectorAll('.sw-mobile-nav-anchor').forEach(anchor => {{
-            let container = anchor.closest('[data-testid="stVerticalBlockBorderWrapper"]');
-            if (!container) {{
-                let el = anchor.parentElement;
-                while (el && el !== document.body) {{
-                    if (el.getAttribute && el.getAttribute('data-testid') === 'stVerticalBlock' &&
-                        !el.closest('.stMainBlockContainer > [data-testid="stVerticalBlock"]')) {{
-                        container = el;
-                        break;
-                    }}
-                    el = el.parentElement;
-                }}
-                if (!container) container = anchor.parentElement?.parentElement?.parentElement;
-            }}
-            if (container) {{
-                container.style.display = isMobile ? '' : 'none';
-            }}
-        }});
-    }}
-    // Run on load, resize, and DOM updates
-    manageTopbarVisibility();
-    setInterval(manageTopbarVisibility, 500);
-    window.addEventListener('resize', manageTopbarVisibility);
-    const topbarObserver = new MutationObserver(manageTopbarVisibility);
-    topbarObserver.observe(document.body, {{ childList: true, subtree: true }});
 }})();
 </script>
 """, unsafe_allow_html=True)
@@ -738,6 +683,21 @@ def handle_payment_return():
     """Check URL params for Stripe redirect or push subscription. Returns True if handled."""
     try: params = st.query_params.to_dict()
     except: return False
+
+    # ── Topbar HTML-link navigation ──
+    if params.get("topbar_nav"):
+        target = params.get("topbar_nav","").strip()
+        st.query_params.clear()
+        if target == "__logout__":
+            logout()
+            return True
+        valid_pages = {"landing","features","login","signup","verify_email","forgot_pw","pricing",
+                       "contact","dashboard","discover","watchlist","screener","bi_dashboard",
+                       "stock_detail","settings","admin","signal_track"}
+        if target in valid_pages:
+            nav(target)
+            return True
+        return True
 
     # ── Push subscription registration (from OneSignal JS callback) ──
     if params.get("push_sub_id") and is_authed():
@@ -1197,11 +1157,122 @@ button[role="tab"][aria-selected="true"]{{
 
 /* ── Mobile & Tablet Responsive ── */
 @media (max-width:900px) {{
-    /* Marker div - hidden, just used as a JS hook */
+    /* Marker divs - hidden, just used as anchors */
     .sw-desktop-nav-anchor, .sw-mobile-nav-anchor {{ display: none; }}
+
+    /* ════════════════════════════════════════════════════════════
+       MOBILE: Hide desktop topbar, show mobile topbar
+       
+       Pure HTML/CSS topbar — guaranteed to work because they're not
+       Streamlit widgets but raw HTML inside our wrapper divs.
+    ════════════════════════════════════════════════════════════ */
+    .sw-desktop-topbar {{ display: none !important; }}
+    .sw-mobile-topbar-bar {{ display: flex !important; }}
+    .sw-nav {{ display: none !important; }}
 }}
 @media (min-width: 901px) {{
     .sw-desktop-nav-anchor, .sw-mobile-nav-anchor {{ display: none; }}
+    .sw-desktop-topbar {{ display: flex !important; }}
+    .sw-mobile-topbar-bar {{ display: none !important; }}
+}}
+
+/* ── DESKTOP TOPBAR styling (pure HTML) ── */
+.sw-desktop-topbar {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 8px;
+    margin-bottom: 18px;
+    gap: 24px;
+}}
+.sw-topbar-logo {{ flex-shrink: 0; }}
+.sw-topbar-nav {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+}}
+.sw-topbar-link {{
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: #a8bdd4 !important;
+    text-decoration: none !important;
+    padding: 8px 14px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.04);
+    border-radius: 7px;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+    cursor: pointer;
+}}
+.sw-topbar-link:hover {{
+    border-color: rgba(37,99,235,0.5);
+    background: rgba(37,99,235,0.1);
+    color: #93b4fd !important;
+}}
+.sw-topbar-link.active {{
+    background: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+}}
+.sw-topbar-link.primary {{
+    background: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+}}
+.sw-topbar-link.primary:hover {{
+    background: #1d4ed8 !important;
+    box-shadow: 0 4px 16px rgba(37,99,235,0.4);
+}}
+.sw-topbar-user {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}}
+.sw-topbar-icon {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.04);
+    border-radius: 7px;
+    color: #a8bdd4 !important;
+    text-decoration: none !important;
+    font-size: 16px;
+    transition: all 0.18s ease;
+}}
+.sw-topbar-icon:hover {{
+    background: rgba(37,99,235,0.1);
+    border-color: rgba(37,99,235,0.5);
+}}
+
+/* ── MOBILE TOPBAR styling (pure HTML) ── */
+.sw-mobile-topbar-bar {{
+    display: none;  /* shown only on mobile via media query above */
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    margin-bottom: 12px;
+}}
+.sw-mobile-logo {{ text-decoration: none !important; }}
+.sw-mobile-icon {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    color: #a8bdd4 !important;
+    text-decoration: none !important;
+    font-size: 18px;
 }}
 
     /* Hero text */
@@ -2179,65 +2250,85 @@ def render_topbar(active=""):
     # ── PWA bottom nav (only visible when launched as installed app, hidden on desktop & in browser) ──
     if is_authed():
         _render_bottom_nav(active)
+
+    # ════════════════════════════════════════════════════════════
+    # DESKTOP TOPBAR — pure HTML/CSS so we can reliably hide on mobile
+    # Uses URL params for navigation (no Streamlit button machinery)
+    # ════════════════════════════════════════════════════════════
     if is_authed():
         pages=[("Dashboard","dashboard"),("Discover","discover"),("Watchlist","watchlist"),
                ("Screener","screener"),("BI Analytics","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
         if is_admin(): pages.append(("🛠 Admin","admin"))
 
-        # Desktop topbar — wrapped in a container that gets a CSS class
-        with st.container():
-            st.markdown('<div class="sw-desktop-nav-anchor"></div>', unsafe_allow_html=True)
-            c1,c2,c3=st.columns([2,8,3])
-            with c1: render_logo_click("top_logo","dashboard")
-            with c2:
-                st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
-                nc=st.columns(len(pages))
-                for col,(lbl,pg) in zip(nc,pages):
-                    with col:
-                        if st.button(lbl,key=f"top_{pg}",type="primary" if active==pg else "secondary",use_container_width=True):
-                            nav(pg)
-                st.markdown('</div>', unsafe_allow_html=True)
-            with c3:
-                ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
-                uc1,uc2,uc3=st.columns([4,1,1])
-                with uc1: st.markdown(f'<div style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {st.session_state.user["name"]}</div>',unsafe_allow_html=True)
-                with uc2:
-                    if st.button("⚙️",key="top_set",help="Account settings"): nav("settings")
-                with uc3:
-                    if st.button("↩️",key="top_out",help="Log out"): logout()
+        ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
+        user_name = st.session_state.user.get("name","")
 
-        # Mobile topbar — just the logo, with a small Sign Up/Settings button
-        with st.container():
-            st.markdown('<div class="sw-mobile-nav-anchor"></div>', unsafe_allow_html=True)
-            mc1, mc2 = st.columns([3, 1])
-            with mc1: render_logo_click("top_logo_mob","dashboard")
-            with mc2:
-                if st.button("⚙️",key="top_set_mob",help="Settings",use_container_width=True): nav("settings")
+        # Build nav links as pure HTML
+        nav_links = ""
+        for lbl, pg in pages:
+            is_active_cls = " active" if active == pg else ""
+            nav_links += f'<a href="?topbar_nav={pg}" class="sw-topbar-link{is_active_cls}">{lbl}</a>'
+
+        st.markdown(f"""
+        <div class="sw-desktop-topbar">
+            <div class="sw-topbar-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
+                    <a href="?topbar_nav=dashboard" style="text-decoration:none;">
+                        <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
+                    </a>
+                </span>
+            </div>
+            <div class="sw-topbar-nav">{nav_links}</div>
+            <div class="sw-topbar-user">
+                <span style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {user_name}</span>
+                <a href="?topbar_nav=settings" class="sw-topbar-icon" title="Settings">⚙️</a>
+                <a href="?topbar_nav=__logout__" class="sw-topbar-icon" title="Log out">↩️</a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Mobile-only topbar: logo + tiny settings icon
+        st.markdown(f"""
+        <div class="sw-mobile-topbar-bar">
+            <a href="?topbar_nav=dashboard" class="sw-mobile-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
+                    <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
+                </span>
+            </a>
+            <a href="?topbar_nav=settings" class="sw-mobile-icon">⚙️</a>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        # Desktop topbar
-        with st.container():
-            st.markdown('<div class="sw-desktop-nav-anchor"></div>', unsafe_allow_html=True)
-            c1,_,c3=st.columns([2,5,4])
-            with c1: render_logo_click("top_logo","landing")
-            with c3:
-                st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
-                a1,a2,a3,a4,a5=st.columns(5,gap="small")
-                with a1:
-                    if st.button("Features",key="top_features",use_container_width=True): nav("features")
-                with a2:
-                    if st.button("Pricing",key="top_pricing",use_container_width=True): nav("pricing")
-                with a3:
-                    if st.button("Contact",key="top_contact",use_container_width=True): nav("contact")
-                with a4:
-                    if st.button("Login",key="top_login",use_container_width=True): nav("login")
-                with a5:
-                    if st.button("Sign Up →",key="top_signup",type="primary",use_container_width=True): nav("signup")
-                st.markdown('</div>', unsafe_allow_html=True)
+        # Logged-out: same approach
+        st.markdown(f"""
+        <div class="sw-desktop-topbar">
+            <div class="sw-topbar-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
+                    <a href="?topbar_nav=landing" style="text-decoration:none;">
+                        <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
+                    </a>
+                </span>
+            </div>
+            <div class="sw-topbar-nav">
+                <a href="?topbar_nav=features" class="sw-topbar-link">Features</a>
+                <a href="?topbar_nav=pricing" class="sw-topbar-link">Pricing</a>
+                <a href="?topbar_nav=contact" class="sw-topbar-link">Contact</a>
+                <a href="?topbar_nav=login" class="sw-topbar-link">Login</a>
+                <a href="?topbar_nav=signup" class="sw-topbar-link primary">Sign Up →</a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Mobile topbar — just the logo (sidebar handles nav)
-        with st.container():
-            st.markdown('<div class="sw-mobile-nav-anchor"></div>', unsafe_allow_html=True)
-            render_logo_click("top_logo_mob","landing")
+        # Mobile-only: just the logo
+        st.markdown(f"""
+        <div class="sw-mobile-topbar-bar">
+            <a href="?topbar_nav=landing" class="sw-mobile-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
+                    <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
+                </span>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
     st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -2475,30 +2566,32 @@ def page_landing():
     </style>
     """, unsafe_allow_html=True)
 
-    # ── TOPBAR — Desktop shows logo + full nav; Mobile shows ONLY the logo ──
-    # Desktop version (hidden on mobile via JS in main CSS)
-    with st.container():
-        st.markdown('<div class="sw-desktop-nav-anchor"></div>', unsafe_allow_html=True)
-        c1,_,c3=st.columns([2,5,4])
-        with c1: render_logo_click("top_logo_land","landing")
-        with c3:
-            st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
-            a1,a2,a3,a4=st.columns(4,gap="small")
-            with a1:
-                if st.button("Features",key="land_feat",use_container_width=True): nav("features")
-            with a2:
-                if st.button("Pricing",key="land_price",use_container_width=True): nav("pricing")
-            with a3:
-                if st.button("Login",key="land_login",use_container_width=True): nav("login")
-            with a4:
-                if st.button("Sign Up →",key="land_su",type="primary",use_container_width=True): nav("signup")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    # Mobile version (logo only, hidden on desktop via JS)
-    with st.container():
-        st.markdown('<div class="sw-mobile-nav-anchor"></div>', unsafe_allow_html=True)
-        render_logo_click("top_logo_land_mob","landing")
-    st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
+    # ── TOPBAR — pure HTML for reliable mobile hiding ──
+    st.markdown(f"""
+    <div class="sw-desktop-topbar">
+        <div class="sw-topbar-logo">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
+                <a href="?topbar_nav=landing" style="text-decoration:none;">
+                    <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
+                </a>
+            </span>
+        </div>
+        <div class="sw-topbar-nav">
+            <a href="?topbar_nav=features" class="sw-topbar-link">Features</a>
+            <a href="?topbar_nav=pricing" class="sw-topbar-link">Pricing</a>
+            <a href="?topbar_nav=login" class="sw-topbar-link">Login</a>
+            <a href="?topbar_nav=signup" class="sw-topbar-link primary">Sign Up →</a>
+        </div>
+    </div>
+    <div class="sw-mobile-topbar-bar">
+        <a href="?topbar_nav=landing" class="sw-mobile-logo">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
+                <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
+            </span>
+        </a>
+    </div>
+    <hr class="sw-divider">
+    """, unsafe_allow_html=True)
 
     # ── HERO ──
     p_idx=st.session_state.get("hero_panel",0)
