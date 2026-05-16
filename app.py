@@ -2737,161 +2737,116 @@ def page_landing():
     """, unsafe_allow_html=True)
 
     # ── HERO ──
-    # Natural-size hero with an auto-rotating/selectable preview.
-    # The shell is only a max-width guardrail; the cards keep their designed size.
-    hero_panels = [
-        ("📊 Market Overview", "Find Trending Stocks<br><span>Before the Crowd</span>", DEMO[0]),
-        ("💥 Squeeze Radar", "Scan For Short Squeeze<br><span>Candidates</span>", DEMO[1]),
-        ("💡 Smart Insights", "Plain-English Signals<br><span>That Make Sense</span>", DEMO[2]),
-        ("🎯 Score Breakdown", "Understand Every<br><span>Signal Score</span>", DEMO_SCORE),
-        ("📈 BI Analytics", "BI Analytics &<br><span>Opportunity Matrix</span>", DEMO_BI),
-    ]
-    hero_tabs_html = "".join(
-        f'<button type="button" class="msp-hero-tab {"active" if i == 0 else ""}" data-msp-slide="{i}">{label}</button>'
-        for i, (label, _, _) in enumerate(hero_panels)
-    )
-    hero_dots_html = "".join(
-        f'<button type="button" class="msp-hero-dot {"active" if i == 0 else ""}" data-msp-slide="{i}" aria-label="Preview {i+1}"></button>'
-        for i in range(len(hero_panels))
-    )
-    hero_slides_html = "".join(
-        f'<div class="msp-hero-slide {"active" if i == 0 else ""}" data-msp-slide-panel="{i}">'         f'<div class="msp-hero-title">{title}</div><div class="msp-hero-preview-card">{html}</div></div>'
-        for i, (_, title, html) in enumerate(hero_panels)
-    )
-
-    hero_html = _dedent(f"""
+    # Native Streamlit/HTML render. This avoids iframe/raw-code issues while keeping the hero
+    # within a visual max-width guardrail instead of forcing it full-screen.
+    st.markdown(f"""
     <style>
-      html, body { margin:0; padding:0; background:#07090f; color:#d1d9e6; font-family:Inter, Arial, sans-serif; overflow:hidden; }
-      * { box-sizing:border-box; }
-      .msp-landing-hero {{
-        width: min(1380px, calc(100vw - 44px));
-        max-width: 1380px;
+    .msp-hero-shell {{
+        width: min(1440px, calc(100vw - 56px));
+        max-width: 1440px;
         margin: 0 auto;
-        padding: 34px 0 34px;
-        display: grid;
-        grid-template-columns: minmax(420px, 520px) minmax(600px, 680px);
-        gap: 84px;
-        align-items: start;
+        padding: 42px 0 42px;
         overflow: visible;
-      }}
-      .msp-hero-copy {{ min-width:0; padding-top: 4px; }}
-      .msp-hero-eyebrow {{
+    }}
+    .msp-hero-grid {{
+        display: grid;
+        grid-template-columns: minmax(430px, 520px) minmax(620px, 720px);
+        gap: 86px;
+        align-items: start;
+        justify-content: center;
+    }}
+    .msp-hero-copy {{ min-width:0; padding-top: 4px; }}
+    .msp-hero-eyebrow {{
         font-size: 11px; font-weight: 800; color: {BLUE};
         letter-spacing: 2.7px; text-transform: uppercase; margin-bottom: 18px;
-      }}
-      .msp-hero-headline {{
-        font-size: 50px; line-height: 1.03; letter-spacing: -2px;
+    }}
+    .msp-hero-headline {{
+        font-size: 52px; line-height: 1.03; letter-spacing: -2px;
         font-weight: 950; color: #f1f5f9; margin: 0 0 20px;
-      }}
-      .msp-hero-headline .blue {{ color:{BLUE}; }}
-      .msp-hero-headline .gold {{ color:{GOLD}; }}
-      .msp-hero-subcopy {{
+    }}
+    .msp-hero-headline .blue {{ color:{BLUE}; }}
+    .msp-hero-headline .gold {{ color:{GOLD}; }}
+    .msp-hero-subcopy {{
         color:#3d5270; font-size:16px; line-height:1.75;
-        max-width: 470px; margin-bottom: 32px;
-      }}
-      .msp-hero-actions {{ width: min(430px, 100%); }}
-      .msp-hero-primary, .msp-hero-secondary {{
+        max-width: 480px; margin-bottom: 32px;
+    }}
+    .msp-hero-actions {{ width: min(440px, 100%); }}
+    .msp-hero-primary, .msp-hero-secondary {{
         display:flex; align-items:center; justify-content:center;
-        width:100%; min-height:48px; border-radius:9px;
+        width:100%; min-height:50px; border-radius:9px;
         font-size:14px; font-weight:800; text-decoration:none !important;
         box-sizing:border-box;
-      }}
-      .msp-hero-primary {{ background:{BLUE}; color:white !important; border:1px solid {BLUE}; }}
-      .msp-hero-primary:hover {{ background:#1d4ed8; box-shadow:0 8px 26px rgba(37,99,235,.32); }}
-      .msp-hero-secondary {{ background:rgba(255,255,255,.045); color:#cfe2ff !important; border:1px solid rgba(255,255,255,.18); }}
-      .msp-hero-secondary:hover {{ border-color:rgba(37,99,235,.55); background:rgba(37,99,235,.12); }}
-      .msp-hero-small {{ text-align:center; font-size:12px; color:#6b7fa0; padding:14px 0 8px; }}
-      .msp-hero-trust {{
+    }}
+    .msp-hero-primary {{ background:{BLUE}; color:white !important; border:1px solid {BLUE}; }}
+    .msp-hero-primary:hover {{ background:#1d4ed8; box-shadow:0 8px 26px rgba(37,99,235,.32); }}
+    .msp-hero-secondary {{ background:rgba(255,255,255,.045); color:#cfe2ff !important; border:1px solid rgba(255,255,255,.18); }}
+    .msp-hero-secondary:hover {{ border-color:rgba(37,99,235,.55); background:rgba(37,99,235,.12); }}
+    .msp-hero-small {{ text-align:center; font-size:12px; color:#6b7fa0; padding:14px 0 8px; }}
+    .msp-hero-trust {{
         display:flex; align-items:center; justify-content:center; gap:13px; flex-wrap:wrap;
         margin-top:18px; font-size:11px; color:#4a5e7a;
-      }}
-      .msp-hero-preview {{ width: 640px; max-width:100%; min-width:0; justify-self:end; overflow:visible; padding-top:0; }}
-      .msp-hero-tabs {{ display:flex; flex-wrap:wrap; gap:12px 18px; margin-bottom:10px; align-items:center; }}
-      .msp-hero-tab {{
-        appearance:none; border:none; background:transparent; cursor:pointer;
+    }}
+    .msp-preview-wrap {{ width: min(700px, 100%); overflow: hidden; }}
+    .msp-preview-tabs {{ display:flex; flex-wrap:wrap; gap:12px 18px; margin-bottom:10px; align-items:center; }}
+    .msp-preview-tab {{
         color:#374f6e; font-family:Inter,sans-serif; font-size:13px; font-weight:600;
         padding:0 0 7px; border-bottom:2px solid transparent; white-space:nowrap;
-      }}
-      .msp-hero-tab.active {{ color:#e2e8f0; font-weight:850; border-bottom-color:#2563eb; }}
-      .msp-hero-dots {{ display:flex; gap:7px; margin:5px 0 13px; }}
-      .msp-hero-dot {{
-        width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.16);
-        display:block; border:0; padding:0; cursor:pointer;
-      }}
-      .msp-hero-dot.active {{ width:21px; border-radius:5px; background:#2563eb; }}
-      .msp-hero-title {{ font-size:26px; font-weight:950; color:#f1f5f9; line-height:1.12; letter-spacing:-.7px; margin-bottom:14px; }}
-      .msp-hero-title span {{ color:#2563eb; }}
-      .msp-hero-slide {{ display:none; }}
-      .msp-hero-slide.active {{ display:block; }}
-      .msp-hero-preview-card {{ width:100%; max-width:680px; overflow:hidden; }}
-      .msp-hero-preview-card > div {{ max-width:100% !important; width:100% !important; box-sizing:border-box !important; }}
-      .msp-hero-preview-card * {{ box-sizing:border-box !important; }}
-      @media (max-width: 1120px) {{
-        .msp-landing-hero {{ width:calc(100vw - 36px); grid-template-columns:1fr; gap:34px; padding:30px 0 34px; }}
+    }}
+    .msp-preview-tab:first-child {{ color:#e2e8f0; font-weight:850; border-bottom-color:#2563eb; }}
+    .msp-preview-dots {{ display:flex; gap:7px; margin:5px 0 13px; }}
+    .msp-preview-dots span {{ width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.16); display:block; }}
+    .msp-preview-dots span:first-child {{ width:21px; border-radius:5px; background:#2563eb; }}
+    .msp-preview-title {{ font-size:27px; font-weight:950; color:#f1f5f9; line-height:1.12; letter-spacing:-.7px; margin-bottom:14px; }}
+    .msp-preview-title span {{ color:#2563eb; }}
+    .msp-preview-card {{ width:100%; max-width:700px; overflow:hidden; }}
+    .msp-preview-card > div {{ max-width:100% !important; width:100% !important; box-sizing:border-box !important; }}
+    .msp-preview-card * {{ box-sizing:border-box !important; }}
+    @media (max-width: 1180px) {{
+        .msp-hero-shell {{ width:calc(100vw - 36px); padding:34px 0; }}
+        .msp-hero-grid {{ grid-template-columns:1fr; gap:38px; }}
         .msp-hero-copy {{ text-align:center; }}
         .msp-hero-subcopy, .msp-hero-actions {{ margin-left:auto; margin-right:auto; }}
-        .msp-hero-preview {{ justify-self:center; width:min(640px, 100%); }}
-        .msp-hero-headline {{ font-size:38px; }}
-      }}
-      @media (max-width: 560px) {{
-        .msp-landing-hero {{ width:calc(100vw - 24px); }}
+        .msp-preview-wrap {{ margin:0 auto; }}
+        .msp-hero-headline {{ font-size:40px; }}
+    }}
+    @media (max-width: 560px) {{
+        .msp-hero-shell {{ width:calc(100vw - 24px); }}
         .msp-hero-headline {{ font-size:32px; }}
-        .msp-hero-preview {{ display:none; }}
-      }}
+        .msp-preview-wrap {{ display:none; }}
+    }}
     </style>
-    <section class="msp-landing-hero" id="msp-hero-carousel">
-      <div class="msp-hero-copy">
-        <div class="msp-hero-eyebrow">Smart Stock Discovery Platform</div>
-        <h1 class="msp-hero-headline">Spot Market<br>Opportunities<br><span class="blue">Before They</span><br><span class="gold">Get Crowded</span></h1>
-        <div class="msp-hero-subcopy">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
-        <div class="msp-hero-actions">
-          <a class="msp-hero-primary" href="?topbar_nav=signup" target="_top">🚀&nbsp; Create Free Account</a>
-          <div class="msp-hero-small">Already have an account?</div>
-          <a class="msp-hero-secondary" href="?topbar_nav=login" target="_top">Sign In</a>
-          <div class="msp-hero-trust"><span>✓ Free forever plan</span><span>·</span><span>✓ No credit card</span><span>·</span><span>✓ Setup in 30 seconds</span></div>
+    <section class="msp-hero-shell">
+      <div class="msp-hero-grid">
+        <div class="msp-hero-copy">
+          <div class="msp-hero-eyebrow">Smart Stock Discovery Platform</div>
+          <h1 class="msp-hero-headline">Spot Market<br>Opportunities<br><span class="blue">Before They</span><br><span class="gold">Get Crowded</span></h1>
+          <div class="msp-hero-subcopy">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
+          <div class="msp-hero-actions">
+            <a class="msp-hero-primary" href="?topbar_nav=signup" target="_self">🚀&nbsp; Create Free Account</a>
+            <div class="msp-hero-small">Already have an account?</div>
+            <a class="msp-hero-secondary" href="?topbar_nav=login" target="_self">Sign In</a>
+            <div class="msp-hero-trust"><span>✓ Free forever plan</span><span>·</span><span>✓ No credit card</span><span>·</span><span>✓ Setup in 30 seconds</span></div>
+          </div>
+        </div>
+        <div class="msp-preview-wrap">
+          <div class="msp-preview-tabs">
+            <span class="msp-preview-tab">📊 Market Overview</span>
+            <span class="msp-preview-tab">💥 Squeeze Radar</span>
+            <span class="msp-preview-tab">💡 Smart Insights</span>
+            <span class="msp-preview-tab">🎯 Score Breakdown</span>
+          </div>
+          <div class="msp-preview-dots"><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="msp-preview-stage">
+            <div class="msp-preview-slide"><div class="msp-preview-title">Find Trending Stocks<br><span>Before the Crowd</span></div><div class="msp-preview-card">{DEMO[0]}</div></div>
+            <div class="msp-preview-slide"><div class="msp-preview-title">Scan For Short Squeeze<br><span>Candidates</span></div><div class="msp-preview-card">{DEMO[1]}</div></div>
+            <div class="msp-preview-slide"><div class="msp-preview-title">Plain-English Signals<br><span>That Make Sense</span></div><div class="msp-preview-card">{DEMO[2]}</div></div>
+            <div class="msp-preview-slide"><div class="msp-preview-title">Understand Every<br><span>Signal Score</span></div><div class="msp-preview-card">{DEMO_SCORE}</div></div>
+            <div class="msp-preview-slide"><div class="msp-preview-title">BI Analytics &<br><span>Opportunity Matrix</span></div><div class="msp-preview-card">{DEMO_BI}</div></div>
+          </div>
         </div>
       </div>
-      <div class="msp-hero-preview">
-        <div class="msp-hero-tabs">{hero_tabs_html}</div>
-        <div class="msp-hero-dots">{hero_dots_html}</div>
-        <div class="msp-hero-slides">{hero_slides_html}</div>
-      </div>
     </section>
-    <script>
-    (function() {{
-      const root = document.getElementById('msp-hero-carousel');
-      if (!root || root.dataset.ready === '1') return;
-      root.dataset.ready = '1';
-      const tabs = Array.from(root.querySelectorAll('.msp-hero-tab'));
-      const dots = Array.from(root.querySelectorAll('.msp-hero-dot'));
-      const slides = Array.from(root.querySelectorAll('.msp-hero-slide'));
-      let idx = 0;
-      let timer = null;
-      function show(next) {{
-        idx = (next + slides.length) % slides.length;
-        tabs.forEach((el, i) => el.classList.toggle('active', i === idx));
-        dots.forEach((el, i) => el.classList.toggle('active', i === idx));
-        slides.forEach((el, i) => el.classList.toggle('active', i === idx));
-      }}
-      function start() {{
-        if (timer) clearInterval(timer);
-        timer = setInterval(() => show(idx + 1), 4200);
-      }}
-      [...tabs, ...dots].forEach(el => el.addEventListener('click', function(e) {{
-        e.preventDefault();
-        const n = parseInt(this.dataset.mspSlide || '0', 10);
-        show(n);
-        start();
-      }}));
-      root.addEventListener('mouseenter', () => timer && clearInterval(timer));
-      root.addEventListener('mouseleave', start);
-      show(0);
-      start();
-    }})();
-    </script>
-    """).strip()
-    import streamlit.components.v1 as components
-    components.html(hero_html, height=650, scrolling=False)
+    """, unsafe_allow_html=True)
 
     # ── Trust bar ──
     st.markdown(f"""
@@ -3138,7 +3093,7 @@ def page_landing():
       <div class="msp-signal-grid">{cards_html}</div>
     </div>
     """).strip()
-    components.html(categories_html, height=520, scrolling=False)
+    st.markdown(categories_html, unsafe_allow_html=True)
 
     _,pc,_=st.columns([2,1,2])
     with pc:
