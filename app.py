@@ -50,7 +50,7 @@ except ImportError:
     HAS_PLOTLY = False
 
 st.set_page_config(
-    page_title="MarketSignalPro | Spot Market Opportunities First",
+    page_title="MarketSignalPro | AI-Powered Stock Signals",
     page_icon="📈", layout="wide",
     initial_sidebar_state="auto",
 )
@@ -75,9 +75,9 @@ _icon_b64 = _b64.b64encode(_SW_ICON_SVG.encode()).decode()
 _icon_data_uri = f"data:image/svg+xml;base64,{_icon_b64}"
 
 PWA_MANIFEST_JSON = (
-    '{"name":"MarketSignalPro — Premium Stock Intelligence",'
+    '{"name":"MarketSignalPro — AI-Powered Stock Signals",'
     '"short_name":"MarketSignalPro",'
-    '"description":"Proprietary stock signals, composite categories, and signal track record.",'
+    '"description":"AI-powered stock signals, smart watchlists, alerts, and plain-English market insights.",'
     '"start_url":"/",'
     '"display":"standalone",'
     '"orientation":"portrait",'
@@ -498,24 +498,16 @@ def hp(pw):  return hashlib.sha256(pw.encode()).hexdigest()
 _GLOBAL_USERS_DB: dict = {}
 
 def _get_global_db() -> dict:
-    """Returns the shared user database, merging seed accounts with persisted users."""
+    """Returns the shared in-process user database. Seeds from Secrets on first call."""
     global _GLOBAL_USERS_DB
     if not _GLOBAL_USERS_DB:
-        seeded = _load_seed_accounts()
-        persisted = _read_json(USERS_DB_PATH, {}) if 'USERS_DB_PATH' in globals() else {}
-        if isinstance(persisted, dict):
-            seeded.update(persisted)
-        _GLOBAL_USERS_DB = seeded
+        _GLOBAL_USERS_DB = _load_seed_accounts()
     return _GLOBAL_USERS_DB
 
 def _save_global_db(db: dict):
-    """Sync session users_db back to global store and durable JSON file."""
+    """Sync session users_db back to global store."""
     global _GLOBAL_USERS_DB
-    _GLOBAL_USERS_DB = db or {}
-    try:
-        _write_json(USERS_DB_PATH, _GLOBAL_USERS_DB)
-    except Exception:
-        pass
+    _GLOBAL_USERS_DB = db
 
 # ─────────────────────────────────────────────────────────────
 # FILE-BASED PERSISTENCE (alerts + users readable by worker)
@@ -540,44 +532,47 @@ def save_alerts_to_file(email, alerts):
     _write_json(ALERTS_DB_PATH, db)
 
 def save_user_to_file(email, user_data):
-    """Persist full user record so signups survive app reruns/reboots."""
     db = _read_json(USERS_DB_PATH, {})
-    db[email] = {
-        "pw": user_data.get("pw", ""),
-        "name": user_data.get("name", ""),
-        "first_name": user_data.get("first_name", ""),
-        "last_name": user_data.get("last_name", ""),
-        "role": user_data.get("role", "free"),
-        "verified": bool(user_data.get("verified", False)),
-        "joined": user_data.get("joined", datetime.now().strftime("%Y-%m-%d")),
-        "plan": user_data.get("plan", "Free"),
-        "telegram_chat_id": user_data.get("telegram_chat_id", ""),
-        "watchlist": user_data.get("watchlist", []),
-        "digest_prefs": user_data.get("digest_prefs", {}),
-        "category_alerts": user_data.get("category_alerts", []),
-        "push_subscription_ids": user_data.get("push_subscription_ids", []),
-        "push_subscribed": bool(user_data.get("push_subscribed", False)),
-    }
+    # Persist the full account record needed for login across reruns/reboots.
+    safe_data = dict(user_data)
+    safe_data.setdefault("role", "free")
+    safe_data.setdefault("verified", False)
+    safe_data.setdefault("plan", "Free")
+    safe_data.setdefault("watchlist", [])
+    safe_data.setdefault("alerts", [])
+    db[email] = safe_data
     _write_json(USERS_DB_PATH, db)
+
+def _merge_persisted_users(seed_db: dict) -> dict:
+    persisted = _read_json(USERS_DB_PATH, {})
+    if isinstance(persisted, dict):
+        for email, user_data in persisted.items():
+            if isinstance(user_data, dict) and user_data.get("pw"):
+                seed_db[email] = user_data
+    return seed_db
 
 def _load_seed_accounts():
     today = datetime.now().strftime("%Y-%m-%d")
-    r = {
-        "demo@marketsignalpro.com": {"pw":_hp("demo123"), "name":"Demo User", "first_name":"Demo", "last_name":"User", "role":"free", "verified":True, "joined":today, "plan":"Free"},
-        "premium@marketsignalpro.com": {"pw":_hp("premium1"), "name":"Alex Rivera", "first_name":"Alex", "last_name":"Rivera", "role":"premium", "verified":True, "joined":today, "plan":"Monthly"},
-        "admin@marketsignalpro.com": {"pw":_hp("admin_change_me"), "name":"Admin", "first_name":"Admin", "last_name":"", "role":"admin", "verified":True, "joined":today, "plan":"Annual"},
-        "owner@marketsignalpro.com": {"pw":_hp("owner_change_me"), "name":"Owner", "first_name":"Owner", "last_name":"", "role":"owner", "verified":True, "joined":today, "plan":"Annual"},
-    }
     try:
-        try: accts = st.secrets["accounts"]
+        try:    accts = st.secrets["accounts"]
         except: accts = st.secrets
         oe=accts.get("owner_email",""); oh=accts.get("owner_pw_hash","")
         ae=accts.get("admin_email",""); ah=accts.get("admin_pw_hash","")
-        if oe and oh: r[oe.strip().lower()] = {"pw":oh,"name":"Owner","first_name":"Owner","last_name":"","role":"owner","verified":True,"joined":today,"plan":"Annual"}
-        if ae and ah: r[ae.strip().lower()] = {"pw":ah,"name":"Admin","first_name":"Admin","last_name":"","role":"admin","verified":True,"joined":today,"plan":"Annual"}
-    except Exception:
-        pass
-    return r
+        if oe and oh:
+            r = {
+                oe: {"pw":oh,"name":"Owner","role":"owner","verified":True,"joined":today,"plan":"Annual"},
+                "demo@marketsignalpro.com":    {"pw":_hp("demo123"), "name":"Demo User",  "role":"free",   "verified":True,"joined":today,"plan":"Free"},
+                "premium@marketsignalpro.com": {"pw":_hp("premium1"),"name":"Alex Rivera","role":"premium","verified":True,"joined":today,"plan":"Monthly"},
+            }
+            if ae and ah: r[ae]={"pw":ah,"name":"Admin","role":"admin","verified":True,"joined":today,"plan":"Annual"}
+            return _merge_persisted_users(r)
+    except: pass
+    return _merge_persisted_users({
+        "demo@marketsignalpro.com":    {"pw":_hp("demo123"), "name":"Demo User",  "role":"free",   "verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Free"},
+        "premium@marketsignalpro.com": {"pw":_hp("premium1"),"name":"Alex Rivera","role":"premium","verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Monthly"},
+        "admin@marketsignalpro.com":   {"pw":_hp("admin_change_me"),"name":"Admin","role":"admin","verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Annual"},
+        "owner@marketsignalpro.com":   {"pw":_hp("owner_change_me"),"name":"Owner","role":"owner","verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Annual"},
+    })
 
 def get_td_key():
     try:
@@ -697,7 +692,16 @@ def handle_payment_return():
     try: params = st.query_params.to_dict()
     except: return False
 
-    # ── Legacy topbar HTML-link navigation ──
+    # ── Logout link from topbar ──
+    if params.get("logout"):
+        try:
+            st.query_params.clear()
+        except Exception:
+            pass
+        logout()
+        return True
+
+    # Legacy topbar_nav support for older cached pages
     if params.get("topbar_nav"):
         target = params.get("topbar_nav","").strip()
         if target == "__logout__":
@@ -708,7 +712,7 @@ def handle_payment_return():
         if target in VALID_PAGES:
             nav(target)
             return True
-        return False
+        return True
 
     # ── Push subscription registration (from OneSignal JS callback) ──
     if params.get("push_sub_id") and is_authed():
@@ -1367,36 +1371,55 @@ button[role="tab"][aria-selected="true"]{{
     /* Trust bar wrap */
     .sw-trust-bar{{flex-wrap:wrap !important;gap:16px !important;padding:16px !important;}}
 }}
-
-
-/* ── MarketSignalPro desktop/layout fixes ── */
-.sw-topbar-frame {{ padding: 6px 22px 4px; }}
-.sw-topbar-frame .sw-nav [data-testid="stHorizontalBlock"] {{ align-items: center !important; }}
-.sw-topbar-frame .sw-nav .stButton>button {{ min-height: 42px !important; padding: 9px 18px !important; font-size: 13px !important; }}
-.sw-topbar-frame .sw-nav .element-container:has(.sw-logo-click-target)+.element-container .stButton>button {{ top: -50px !important; width: 245px !important; height: 50px !important; min-height: 50px !important; }}
-.sw-logo-click-target span {{ font-size: 28px !important; }}
-.sw-divider {{ margin: 0 0 14px 0 !important; }}
-.pg {{ max-width: 1180px !important; margin: 0 auto !important; padding: 24px 34px 48px !important; }}
-.sw-back-btn-wrap {{ display:none !important; }}
-[data-testid="stSidebar"] {{ width: 245px !important; min-width:245px !important; max-width:245px !important; }}
-[data-testid="stSidebar"] .stButton>button {{ color:#9fb3cc !important; background:rgba(255,255,255,0.035) !important; border-left:2px solid rgba(37,99,235,0.18) !important; margin:2px 8px !important; border-radius:7px !important; font-weight:600 !important; }}
-[data-testid="stSidebar"] .stButton>button:hover {{ color:#ffffff !important; background:rgba(37,99,235,0.16) !important; }}
-[data-testid="stSidebar"][aria-expanded="true"] ~ * [data-testid="collapsedControl"],
-[data-testid="stSidebar"]:not([aria-expanded="false"]) ~ * [data-testid="collapsedControl"],
-[data-testid="stSidebar"][aria-expanded="true"] ~ * [data-testid="stSidebarCollapseButton"] {{ left: 252px !important; }}
-@media (min-width:901px) {{
-  .sw-hero-left-block {{ padding: 18px 0 24px 48px !important; }}
-  .sw-hero-demo-wrap {{ padding-top: 0 !important; }}
-  .hero-h1 {{ font-size: 48px !important; }}
-}}
-@media (max-width:900px) {{
-  [data-testid="stSidebar"] {{ width: 300px !important; min-width:300px !important; max-width:300px !important; }}
-  [data-testid="stSidebar"][aria-expanded="true"] ~ * [data-testid="collapsedControl"],
-  [data-testid="stSidebar"][aria-expanded="true"] ~ * [data-testid="stSidebarCollapseButton"] {{ left: 248px !important; }}
-  .pg {{ padding: 16px 14px 32px !important; }}
-}}
 </style>
 """, unsafe_allow_html=True)
+
+st.markdown("""<style>
+
+/* ─────────────────────────────────────────────────────────────
+   MarketSignalPro desktop/layout cleanup overrides
+───────────────────────────────────────────────────────────── */
+.sw-back-btn-wrap { display:none !important; }
+.pg { max-width:1180px !important; margin:0 auto !important; padding:30px 34px 52px !important; }
+@media (min-width:901px) {
+  .sw-desktop-topbar {
+    min-height:54px !important;
+    padding:8px 36px 8px 28px !important;
+    margin-bottom:0 !important;
+    gap:28px !important;
+  }
+  .sw-topbar-logo { margin-left:16px !important; }
+  .sw-topbar-logo span { font-size:26px !important; }
+  .sw-topbar-nav { gap:12px !important; margin-left:auto !important; margin-right:8px !important; }
+  .sw-topbar-link { min-width:112px !important; text-align:center !important; padding:11px 18px !important; font-size:14px !important; }
+  .sw-topbar-link.primary { min-width:122px !important; }
+  .sw-divider { margin:0 0 16px 0 !important; }
+  .sw-hero-row { max-width:1180px !important; margin:0 auto !important; padding:8px 28px 0 !important; }
+  .sw-hero-left-block { padding:18px 0 14px 0 !important; max-width:440px !important; }
+  .sw-hero-demo-wrap { padding-top:8px !important; max-width:560px !important; margin-left:auto !important; }
+  .sw-hero-row .stButton, .sw-hero-row .stButton > button,
+  button[aria-label="🚀 Create Free Account"], button[aria-label="Sign In"] {
+    width:420px !important; max-width:420px !important; min-height:42px !important; flex:0 0 auto !important;
+  }
+  [data-testid="stSidebar"] {
+    width:250px !important; min-width:250px !important; max-width:250px !important;
+    position:sticky !important; transform:none !important;
+  }
+  [data-testid="stSidebar"] .stButton>button {
+    color:#a8bdd4 !important; background:rgba(255,255,255,0.025) !important;
+    border-left:2px solid rgba(37,99,235,0.18) !important;
+  }
+  [data-testid="stSidebar"] .stButton>button:hover { color:#ffffff !important; background:rgba(37,99,235,0.16) !important; }
+  [data-testid="collapsedControl"], [data-testid="stSidebarCollapseButton"], [data-testid="stSidebarCollapsedControl"] {
+    left:216px !important; top:10px !important;
+  }
+}
+@media (max-width:900px) {
+  .pg { padding:18px 16px 34px !important; }
+  .sw-hero-row .stButton, .sw-hero-row .stButton > button,
+  button[aria-label="🚀 Create Free Account"], button[aria-label="Sign In"] { max-width:100% !important; width:100% !important; }
+}
+</style>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # CONSTANTS
@@ -1441,6 +1464,29 @@ FREE_COMPOSITE  = [k for k,(d,t) in COMPOSITE_CATS.items() if t=="free"]
 PREM_COMPOSITE  = [k for k,(d,t) in COMPOSITE_CATS.items() if t=="premium"]
 
 # ─────────────────────────────────────────────────────────────
+# URL NAVIGATION
+# ─────────────────────────────────────────────────────────────
+VALID_PAGES = {"landing","features","login","signup","verify_email","forgot_pw","pricing",
+               "contact","dashboard","discover","watchlist","screener","bi_dashboard",
+               "stock_detail","settings","admin","signal_track"}
+
+def _set_url_page(page_name: str):
+    try:
+        if page_name in VALID_PAGES:
+            st.query_params["page"] = page_name
+    except Exception:
+        pass
+
+def _sync_page_from_url():
+    try:
+        params = st.query_params.to_dict()
+    except Exception:
+        return
+    page_name = params.get("page")
+    if page_name in VALID_PAGES:
+        st.session_state.page = page_name
+
+# ─────────────────────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
 def init():
@@ -1462,32 +1508,23 @@ init()
 # AUTH
 # ─────────────────────────────────────────────────────────────
 def login(email, pw):
-    email = (email or "").strip().lower()
     db=st.session_state.users_db
-    persisted = _read_json(USERS_DB_PATH, {})
-    if isinstance(persisted, dict):
-        db.update(persisted)
-    if email in db and db[email].get("pw") == hp(pw):
-        st.session_state.user={"email":email,"name":db[email].get("name","")}
-        st.session_state.role=db[email].get("role","free")
-        st.session_state.watchlist = db[email].get("watchlist", [])
+    if email in db and db[email]["pw"]==hp(pw):
+        st.session_state.user={"email":email,"name":db[email]["name"]}
+        st.session_state.role=db[email]["role"]
+        # Load this user's alerts from file
         user_alerts_db = _read_json(ALERTS_DB_PATH, {})
         st.session_state.alerts = user_alerts_db.get(email, [])
-        _save_global_db(db)
         return True
     return False
 
-def signup(email, pw, name, first_name="", last_name=""):
-    email = (email or "").strip().lower()
-    name = (name or f"{first_name} {last_name}").strip()
+def signup(email, pw, name):
     db=st.session_state.users_db
-    persisted = _read_json(USERS_DB_PATH, {})
-    if isinstance(persisted, dict): db.update(persisted)
     if email in db: return False,"Account already exists."
-    db[email]={"pw":hp(pw),"name":name,"first_name":first_name,"last_name":last_name,"role":"free","verified":False,
-               "joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Free","watchlist":[],"alerts":[]}
-    _save_global_db(db)
-    save_user_to_file(email, db[email])
+    db[email]={"pw":hp(pw),"name":name,"role":"free","verified":False,
+               "joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Free"}
+    _save_global_db(db)  # persist to process-level store
+    save_user_to_file(email, db[email])  # persist to file for worker
     st.session_state.site_stats["total_signups"]+=1
     st.session_state.user={"email":email,"name":name}
     st.session_state.role="free"
@@ -1508,26 +1545,18 @@ def is_admin():   return st.session_state.get("role") in ("owner","admin")
 def is_premium(): return st.session_state.get("role") in ("owner","admin","premium")
 def is_authed():  return st.session_state.get("user") is not None
 
-VALID_PAGES = {"landing","features","login","signup","verify_email","forgot_pw","pricing",
-               "contact","dashboard","discover","watchlist","screener","bi_dashboard",
-               "stock_detail","settings","admin","signal_track"}
-
 def nav(p):
-    if p not in VALID_PAGES:
-        p = "landing"
     cur = st.session_state.get("page")
     if cur and cur != p:
         hist = st.session_state.get("_page_hist", [])
         if not hist or hist[-1] != cur:
             hist.append(cur)
-        if len(hist) > 20: hist = hist[-20:]
+        if len(hist) > 20:
+            hist = hist[-20:]
         st.session_state["_page_hist"] = hist
     st.session_state.prev_page = cur
     st.session_state.page = p
-    try:
-        st.query_params["page"] = p
-    except Exception:
-        pass
+    _set_url_page(p)
     st.rerun()
 
 def go_back():
@@ -1535,13 +1564,14 @@ def go_back():
     if hist:
         prev = hist.pop()
         st.session_state["_page_hist"] = hist
-        nav(prev)
+        st.session_state.page = prev
+        st.rerun()
     else:
-        nav("dashboard" if is_authed() else "landing")
+        nav("discover" if is_authed() else "landing")
 
 def back_button(key="page_back"):
-    """Deprecated. Intentionally no UI; browser back and logo navigation are primary."""
-    return None
+    """In-page back buttons removed. Use logo/browser back instead."""
+    return
 # ─────────────────────────────────────────────────────────────
 # EXCEL EXPORT
 # ─────────────────────────────────────────────────────────────
@@ -2298,39 +2328,89 @@ def _render_bottom_nav(active=""):
 
 def render_topbar(active=""):
     st.markdown(NAV_CSS, unsafe_allow_html=True)
+    # ── PWA bottom nav (only visible when launched as installed app, hidden on desktop & in browser) ──
     if is_authed():
         _render_bottom_nav(active)
 
-    st.markdown('<div class="sw-topbar-frame"><div class="sw-nav">', unsafe_allow_html=True)
+    # ════════════════════════════════════════════════════════════
+    # DESKTOP TOPBAR — pure HTML/CSS so we can reliably hide on mobile
+    # Uses URL params for navigation (no Streamlit button machinery)
+    # ════════════════════════════════════════════════════════════
     if is_authed():
-        pages=[("Dashboard","dashboard"),("Discover","discover"),("Watchlist","watchlist"),("Screener","screener"),("BI Analytics","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
+        pages=[("Dashboard","dashboard"),("Discover","discover"),("Watchlist","watchlist"),
+               ("Screener","screener"),("BI Analytics","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
         if is_admin(): pages.append(("🛠 Admin","admin"))
-        cols = st.columns([3.2] + [1.05]*len(pages) + [1.8,0.7,0.7], gap="small")
-        with cols[0]: render_logo_click("top_logo_authed", "dashboard")
-        for i,(lbl,pg) in enumerate(pages, start=1):
-            with cols[i]:
-                if st.button(lbl, key=f"top_{pg}_{active}", type="primary" if active==pg else "secondary", use_container_width=True): nav(pg)
-        with cols[-3]:
-            ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
-            st.markdown(f'<div style="font-size:12px;color:#6b7fa0;text-align:right;padding-top:10px;white-space:nowrap;">{ri} {st.session_state.user.get("name","")}</div>', unsafe_allow_html=True)
-        with cols[-2]:
-            if st.button("⚙️", key=f"top_settings_{active}", use_container_width=True): nav("settings")
-        with cols[-1]:
-            if st.button("↩️", key=f"top_logout_{active}", use_container_width=True): logout()
+
+        ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
+        user_name = st.session_state.user.get("name","")
+
+        # Build nav links as pure HTML
+        nav_links = ""
+        for lbl, pg in pages:
+            is_active_cls = " active" if active == pg else ""
+            nav_links += f'<a href="?page={pg}" class="sw-topbar-link{is_active_cls}">{lbl}</a>'
+
+        st.markdown(f"""
+        <div class="sw-desktop-topbar">
+            <div class="sw-topbar-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
+                    <a href="?page=dashboard" style="text-decoration:none;">
+                        <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                    </a>
+                </span>
+            </div>
+            <div class="sw-topbar-nav">{nav_links}</div>
+            <div class="sw-topbar-user">
+                <span style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {user_name}</span>
+                <a href="?page=settings" class="sw-topbar-icon" title="Settings">⚙️</a>
+                <a href="?logout=1" class="sw-topbar-icon" title="Log out">↩️</a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Mobile-only topbar: logo + tiny settings icon
+        st.markdown(f"""
+        <div class="sw-mobile-topbar-bar">
+            <a href="?page=dashboard" class="sw-mobile-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
+                    <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                </span>
+            </a>
+            <a href="?page=settings" class="sw-mobile-icon">⚙️</a>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        logo_col, spacer, features_col, pricing_col, contact_col, login_col, signup_col = st.columns([3.8,4.2,1.25,1.15,1.15,1.05,1.35], gap="small")
-        with logo_col: render_logo_click("top_logo_guest", "landing")
-        with features_col:
-            if st.button("Features", key=f"top_features_{active}", use_container_width=True): nav("features")
-        with pricing_col:
-            if st.button("Pricing", key=f"top_pricing_{active}", use_container_width=True): nav("pricing")
-        with contact_col:
-            if st.button("Contact", key=f"top_contact_{active}", use_container_width=True): nav("contact")
-        with login_col:
-            if st.button("Login", key=f"top_login_{active}", use_container_width=True): nav("login")
-        with signup_col:
-            if st.button("Sign Up →", key=f"top_signup_{active}", type="primary", use_container_width=True): nav("signup")
-    st.markdown('</div></div><hr class="sw-divider">', unsafe_allow_html=True)
+        # Logged-out: same approach
+        st.markdown(f"""
+        <div class="sw-desktop-topbar">
+            <div class="sw-topbar-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
+                    <a href="?page=landing" style="text-decoration:none;">
+                        <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                    </a>
+                </span>
+            </div>
+            <div class="sw-topbar-nav">
+                <a href="?page=features" class="sw-topbar-link">Features</a>
+                <a href="?page=pricing" class="sw-topbar-link">Pricing</a>
+                <a href="?page=contact" class="sw-topbar-link">Contact</a>
+                <a href="?page=login" class="sw-topbar-link">Login</a>
+                <a href="?page=signup" class="sw-topbar-link primary">Sign Up →</a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Mobile-only: just the logo
+        st.markdown(f"""
+        <div class="sw-mobile-topbar-bar">
+            <a href="?page=landing" class="sw-mobile-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
+                    <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                </span>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -2395,7 +2475,7 @@ def render_footer():
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:24px;margin-bottom:24px;">
                 <div>
                     <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-.5px;">
-                        <span style="color:#e2e8f0;">Stock</span><span style="color:{GOLD};">W</span><span style="color:#e2e8f0;">ins</span>
+                        <span style="color:#e2e8f0;">Market</span><span style="color:{GOLD};">Signal</span><span style="color:#e2e8f0;">Pro</span>
                     </span>
                     <div style="font-size:12px;color:rgba(255,255,255,.2);margin-top:6px;">Market Intelligence Platform</div>
                 </div>
@@ -2567,7 +2647,32 @@ def page_landing():
     </style>
     """, unsafe_allow_html=True)
 
-    render_topbar("landing")
+    # ── TOPBAR — pure HTML for reliable mobile hiding ──
+    st.markdown(f"""
+    <div class="sw-desktop-topbar">
+        <div class="sw-topbar-logo">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
+                <a href="?page=landing" style="text-decoration:none;">
+                    <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                </a>
+            </span>
+        </div>
+        <div class="sw-topbar-nav">
+            <a href="?page=features" class="sw-topbar-link">Features</a>
+            <a href="?page=pricing" class="sw-topbar-link">Pricing</a>
+            <a href="?page=login" class="sw-topbar-link">Login</a>
+            <a href="?page=signup" class="sw-topbar-link primary">Sign Up →</a>
+        </div>
+    </div>
+    <div class="sw-mobile-topbar-bar">
+        <a href="?page=landing" class="sw-mobile-logo">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
+                <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+            </span>
+        </a>
+    </div>
+    <hr class="sw-divider">
+    """, unsafe_allow_html=True)
 
     # ── HERO ──
     p_idx=st.session_state.get("hero_panel",0)
@@ -2944,15 +3049,15 @@ def page_landing():
 
     testimonial_comp = (
         '<style>'
-        'body{margin:0;padding:0;background:transparent;overflow:hidden;}'
+        'html,body{margin:0;padding:0;background:transparent;overflow:hidden!important;}::-webkit-scrollbar{display:none;}'
         '@keyframes scroll-left{'
         '  0%{transform:translateX(0);}'
         '  100%{transform:translateX(-50%);}'
         '}'
-        '.track-wrap{overflow-x:auto;overflow-y:hidden;padding:4px 0 8px;cursor:grab;-webkit-overflow-scrolling:touch;scrollbar-width:thin;}'
+        '.track-wrap{overflow:hidden;padding:4px 0 8px;}'
         '.track{'
         '  display:flex;gap:16px;'
-        '  animation:none;'
+        '  animation:scroll-left 50s linear infinite;'
         '  width:max-content;'
         '}'
         '.track:hover{animation-play-state:paused;}'
@@ -2968,11 +3073,10 @@ def page_landing():
         '<div class="track-wrap">'
         '<div class="track">' + cards_html + '</div>'
         '</div>'
-        '<script>const w=document.querySelector(".track-wrap");let d=false,sx=0,sl=0;if(w){w.addEventListener("mousedown",e=>{d=true;sx=e.pageX-w.offsetLeft;sl=w.scrollLeft;w.style.cursor="grabbing"});w.addEventListener("mouseleave",()=>{d=false;w.style.cursor="grab"});w.addEventListener("mouseup",()=>{d=false;w.style.cursor="grab"});w.addEventListener("mousemove",e=>{if(!d)return;e.preventDefault();const x=e.pageX-w.offsetLeft;w.scrollLeft=sl-(x-sx)*1.5});}</script>'
     )
 
     import streamlit.components.v1 as components
-    components.html(testimonial_comp, height=175, scrolling=True)
+    components.html(testimonial_comp, height=150, scrolling=False)
 
     st.markdown("<br>",unsafe_allow_html=True)
 
@@ -3115,12 +3219,12 @@ def page_signup():
     with cc:
         st.markdown('<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Create Your Account 🚀</div><div style="font-size:13px;color:#374f6e;">Free forever. No credit card. No API keys.</div></div>',unsafe_allow_html=True)
         with st.form("sf"):
-            fn_col, ln_col = st.columns(2, gap="small")
+            fn_col, ln_col = st.columns(2)
             with fn_col:
                 first_name=st.text_input("First Name",placeholder="Jane")
             with ln_col:
                 last_name=st.text_input("Last Name",placeholder="Doe")
-            name = f"{first_name.strip()} {last_name.strip()}".strip()
+            name=(first_name.strip()+" "+last_name.strip()).strip()
             email=st.text_input("Email",placeholder="you@example.com")
             pw=st.text_input("Password",type="password",placeholder="Min 6 characters")
             pw2=st.text_input("Confirm password",type="password")
@@ -3131,25 +3235,18 @@ def page_signup():
                 elif len(pw)<6: st.error("Password must be 6+ characters.")
                 elif not agree: st.error("Please agree to the Terms of Service.")
                 else:
-                    ok,msg=signup(email,pw,name,first_name,last_name)
+                    ok,msg=signup(email,pw,name)
                     if ok:
                         # Generate verification code and send email
                         code=str(random.randint(100000,999999))
                         st.session_state["_verify_code"]=code
                         st.session_state["_verify_email"]=email
-                        st.session_state["_verify_user"]={"name":name,"first_name":first_name,"last_name":last_name}
+                        st.session_state["_verify_user"]={"name":name}
                         # Log out the just-created session — require verification first
                         st.session_state.pop("user",None); st.session_state.pop("role",None)
                         ok2,info=_send_verification_email(email,code)
                         if not ok2 and info and info.startswith("DEMO_CODE:"):
                             st.session_state["_demo_code"]=info.split(":",1)[1]
-                            st.session_state.pop("_email_error", None)
-                        elif not ok2:
-                            st.session_state["_email_error"] = info
-                            st.session_state.pop("_demo_code", None)
-                        else:
-                            st.session_state.pop("_email_error", None)
-                            st.session_state.pop("_demo_code", None)
                         nav("verify_email")
                     else: st.error(msg)
         if st.button("Already have an account? Sign In",key="s2l",use_container_width=True): nav("login")
@@ -3204,67 +3301,89 @@ def _send_push_notification(player_ids, title, message, url=None):
         return False, str(e)
 
 def _send_password_reset(email, reset_token):
-    """Send password reset email. Returns (True,None) or (False, info)."""
+    """Send password reset email through Resend. Returns (True,None) or (False, info)."""
     try:
         resend_key = st.secrets.get("RESEND_API_KEY", "")
         app_url = _get_app_url()
         reset_url = f"{app_url}/?reset_token={reset_token}&email={email}"
         if not resend_key:
-            return False, f"DEMO_RESET:{reset_token}"
+            return False, "RESEND_API_KEY missing from Streamlit Secrets"
         import requests as _r
         html = f"""
         <div style="margin:0;padding:0;background:#07090f;font-family:Inter,Arial,sans-serif;color:#e2e8f0;">
-          <div style="max-width:560px;margin:0 auto;padding:36px 28px;">
-            <div style="font-size:22px;font-weight:900;letter-spacing:-0.6px;margin-bottom:22px;">
+          <div style="max-width:560px;margin:0 auto;padding:38px 28px;">
+            <div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;margin-bottom:24px;">
               <span style="color:#2563eb;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
             </div>
-            <div style="background:#0d1525;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:28px;">
-              <h2 style="margin:0 0 10px;color:#f1f5f9;font-size:22px;">Reset your password</h2>
-              <p style="margin:0 0 22px;color:#8aa0bd;font-size:14px;line-height:1.6;">Click below to reset your MarketSignalPro password. This link expires in 1 hour.</p>
-              <a href="{reset_url}" style="display:inline-block;padding:13px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:800;font-size:14px;">Reset Password</a>
-              <p style="color:#526781;font-size:11px;line-height:1.6;margin-top:20px;word-break:break-all;">Or copy this link: {reset_url}</p>
+            <div style="background:#0d1525;border:1px solid rgba(96,165,250,0.25);border-radius:16px;padding:28px;">
+              <h2 style="margin:0 0 10px;color:#f8fafc;font-size:22px;line-height:1.25;">Reset your password</h2>
+              <p style="margin:0 0 22px;color:#8aa0bd;font-size:14px;line-height:1.7;">Click the secure button below to reset your MarketSignalPro password. This link expires in 1 hour.</p>
+              <a href="{reset_url}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:10px;padding:13px 22px;font-size:14px;font-weight:800;">Reset Password</a>
+              <p style="margin:22px 0 0;color:#5f7694;font-size:11px;line-height:1.6;word-break:break-all;">If the button does not work, copy and paste this link:<br>{reset_url}</p>
             </div>
-            <p style="color:#526781;font-size:12px;line-height:1.6;margin-top:18px;">If you did not request this, you can ignore this email.</p>
+            <p style="margin:18px 0 0;color:#475569;font-size:11px;line-height:1.6;">If you did not request this email, you can ignore it.</p>
           </div>
         </div>"""
         text_body = f"MarketSignalPro\n\nReset your password:\n{reset_url}\n\nThis link expires in 1 hour. If you did not request this, ignore this email."
-        resp = _r.post("https://api.resend.com/emails",
+        resp = _r.post(
+            "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={"from":"MarketSignalPro <support@marketsignalpro.com>","to":[email],"reply_to":"support@marketsignalpro.com","subject":"Reset your MarketSignalPro password","html":html,"text":text_body},
-            timeout=10)
-        if resp.status_code in (200,201): return True, None
+            json={
+                "from": "MarketSignalPro <support@marketsignalpro.com>",
+                "to": [email],
+                "subject": "Reset your MarketSignalPro password",
+                "html": html,
+                "text": text_body,
+                "reply_to": ["support@marketsignalpro.com"],
+            },
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            return True, None
         return False, f"Resend error {resp.status_code}: {resp.text}"
     except Exception as e:
         return False, f"Email exception: {e}"
 
+
 def _send_verification_email(email, code):
-    """Send 6-digit email verification code. Returns (True,None) or (False, info)."""
+    """Send 6-digit email verification code through Resend. Returns (True,None) or (False, info)."""
     try:
         resend_key = st.secrets.get("RESEND_API_KEY", "")
         if not resend_key:
-            return False, f"DEMO_CODE:{code}"
+            return False, "RESEND_API_KEY missing from Streamlit Secrets"
         import requests as _r
         html = f"""
         <div style="margin:0;padding:0;background:#07090f;font-family:Inter,Arial,sans-serif;color:#e2e8f0;">
-          <div style="max-width:560px;margin:0 auto;padding:36px 28px;">
-            <div style="font-size:22px;font-weight:900;letter-spacing:-0.6px;margin-bottom:22px;">
+          <div style="max-width:560px;margin:0 auto;padding:38px 28px;">
+            <div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;margin-bottom:24px;">
               <span style="color:#2563eb;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
             </div>
-            <div style="background:#0d1525;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:28px;">
-              <h2 style="margin:0 0 8px;color:#f1f5f9;font-size:22px;">Verify your email</h2>
-              <p style="margin:0 0 18px;color:#8aa0bd;font-size:14px;line-height:1.6;">Enter this 6-digit code to finish creating your account:</p>
-              <div style="font-size:40px;font-weight:900;letter-spacing:10px;color:#3b82f6;padding:22px;background:#101a2d;border-radius:14px;text-align:center;border:1px solid rgba(37,99,235,0.18);">{code}</div>
-              <p style="color:#8aa0bd;font-size:13px;line-height:1.6;margin-top:20px;">This code expires in 10 minutes.</p>
+            <div style="background:#0d1525;border:1px solid rgba(96,165,250,0.25);border-radius:16px;padding:28px;">
+              <h2 style="margin:0 0 10px;color:#f8fafc;font-size:22px;line-height:1.25;">Verify your email</h2>
+              <p style="margin:0 0 20px;color:#8aa0bd;font-size:14px;line-height:1.7;">Enter this 6-digit code in MarketSignalPro to finish creating your account.</p>
+              <div style="background:#101827;border:1px solid rgba(37,99,235,0.35);border-radius:14px;text-align:center;padding:22px 16px;margin:0 0 20px;">
+                <span style="font-size:42px;font-weight:900;letter-spacing:9px;color:#3b82f6;line-height:1;">{code}</span>
+              </div>
+              <p style="margin:0;color:#6f85a3;font-size:12px;line-height:1.6;">This code expires in 10 minutes. If you did not request this, you can ignore this email.</p>
             </div>
-            <p style="color:#526781;font-size:12px;line-height:1.6;margin-top:18px;">If you did not request this, you can ignore this email.</p>
           </div>
         </div>"""
         text_body = f"MarketSignalPro\n\nYour verification code is: {code}\n\nThis code expires in 10 minutes. If you did not request this, ignore this email."
-        resp = _r.post("https://api.resend.com/emails",
+        resp = _r.post(
+            "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={"from":"MarketSignalPro <support@marketsignalpro.com>","to":[email],"reply_to":"support@marketsignalpro.com","subject":"Your MarketSignalPro verification code","html":html,"text":text_body},
-            timeout=10)
-        if resp.status_code in (200,201): return True, None
+            json={
+                "from": "MarketSignalPro <support@marketsignalpro.com>",
+                "to": [email],
+                "subject": "Your MarketSignalPro verification code",
+                "html": html,
+                "text": text_body,
+                "reply_to": ["support@marketsignalpro.com"],
+            },
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            return True, None
         return False, f"Resend error {resp.status_code}: {resp.text}"
     except Exception as e:
         return False, f"Email exception: {e}"
@@ -4739,7 +4858,7 @@ def page_bi():
             prog.progress((i+1)/len(matrix_tickers),f"Analyzing {t}…")
             df2=yf_ohlcv(t,60); info2=yf_fund(t); sent2=st_sent(t)
             _,bd2,_,_,_=compute_scores(df2,info2,sent2); matrix_data[t]=bd2
-        prog_container.empty()
+        prog.empty()
         if HAS_PLOTLY:
             z=[[matrix_data.get(t,{}).get(sig,0)/max_vals.get(sig,15) for sig in signal_types] for t in matrix_tickers]
             raw=[[matrix_data.get(t,{}).get(sig,0) for sig in signal_types] for t in matrix_tickers]
@@ -4778,7 +4897,7 @@ def page_bi():
                 if sf<5: continue
                 sq_score=min(100,int(sf*2+dtc*3+max(0,q["pct"])*2+sent["bull"]*0.3))
                 sq_data.append({"t":t,"sf":sf,"dtc":dtc,"pct":q["pct"],"bull":sent["bull"],"score":sq_score,"price":q["price"]})
-            sq_prog_container.empty()
+            sq_prog.empty()
             if sq_data and HAS_PLOTLY:
                 sq_data.sort(key=lambda x:x["score"],reverse=True)
                 df_sq=pd.DataFrame(sq_data)
@@ -4816,7 +4935,7 @@ def page_bi():
                 returns=df["close"].pct_change().dropna()
                 volatility=float(returns.std()*100) if len(returns)>0 else 0
                 rr_data.append({"t":t,"score":sc,"vol":volatility,"price":q["price"]})
-            rr_prog_container.empty()
+            rr_prog.empty()
             if rr_data and HAS_PLOTLY:
                 df_rr=pd.DataFrame(rr_data)
                 colors_rr=[GREEN if r["score"]>=65 else GOLD if r["score"]>=45 else RED for _,r in df_rr.iterrows()]
@@ -4852,7 +4971,7 @@ def page_bi():
                 if df is None or df.empty: continue
                 sc,_,_,_,_=compute_scores(df,info,sent)
                 sd_scores.append({"t":t,"score":sc})
-            sd_prog_container.empty()
+            sd_prog.empty()
             if sd_scores and HAS_PLOTLY:
                 df_sd=pd.DataFrame(sd_scores)
                 bins=[0,20,40,60,80,100]
@@ -4916,7 +5035,7 @@ def page_bi():
                 if df is None or df.empty or not q: continue
                 sc,bd,op,risk,conf=compute_scores(df,info,sent)
                 wl_data.append({"t":t,"price":q["price"],"pct":q["pct"],"score":sc,"risk":risk,"bull":sent["bull"]})
-            wl_prog_container.empty()
+            wl_prog.empty()
             if wl_data:
                 avg_score=sum(r["score"] for r in wl_data)/len(wl_data)
                 avg_pct=sum(r["pct"] for r in wl_data)/len(wl_data)
@@ -4984,7 +5103,7 @@ def page_watchlist():
                 "_pct":pct,"_cc":cc_,"_rec_clr":rec_clr
             })
         except: continue
-    prog_container.empty()
+    prog.empty()
 
     if not rows:
         st.info("Could not load watchlist data. Try again in a moment.")
@@ -5350,7 +5469,7 @@ def page_screener():
                         "Vol Ratio": f"{cur_v/avg_v:.1f}×" if pd.notna(avg_v) and avg_v > 0 else "N/A",
                     })
                 except: continue
-            prog_container.empty()
+            prog.empty()
             if results:
                 st.success(f"✅ {len(results)} stocks passed your filters!")
                 sorted_results = pd.DataFrame(results).sort_values("Score", ascending=False)
@@ -6509,38 +6628,8 @@ APP_URL = "https://your-app.streamlit.app"</pre>
 
 # ─────────────────────────────────────────────────────────────
 # EMAIL VERIFICATION
+# Uses _send_verification_email defined above.
 # ─────────────────────────────────────────────────────────────
-def _send_verification_email(email, code):
-    """Send 6-digit email verification code. Returns (True,None) or (False, info)."""
-    try:
-        resend_key = st.secrets.get("RESEND_API_KEY", "")
-        if not resend_key:
-            return False, f"DEMO_CODE:{code}"
-        import requests as _r
-        html = f"""
-        <div style="margin:0;padding:0;background:#07090f;font-family:Inter,Arial,sans-serif;color:#e2e8f0;">
-          <div style="max-width:560px;margin:0 auto;padding:36px 28px;">
-            <div style="font-size:22px;font-weight:900;letter-spacing:-0.6px;margin-bottom:22px;">
-              <span style="color:#2563eb;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
-            </div>
-            <div style="background:#0d1525;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:28px;">
-              <h2 style="margin:0 0 8px;color:#f1f5f9;font-size:22px;">Verify your email</h2>
-              <p style="margin:0 0 18px;color:#8aa0bd;font-size:14px;line-height:1.6;">Enter this 6-digit code to finish creating your account:</p>
-              <div style="font-size:40px;font-weight:900;letter-spacing:10px;color:#3b82f6;padding:22px;background:#101a2d;border-radius:14px;text-align:center;border:1px solid rgba(37,99,235,0.18);">{code}</div>
-              <p style="color:#8aa0bd;font-size:13px;line-height:1.6;margin-top:20px;">This code expires in 10 minutes.</p>
-            </div>
-            <p style="color:#526781;font-size:12px;line-height:1.6;margin-top:18px;">If you did not request this, you can ignore this email.</p>
-          </div>
-        </div>"""
-        text_body = f"MarketSignalPro\n\nYour verification code is: {code}\n\nThis code expires in 10 minutes. If you did not request this, ignore this email."
-        resp = _r.post("https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={"from":"MarketSignalPro <support@marketsignalpro.com>","to":[email],"reply_to":"support@marketsignalpro.com","subject":"Your MarketSignalPro verification code","html":html,"text":text_body},
-            timeout=10)
-        if resp.status_code in (200,201): return True, None
-        return False, f"Resend error {resp.status_code}: {resp.text}"
-    except Exception as e:
-        return False, f"Email exception: {e}"
 
 def page_verify_email():
     render_topbar()
@@ -6562,9 +6651,6 @@ def page_verify_email():
                 <div style="font-size:11px;color:#374f6e;margin-bottom:8px;">Add <code style="background:#060a12;color:#4ade80;padding:1px 5px;border-radius:3px;">RESEND_API_KEY</code> to Streamlit Secrets to enable real email verification.</div>
                 <div style="font-size:14px;font-weight:700;color:#e2e8f0;">Your code: <span style="font-family:'JetBrains Mono',monospace;font-size:22px;color:#2563eb;letter-spacing:4px;">{demo}</span></div>
             </div>''', unsafe_allow_html=True)
-
-        if st.session_state.get("_email_error"):
-            st.error(st.session_state["_email_error"])
 
         with st.form("vf"):
             code_in = st.text_input("Enter 6-digit code", placeholder="123456", max_chars=6)
@@ -6596,15 +6682,9 @@ def page_verify_email():
             ok,info = _send_verification_email(email, code)
             if not ok and info and info.startswith("DEMO_CODE:"):
                 st.session_state["_demo_code"] = info.split(":",1)[1]
-                st.session_state.pop("_email_error", None)
                 st.success("Code regenerated (demo mode — shown above)")
-            elif ok:
-                st.session_state.pop("_email_error", None)
-                st.session_state.pop("_demo_code", None)
-                st.success("✅ New code sent!")
-            else:
-                st.session_state["_email_error"] = info
-                st.error(f"Send failed: {info}")
+            elif ok: st.success("✅ New code sent!")
+            else: st.error(f"Send failed: {info}")
         if st.button("← Back to Sign Up", key="v_back"):
             for k in ["_verify_code","_verify_email","_verify_user","_demo_code"]:
                 st.session_state.pop(k,None)
@@ -6663,7 +6743,7 @@ def page_contact():
     for msg in st.session_state.support_chat:
         if msg["role"]=="assistant":
             st.markdown(f'''<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start;">
-                <div style="background:{BLUE};border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">SW</div>
+                <div style="background:{BLUE};border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">MSP</div>
                 <div style="background:{CARD};border:1px solid {BORDER};border-radius:0 10px 10px 10px;padding:10px 14px;font-size:13px;color:#d1d9e6;max-width:80%;line-height:1.6;">{msg["content"]}</div>
             </div>''',unsafe_allow_html=True)
         else:
@@ -6686,7 +6766,7 @@ def page_contact():
                     sys_prompt = """You are the MarketSignalPro customer support assistant. MarketSignalPro is a premium stock intelligence platform.
 
 Key facts:
-- MarketSignalPro has 17 proprietary composite signal categories combining RSI, MACD, volume, social sentiment, short interest
+- MarketSignalPro has 17 AI-powered composite signal categories combining RSI, MACD, volume, social sentiment, short interest
 - Free plan: 7 composite categories, market overview, watchlist (10 stocks), BUY/AVOID signals
 - Premium ($29/mo): All 17 categories, squeeze scanner, advanced screener, BI analytics, score breakdowns, unlimited watchlist
 - Annual ($199/yr): Everything in Premium + priority support, early access, export, API access
@@ -6748,13 +6828,6 @@ render_sidebar()
 
 # ── 1. Handle Stripe payment returns (URL params) ──
 handle_payment_return()
-
-try:
-    _url_page = st.query_params.get("page", None)
-    if _url_page in VALID_PAGES and _url_page != st.session_state.get("page"):
-        st.session_state.page = _url_page
-except Exception:
-    pass
 
 # ── 2. Execute Stripe redirect if checkout session was just created ──
 if st.session_state.get("_redirect_url"):
@@ -6922,6 +6995,7 @@ if is_authed() and st.session_state.get("_pending_checkout"):
     if url: st.session_state["_redirect_url"] = url; st.rerun()
     else:   st.error(f"Checkout error: {err}")
 
+_sync_page_from_url()
 page=st.session_state.get("page","landing")
 auth_required={"dashboard","discover","watchlist","screener","bi_dashboard","stock_detail","settings","admin"}
 premium_required={"screener","bi_dashboard"}  # These show upgrade gate for free users
