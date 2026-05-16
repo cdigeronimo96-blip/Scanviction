@@ -6,6 +6,7 @@
 import streamlit as st
 import requests, pandas as pd, ta, yfinance as yf
 import hashlib, time, random, math, sys, os
+import textwrap
 from datetime import datetime, timedelta
 from textwrap import dedent as _dedent
 import html as _html
@@ -2672,7 +2673,7 @@ def page_landing():
     st.markdown(NAV_CSS, unsafe_allow_html=True)
 
     # Mobile-specific CSS for hero reordering
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <style>
     /* On mobile: hero headline must appear BEFORE the demo widget */
     @media (max-width: 992px) {
@@ -2707,10 +2708,10 @@ def page_landing():
         }
     }
     </style>
-    """, unsafe_allow_html=True)
+    """).strip(), unsafe_allow_html=True)
 
     # ── TOPBAR — pure HTML for reliable mobile hiding ──
-    st.markdown(f"""
+    st.markdown(textwrap.dedent(f"""
     <div class="sw-desktop-topbar">
         <div class="sw-topbar-logo">
             <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
@@ -2734,122 +2735,226 @@ def page_landing():
         </a>
     </div>
     <hr class="sw-divider">
-    """, unsafe_allow_html=True)
+    """).strip(), unsafe_allow_html=True)
 
     # ── HERO ──
-    # Native Streamlit/HTML render. This avoids iframe/raw-code issues while keeping the hero
-    # within a visual max-width guardrail instead of forcing it full-screen.
-    st.markdown(f"""
+    # IMPORTANT: keep this as normal Streamlit + safe HTML. Do not use components.html
+    # here; some Streamlit deployments render nested component HTML as visible code.
+    st.markdown(textwrap.dedent(f"""
     <style>
-    .msp-hero-shell {{
-        width: min(1440px, calc(100vw - 56px));
-        max-width: 1440px;
-        margin: 0 auto;
-        padding: 42px 0 42px;
-        overflow: visible;
+    .msp-hero-guard {{
+        width:min(1320px, calc(100vw - 72px));
+        max-width:1320px;
+        margin:0 auto;
+        padding:42px 0 46px;
+        overflow:visible;
     }}
-    .msp-hero-grid {{
-        display: grid;
-        grid-template-columns: minmax(430px, 520px) minmax(620px, 720px);
-        gap: 86px;
-        align-items: start;
-        justify-content: center;
+    .msp-hero-left-card {{
+        padding-top:10px;
+        max-width:520px;
     }}
-    .msp-hero-copy {{ min-width:0; padding-top: 4px; }}
     .msp-hero-eyebrow {{
-        font-size: 11px; font-weight: 800; color: {BLUE};
-        letter-spacing: 2.7px; text-transform: uppercase; margin-bottom: 18px;
+        font-size:11px;
+        font-weight:850;
+        color:#2563eb;
+        letter-spacing:2.7px;
+        text-transform:uppercase;
+        margin-bottom:20px;
     }}
-    .msp-hero-headline {{
-        font-size: 52px; line-height: 1.03; letter-spacing: -2px;
-        font-weight: 950; color: #f1f5f9; margin: 0 0 20px;
+    .msp-hero-title {{
+        font-size:52px;
+        line-height:1.04;
+        letter-spacing:-2px;
+        font-weight:950;
+        color:#f1f5f9;
+        margin:0 0 22px;
     }}
-    .msp-hero-headline .blue {{ color:{BLUE}; }}
-    .msp-hero-headline .gold {{ color:{GOLD}; }}
-    .msp-hero-subcopy {{
-        color:#3d5270; font-size:16px; line-height:1.75;
-        max-width: 480px; margin-bottom: 32px;
+    .msp-hero-title .blue {{ color:#2563eb; }}
+    .msp-hero-title .gold {{ color:#f59e0b; }}
+    .msp-hero-sub {{
+        color:#3d5270;
+        font-size:16px;
+        line-height:1.75;
+        max-width:500px;
+        margin-bottom:28px;
     }}
-    .msp-hero-actions {{ width: min(440px, 100%); }}
-    .msp-hero-primary, .msp-hero-secondary {{
-        display:flex; align-items:center; justify-content:center;
-        width:100%; min-height:50px; border-radius:9px;
-        font-size:14px; font-weight:800; text-decoration:none !important;
-        box-sizing:border-box;
+    .msp-hero-button-scope .stButton>button {{
+        max-width:430px !important;
+        min-height:52px !important;
+        border-radius:10px !important;
+        font-size:14px !important;
+        font-weight:850 !important;
+        margin:0 !important;
     }}
-    .msp-hero-primary {{ background:{BLUE}; color:white !important; border:1px solid {BLUE}; }}
-    .msp-hero-primary:hover {{ background:#1d4ed8; box-shadow:0 8px 26px rgba(37,99,235,.32); }}
-    .msp-hero-secondary {{ background:rgba(255,255,255,.045); color:#cfe2ff !important; border:1px solid rgba(255,255,255,.18); }}
-    .msp-hero-secondary:hover {{ border-color:rgba(37,99,235,.55); background:rgba(37,99,235,.12); }}
-    .msp-hero-small {{ text-align:center; font-size:12px; color:#6b7fa0; padding:14px 0 8px; }}
+    .msp-hero-signin-scope .stButton>button {{
+        max-width:430px !important;
+        min-height:48px !important;
+        border-radius:10px !important;
+        font-size:14px !important;
+        font-weight:700 !important;
+        margin:0 !important;
+    }}
+    .msp-hero-small {{
+        max-width:430px;
+        text-align:center;
+        font-size:12px;
+        color:#6b7fa0;
+        padding:14px 0 8px;
+    }}
     .msp-hero-trust {{
-        display:flex; align-items:center; justify-content:center; gap:13px; flex-wrap:wrap;
-        margin-top:18px; font-size:11px; color:#4a5e7a;
+        max-width:430px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        gap:12px;
+        flex-wrap:wrap;
+        margin-top:18px;
+        font-size:11px;
+        color:#4a5e7a;
     }}
-    .msp-preview-wrap {{ width: min(700px, 100%); overflow: hidden; }}
-    .msp-preview-tabs {{ display:flex; flex-wrap:wrap; gap:12px 18px; margin-bottom:10px; align-items:center; }}
+    .msp-preview-shell {{
+        width:100%;
+        max-width:650px;
+        margin:0 auto;
+        padding-top:8px;
+        overflow:hidden;
+    }}
+    .msp-preview-tabs {{
+        display:flex;
+        flex-wrap:wrap;
+        gap:12px 18px;
+        margin-bottom:10px;
+        align-items:center;
+    }}
     .msp-preview-tab {{
-        color:#374f6e; font-family:Inter,sans-serif; font-size:13px; font-weight:600;
-        padding:0 0 7px; border-bottom:2px solid transparent; white-space:nowrap;
+        color:#374f6e;
+        font-size:13px;
+        font-weight:650;
+        padding-bottom:7px;
+        border-bottom:2px solid transparent;
+        white-space:nowrap;
     }}
     .msp-preview-tab:first-child {{ color:#e2e8f0; font-weight:850; border-bottom-color:#2563eb; }}
     .msp-preview-dots {{ display:flex; gap:7px; margin:5px 0 13px; }}
     .msp-preview-dots span {{ width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.16); display:block; }}
     .msp-preview-dots span:first-child {{ width:21px; border-radius:5px; background:#2563eb; }}
-    .msp-preview-title {{ font-size:27px; font-weight:950; color:#f1f5f9; line-height:1.12; letter-spacing:-.7px; margin-bottom:14px; }}
+    .msp-preview-stage {{ position:relative; min-height:340px; overflow:hidden; }}
+    .msp-preview-slide {{ position:absolute; inset:0; opacity:0; transform:translateY(8px); animation:mspHeroRotate 20s infinite; }}
+    .msp-preview-slide:nth-child(1) {{ animation-delay:0s; }}
+    .msp-preview-slide:nth-child(2) {{ animation-delay:4s; }}
+    .msp-preview-slide:nth-child(3) {{ animation-delay:8s; }}
+    .msp-preview-slide:nth-child(4) {{ animation-delay:12s; }}
+    .msp-preview-slide:nth-child(5) {{ animation-delay:16s; }}
+    @keyframes mspHeroRotate {{
+        0%,18% {{ opacity:1; transform:translateY(0); }}
+        22%,100% {{ opacity:0; transform:translateY(8px); }}
+    }}
+    .msp-preview-title {{
+        font-size:28px;
+        font-weight:950;
+        color:#f1f5f9;
+        line-height:1.12;
+        letter-spacing:-.7px;
+        margin-bottom:14px;
+    }}
     .msp-preview-title span {{ color:#2563eb; }}
-    .msp-preview-card {{ width:100%; max-width:700px; overflow:hidden; }}
-    .msp-preview-card > div {{ max-width:100% !important; width:100% !important; box-sizing:border-box !important; }}
-    .msp-preview-card * {{ box-sizing:border-box !important; }}
-    @media (max-width: 1180px) {{
-        .msp-hero-shell {{ width:calc(100vw - 36px); padding:34px 0; }}
-        .msp-hero-grid {{ grid-template-columns:1fr; gap:38px; }}
-        .msp-hero-copy {{ text-align:center; }}
-        .msp-hero-subcopy, .msp-hero-actions {{ margin-left:auto; margin-right:auto; }}
-        .msp-preview-wrap {{ margin:0 auto; }}
-        .msp-hero-headline {{ font-size:40px; }}
+    .msp-mini-card {{
+        background:#0d1525;
+        border:1px solid rgba(255,255,255,.08);
+        border-radius:11px;
+        overflow:hidden;
+        max-width:650px;
     }}
-    @media (max-width: 560px) {{
-        .msp-hero-shell {{ width:calc(100vw - 24px); }}
-        .msp-hero-headline {{ font-size:32px; }}
-        .msp-preview-wrap {{ display:none; }}
+    .msp-card-head {{
+        background:#080b14;
+        border-bottom:1px solid rgba(255,255,255,.06);
+        padding:10px 14px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        color:#374f6e;
+        font-size:11px;
+        font-family:'JetBrains Mono',monospace;
     }}
+    .msp-lights {{ display:flex; align-items:center; gap:6px; }}
+    .msp-light {{ width:8px; height:8px; border-radius:50%; display:inline-block; }}
+    .msp-row {{
+        background:#080b14;
+        border:1px solid rgba(255,255,255,.06);
+        border-radius:8px;
+        padding:12px 14px;
+        margin-bottom:8px;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+    }}
+    .msp-row:last-child {{ margin-bottom:0; }}
+    .msp-ticker {{ font-family:'JetBrains Mono',monospace; font-weight:800; color:#60a5fa; font-size:15px; }}
+    .msp-price {{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:800; color:#e2e8f0; text-align:right; }}
+    .msp-up {{ color:#22c55e; font-size:11px; font-weight:800; }}
+    .msp-down {{ color:#ef4444; font-size:11px; font-weight:800; }}
+    .msp-badge {{ display:inline-block; margin-top:6px; margin-right:4px; font-size:9px; font-weight:800; padding:2px 6px; border-radius:3px; }}
+    .msp-buy {{ background:#05260f; color:#4ade80; border:1px solid rgba(74,222,128,.3); }}
+    .msp-hot {{ background:#260d00; color:#fb923c; }}
+    .msp-watch {{ background:#201000; color:#fbbf24; }}
+    .msp-pro {{ background:rgba(245,158,11,.12); color:#f59e0b; border:1px solid rgba(245,158,11,.3); border-radius:20px; padding:2px 8px; font-size:9px; font-weight:800; }}
+    .msp-insight {{ background:#0a1020; border-left:3px solid #22c55e; border-radius:0 7px 7px 0; padding:12px 14px; margin-bottom:8px; color:#374f6e; font-size:12px; line-height:1.55; }}
+    .msp-bar {{ height:9px; border-radius:999px; background:#111827; border:1px solid rgba(255,255,255,.06); margin:10px 0; overflow:hidden; }}
+    .msp-bar span {{ display:block; height:100%; background:#22c55e; }}
+    @media (max-width:992px) {{
+        .msp-hero-guard {{ width:calc(100vw - 32px); padding:34px 0 42px; }}
+        .msp-hero-left-card {{ text-align:center; margin:0 auto; }}
+        .msp-hero-title {{ font-size:38px; }}
+        .msp-hero-sub, .msp-hero-button-scope .stButton>button, .msp-hero-signin-scope .stButton>button, .msp-hero-small, .msp-hero-trust {{ margin-left:auto !important; margin-right:auto !important; }}
+        .msp-preview-shell {{ margin-top:28px; }}
+    }}
+    @media (max-width:560px) {{ .msp-preview-shell {{ display:none; }} .msp-hero-title {{ font-size:32px; }} }}
     </style>
-    <section class="msp-hero-shell">
-      <div class="msp-hero-grid">
-        <div class="msp-hero-copy">
+    """).strip(), unsafe_allow_html=True)
+
+    st.markdown('<div class="msp-hero-guard">', unsafe_allow_html=True)
+    hero_left, hero_right = st.columns([0.95, 1.15], gap="large")
+    with hero_left:
+        st.markdown(textwrap.dedent("""
+        <div class="msp-hero-left-card">
           <div class="msp-hero-eyebrow">Smart Stock Discovery Platform</div>
-          <h1 class="msp-hero-headline">Spot Market<br>Opportunities<br><span class="blue">Before They</span><br><span class="gold">Get Crowded</span></h1>
-          <div class="msp-hero-subcopy">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
-          <div class="msp-hero-actions">
-            <a class="msp-hero-primary" href="?topbar_nav=signup" target="_self">🚀&nbsp; Create Free Account</a>
-            <div class="msp-hero-small">Already have an account?</div>
-            <a class="msp-hero-secondary" href="?topbar_nav=login" target="_self">Sign In</a>
-            <div class="msp-hero-trust"><span>✓ Free forever plan</span><span>·</span><span>✓ No credit card</span><span>·</span><span>✓ Setup in 30 seconds</span></div>
-          </div>
+          <h1 class="msp-hero-title">Spot Market<br>Opportunities<br><span class="blue">Before They</span><br><span class="gold">Get Crowded</span></h1>
+          <div class="msp-hero-sub">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
         </div>
-        <div class="msp-preview-wrap">
+        """).strip(), unsafe_allow_html=True)
+        st.markdown('<div class="msp-hero-button-scope">', unsafe_allow_html=True)
+        if st.button("🚀 Create Free Account", key="hero_signup", type="primary", use_container_width=True):
+            nav("signup")
+        st.markdown('</div><div class="msp-hero-small">Already have an account?</div><div class="msp-hero-signin-scope">', unsafe_allow_html=True)
+        if st.button("Sign In", key="hero_login", use_container_width=True):
+            nav("login")
+        st.markdown('</div><div class="msp-hero-trust"><span>✓ Free forever plan</span><span>·</span><span>✓ No credit card</span><span>·</span><span>✓ Setup in 30 seconds</span></div>', unsafe_allow_html=True)
+    with hero_right:
+        st.markdown(textwrap.dedent("""
+        <div class="msp-preview-shell">
           <div class="msp-preview-tabs">
-            <span class="msp-preview-tab">📊 Market Overview</span>
-            <span class="msp-preview-tab">💥 Squeeze Radar</span>
-            <span class="msp-preview-tab">💡 Smart Insights</span>
-            <span class="msp-preview-tab">🎯 Score Breakdown</span>
+            <span class="msp-preview-tab">📊 Market Overview</span><span class="msp-preview-tab">💥 Squeeze Radar</span><span class="msp-preview-tab">💡 Smart Insights</span><span class="msp-preview-tab">🎯 Score Breakdown</span><span class="msp-preview-tab">📈 BI Analytics</span>
           </div>
           <div class="msp-preview-dots"><span></span><span></span><span></span><span></span><span></span></div>
           <div class="msp-preview-stage">
-            <div class="msp-preview-slide"><div class="msp-preview-title">Find Trending Stocks<br><span>Before the Crowd</span></div><div class="msp-preview-card">{DEMO[0]}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">Scan For Short Squeeze<br><span>Candidates</span></div><div class="msp-preview-card">{DEMO[1]}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">Plain-English Signals<br><span>That Make Sense</span></div><div class="msp-preview-card">{DEMO[2]}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">Understand Every<br><span>Signal Score</span></div><div class="msp-preview-card">{DEMO_SCORE}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">BI Analytics &<br><span>Opportunity Matrix</span></div><div class="msp-preview-card">{DEMO_BI}</div></div>
+            <div class="msp-preview-slide">
+              <div class="msp-preview-title">Find Trending Stocks<br><span>Before the Crowd</span></div>
+              <div class="msp-mini-card"><div class="msp-card-head"><div class="msp-lights"><span class="msp-light" style="background:#ef4444"></span><span class="msp-light" style="background:#fbbf24"></span><span class="msp-light" style="background:#22c55e"></span><span style="margin-left:8px;">StockTwits Hot Stocks</span></div><span style="color:#22c55e;font-weight:800;">● LIVE</span></div><div style="padding:14px;"><div class="msp-row"><div><div class="msp-ticker">TSLA</div><span class="msp-badge msp-buy">🟢 STRONG BUY</span><span class="msp-badge msp-hot">🔥 HOT</span></div><div><div class="msp-price">$199.49</div><div class="msp-up">▲ 3.47%</div></div></div><div class="msp-row"><div><div class="msp-ticker">NVDA</div><span class="msp-badge msp-buy">🟢 BUY</span><span class="msp-badge msp-buy">Golden Cross ✨</span></div><div><div class="msp-price">$127.40</div><div class="msp-up">▲ 2.91%</div></div></div><div class="msp-row"><div><div class="msp-ticker">AMD</div><span class="msp-badge msp-watch">🟡 WATCH</span></div><div><div class="msp-price">$148.20</div><div class="msp-down">▼ 0.82%</div></div></div></div></div>
+            </div>
+            <div class="msp-preview-slide">
+              <div class="msp-preview-title">Scan For Short Squeeze<br><span>Candidates</span></div>
+              <div class="msp-mini-card"><div class="msp-card-head"><div class="msp-lights"><span class="msp-light" style="background:#ef4444"></span><span class="msp-light" style="background:#fbbf24"></span><span class="msp-light" style="background:#22c55e"></span><span style="margin-left:8px;">Short Squeeze Candidates</span></div><span class="msp-pro">PREMIUM ⭐</span></div><div style="padding:14px;"><div class="msp-row"><div><div class="msp-ticker">AMC</div><span class="msp-badge msp-hot">💥 SQUEEZE BUY</span></div><div><div style="font-size:9px;color:#2a3a52;text-align:right;">Short Float</div><div class="msp-price" style="color:#ef4444;">29.99%</div></div></div><div class="msp-row"><div><div class="msp-ticker">CVNA</div><span class="msp-badge msp-buy">🟢 STRONG BUY</span></div><div><div class="msp-price" style="color:#22c55e;">+5.42%</div><div style="font-size:12px;color:#3a5068;text-align:right;">Score: 76</div></div></div><div class="msp-row"><div><div class="msp-ticker">MSTR</div><span class="msp-badge msp-hot">💥 SQUEEZE BUY</span></div><div><div class="msp-price">$411</div><div class="msp-up">+185%</div></div></div></div></div>
+            </div>
+            <div class="msp-preview-slide"><div class="msp-preview-title">Plain-English Signals<br><span>That Make Sense</span></div><div class="msp-mini-card"><div class="msp-card-head"><div class="msp-lights"><span class="msp-light" style="background:#ef4444"></span><span class="msp-light" style="background:#fbbf24"></span><span class="msp-light" style="background:#22c55e"></span><span style="margin-left:8px;">Smart Insights</span></div></div><div style="padding:14px;"><div class="msp-insight"><b style="color:#60a5fa;">TSLA</b> — Moving averages are breaking above an important price range, which can lead to further upside.</div><div class="msp-insight" style="border-left-color:#fbbf24;"><b style="color:#60a5fa;">PLUG</b> — Traders are betting against this stock, but momentum is building.</div><div class="msp-insight" style="border-left-color:#ef4444;"><b style="color:#60a5fa;">AAPL</b> — The stock may have risen too quickly and could be due for a pullback.</div></div></div></div>
+            <div class="msp-preview-slide"><div class="msp-preview-title">Understand Every<br><span>Signal Score</span></div><div class="msp-mini-card"><div class="msp-card-head"><span>Score Breakdown — NVDA</span></div><div style="padding:18px 16px;"><div>Momentum</div><div class="msp-bar"><span style="width:88%"></span></div><div>Trend</div><div class="msp-bar"><span style="width:94%"></span></div><div>Volume</div><div class="msp-bar"><span style="width:76%"></span></div><div>Social Sentiment</div><div class="msp-bar"><span style="width:67%;background:#f59e0b;"></span></div></div></div></div>
+            <div class="msp-preview-slide"><div class="msp-preview-title">BI Analytics &amp;<br><span>Opportunity Matrix</span></div><div class="msp-mini-card"><div class="msp-card-head"><span>Opportunity Matrix</span><span class="msp-pro">EXCLUSIVE ⭐</span></div><div style="padding:14px;"><div class="msp-row"><div class="msp-ticker">NVDA</div><div class="msp-up">Mom 20 · Trend 18 · Vol 9</div></div><div class="msp-row"><div class="msp-ticker">TSLA</div><div class="msp-up">Mom 14 · Trend 16 · Vol 13</div></div><div class="msp-row"><div class="msp-ticker">GME</div><div class="msp-up">Mom 18 · Trend 4 · Vol 15</div></div></div></div></div>
           </div>
         </div>
-      </div>
-    </section>
-    """, unsafe_allow_html=True)
+        """).strip(), unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Trust bar ──
-    st.markdown(f"""
+    st.markdown(textwrap.dedent(f"""
     <style>
     .sw-trust-bar {{
         background:#080b14;
@@ -2946,11 +3051,11 @@ def page_landing():
             <span style="font-size:12px;color:#2a3a52;">traders</span>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """).strip(), unsafe_allow_html=True)
     st.markdown("<br>",unsafe_allow_html=True)
 
     # ── 4 Feature panels — equal height grid ──
-    st.markdown(f"""
+    st.markdown(textwrap.dedent(f"""
     <style>
     .sw-feat-grid{{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:0 48px;align-items:stretch;}}
     @media(max-width:992px){{
@@ -3014,10 +3119,10 @@ def page_landing():
         </div>
       </div>
     </div>
-    """, unsafe_allow_html=True)
+    """).strip(), unsafe_allow_html=True)
 
     # Go Premium CTA
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <style>
     button[aria-label="👑 Unlock Premium Access — Start Today"] {
         background: linear-gradient(135deg,#92400e,#d97706,#f59e0b,#fcd34d) !important;
@@ -3035,7 +3140,7 @@ def page_landing():
     <div style="padding:32px 48px 8px;text-align:center;">
         <div style="font-size:13px;color:#374f6e;margin-bottom:16px;">Join 1,847+ traders already using MarketSignalPro · Cancel anytime · No credit card required</div>
     </div>
-    """, unsafe_allow_html=True)
+    """).strip(), unsafe_allow_html=True)
     _,cta,_=st.columns([1,4,1])
     with cta:
         if st.button("👑 Unlock Premium Access — Start Today",key="land_prem",type="primary",use_container_width=True): nav("pricing")
@@ -3043,14 +3148,61 @@ def page_landing():
     st.markdown("<br>",unsafe_allow_html=True)
 
     # ── Composite categories grid ──
-    st.markdown(_dedent(f"""
-    <div class="msp-signal-grid-wrap" style="margin-top:8px;margin-bottom:18px;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
-        <div style="font-size:18px;font-weight:800;color:#e2e8f0;">🎯 Our Proprietary Signal Categories</div>
-        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;">✨ Unique to MarketSignalPro</span>
-      </div>
-      <div style="font-size:13px;color:#374f6e;line-height:1.6;">We combine multiple independent data signals into composite categories you won't find anywhere else. Each one has a specific multi-factor entry criterion.</div>
-    </div>
+    import html as _html
+    st.markdown(textwrap.dedent(f"""
+    <style>
+    .msp-signal-section {{
+        width:min(1240px, calc(100vw - 72px));
+        max-width:1240px;
+        margin:8px auto 18px;
+        overflow:visible;
+    }}
+    .msp-signal-section-head {{
+        display:flex;
+        align-items:center;
+        gap:12px;
+        margin-bottom:8px;
+        flex-wrap:wrap;
+    }}
+    .msp-signal-section-title {{ font-size:18px; font-weight:850; color:#e2e8f0; }}
+    .msp-signal-section-pill {{
+        background:rgba(168,85,247,0.15);
+        color:#c084fc;
+        border:1px solid rgba(168,85,247,0.35);
+        font-size:10px;
+        font-weight:800;
+        padding:3px 10px;
+        border-radius:20px;
+        white-space:nowrap;
+    }}
+    .msp-signal-section-sub {{ font-size:13px; color:#374f6e; line-height:1.6; margin-bottom:18px; }}
+    .msp-signal-grid {{
+        display:grid;
+        grid-template-columns:repeat(3, minmax(0, 1fr));
+        gap:12px 16px;
+        align-items:stretch;
+    }}
+    .msp-signal-card {{
+        background:#0d1525;
+        border:1px solid rgba(255,255,255,.08);
+        border-left:3px solid #2563eb;
+        border-radius:10px;
+        padding:12px 14px;
+        min-height:78px;
+        overflow:hidden;
+    }}
+    .msp-signal-card-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }}
+    .msp-signal-card-title {{ font-size:13px; font-weight:850; color:#e2e8f0; line-height:1.25; }}
+    .msp-signal-card-desc {{ font-size:11px; color:#374f6e; line-height:1.45; }}
+    .msp-signal-badge {{ font-size:9px; font-weight:850; padding:2px 6px; border-radius:3px; white-space:nowrap; }}
+    .msp-signal-badge.pro {{ color:#f59e0b; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3); }}
+    .msp-signal-badge.free {{ color:#4ade80; background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); }}
+    @media (max-width:900px) {{
+        .msp-signal-section {{ width:calc(100vw - 32px); }}
+        .msp-signal-grid {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
+    }}
+    @media (max-width:560px) {{ .msp-signal-grid {{ grid-template-columns:1fr; }} }}
+    </style>
     """).strip(), unsafe_allow_html=True)
 
     color_map={
@@ -3061,39 +3213,24 @@ def page_landing():
         "🔁 Mean Reversion":"#60a5fa","⚡🧲 Smart Money Signal":"#fbbf24","🌪️ Volatility Squeeze":"#c084fc",
         "🎯📊 Triple Lock":"#4ade80","🦈 Sustained Strength":"#34d399",
     }
-    cg_items=list(COMPOSITE_CATS.items())
-    # Pure HTML signal grid: safe width, no Streamlit column overflow
     cards_html = ""
-    for cat,(desc,tier) in cg_items:
+    for cat,(desc,tier) in list(COMPOSITE_CATS.items()):
         c = color_map.get(cat, BLUE)
         cat_safe = _html.escape(cat)
         desc_safe = _html.escape(desc)
-        tier_b = (f'<span class="sw-signal-card-badge pro">⭐ PRO</span>' if tier=="premium"
-                  else '<span class="sw-signal-card-badge free">FREE</span>')
-        cards_html += (f'<div class="msp-signal-card" style="border-left-color:{c};">'
-                       f'<div class="msp-signal-card-head"><div class="msp-signal-card-title">{cat_safe}</div>{tier_b}</div>'
-                       f'<div class="msp-signal-card-desc">{desc_safe}</div></div>')
-    categories_html = _dedent(f"""
-    <style>
-      html, body {{ margin:0; padding:0; background:#07090f; color:#d1d9e6; font-family:Inter, Arial, sans-serif; overflow:hidden; }}
-      * {{ box-sizing:border-box; }}
-      .msp-signal-grid-wrap {{ width:min(1180px, calc(100vw - 44px)); max-width:1180px; margin:0 auto; }}
-      .msp-signal-grid {{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px 16px; align-items:stretch; }}
-      .msp-signal-card {{ background:#0d1525; border:1px solid rgba(255,255,255,.08); border-left:3px solid #2563eb; border-radius:10px; padding:12px 14px; min-height:78px; }}
-      .msp-signal-card-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }}
-      .msp-signal-card-title {{ font-size:13px; font-weight:800; color:#e2e8f0; line-height:1.25; }}
-      .msp-signal-card-desc {{ font-size:11px; color:#374f6e; line-height:1.45; }}
-      .sw-signal-card-badge {{ font-size:9px; font-weight:800; padding:2px 6px; border-radius:3px; white-space:nowrap; }}
-      .sw-signal-card-badge.pro {{ color:#f59e0b; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3); }}
-      .sw-signal-card-badge.free {{ color:#4ade80; background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); }}
-      @media (max-width:900px) {{ .msp-signal-grid {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }} }}
-      @media (max-width:560px) {{ .msp-signal-grid {{ grid-template-columns:1fr; }} }}
-    </style>
-    <div class="msp-signal-grid-wrap">
+        badge = '<span class="msp-signal-badge pro">⭐ PRO</span>' if tier == "premium" else '<span class="msp-signal-badge free">FREE</span>'
+        cards_html += f'<div class="msp-signal-card" style="border-left-color:{c};"><div class="msp-signal-card-head"><div class="msp-signal-card-title">{cat_safe}</div>{badge}</div><div class="msp-signal-card-desc">{desc_safe}</div></div>'
+
+    st.markdown(textwrap.dedent(f"""
+    <div class="msp-signal-section">
+      <div class="msp-signal-section-head">
+        <div class="msp-signal-section-title">🎯 Our Proprietary Signal Categories</div>
+        <span class="msp-signal-section-pill">✨ Unique to MarketSignalPro</span>
+      </div>
+      <div class="msp-signal-section-sub">We combine multiple independent data signals into composite categories you won't find anywhere else. Each one has a specific multi-factor entry criterion.</div>
       <div class="msp-signal-grid">{cards_html}</div>
     </div>
-    """).strip()
-    st.markdown(categories_html, unsafe_allow_html=True)
+    """).strip(), unsafe_allow_html=True)
 
     _,pc,_=st.columns([2,1,2])
     with pc:
