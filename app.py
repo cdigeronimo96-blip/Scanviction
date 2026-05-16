@@ -2225,12 +2225,9 @@ def render_lock(name=""):
 # NAV CSS + TOPBAR
 # ─────────────────────────────────────────────────────────────
 NAV_CSS = """<style>
-.msp-logo-click-target{display:inline-flex;align-items:center;height:44px;cursor:pointer;padding:0;line-height:1;}
-.msp-logo-text{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:800;letter-spacing:-0.8px;white-space:nowrap;}
-.msp-logo-market,.msp-logo-pro{color:#e2e8f0;}
-.msp-logo-signal{color:#f59e0b;}
-.element-container:has(.msp-logo-click-target)+.element-container{height:0px !important;overflow:visible !important;margin:0 !important;padding:0 !important;}
-.element-container:has(.msp-logo-click-target)+.element-container .stButton>button{position:relative !important;top:-44px !important;left:0 !important;width:260px !important;height:44px !important;min-height:44px !important;opacity:0 !important;cursor:pointer !important;z-index:999 !important;background:transparent !important;border:none !important;box-shadow:none !important;}
+.sw-logo-click-target{display:flex;align-items:center;height:38px;cursor:pointer;padding:0;line-height:1;}
+.element-container:has(.sw-logo-click-target)+.element-container{height:0px !important;overflow:visible !important;margin:0 !important;padding:0 !important;}
+.element-container:has(.sw-logo-click-target)+.element-container .stButton>button{position:relative !important;top:-44px !important;left:0 !important;width:180px !important;height:44px !important;min-height:44px !important;opacity:0 !important;cursor:pointer !important;z-index:999 !important;background:transparent !important;border:none !important;box-shadow:none !important;}
 .sw-divider{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:0 0 24px 0;}
 /* Pusher toast notification */
 #sw-push-toast{position:fixed;top:80px;right:20px;z-index:9999;display:none;
@@ -2249,18 +2246,14 @@ NAV_CSS = """<style>
 .sw-nav .stButton>button[kind="primary"]{background:#2563eb !important;border-color:#2563eb !important;color:#fff !important;font-weight:700 !important;}
 </style>"""
 
-LOGO_HTML = """
-<div class="msp-logo-click-target">
-  <span class="msp-logo-text">
-    <span class="msp-logo-market">Market</span><span class="msp-logo-signal">Signal</span><span class="msp-logo-pro">Pro</span>
-  </span>
-</div>
-"""
+LOGO_HTML = """<div class="sw-logo-click-target">
+<span style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;letter-spacing:-0.5px;">
+<span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+</span></div>"""
 
-def render_logo_click(key="msp_logo_home", dest="landing"):
+def render_logo_click(key,dest):
     st.markdown(LOGO_HTML, unsafe_allow_html=True)
-    if st.button(" ", key=key):
-        nav(dest)
+    if st.button(" ",key=key): nav(dest)
 
 def _render_bottom_nav(active=""):
     """Native-style bottom tab bar — appears only when app is launched in PWA standalone mode (installed)."""
@@ -2454,7 +2447,10 @@ def render_topbar(active=""):
         cols = st.columns(ratios, gap="small")
 
         with cols[0]:
-            render_logo_click("tb_logo_auth", "dashboard")
+            st.markdown(f'<div class="sw-tb-logo">', unsafe_allow_html=True)
+            if st.button("MarketSignalPro", key="tb_logo_auth"):
+                nav("dashboard")
+            st.markdown('</div>', unsafe_allow_html=True)
 
         for i, (lbl, pg) in enumerate(pages):
             with cols[i + 1]:
@@ -2493,7 +2489,10 @@ def render_topbar(active=""):
         cols = st.columns(ratios, gap="small")
 
         with cols[0]:
-            render_logo_click("tb_logo_guest", "landing")
+            st.markdown('<div class="sw-tb-logo">', unsafe_allow_html=True)
+            if st.button("MarketSignalPro", key="tb_logo_guest"):
+                nav("landing")
+            st.markdown('</div>', unsafe_allow_html=True)
 
         for i, (lbl, pg) in enumerate([("Features","features"),("Pricing","pricing"),("Contact","contact"),("Login","login")]):
             with cols[i + 1]:
@@ -3325,6 +3324,7 @@ def page_signup():
                         st.session_state["_verify_code"]=code
                         st.session_state["_verify_email"]=email
                         st.session_state["_verify_user"]={"name":full_name}
+                        st.session_state["_verify_expiry"]=time.time()+600  # 10 min
                         # Log out the just-created session — require verification first
                         st.session_state.pop("user",None); st.session_state.pop("role",None)
                         ok2,info=_send_verification_email(email,code)
@@ -6670,96 +6670,101 @@ APP_URL = "https://your-app.streamlit.app"</pre>
 
     st.markdown('</div>',unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────────────────────
-# EMAIL VERIFICATION
-# ─────────────────────────────────────────────────────────────
-def _send_verification_email(email, code):
-    """
-    Send verification email. Requires RESEND_API_KEY or SENDGRID_API_KEY in Secrets.
-    Falls back to simulated mode (shows code in UI) if not configured.
-    Returns (True, None) or (False, error_msg).
-    """
-    # Try Resend
-    try:
-        resend_key = st.secrets.get("RESEND_API_KEY","")
-        if resend_key:
-            import requests as _r
-            resp = _r.post("https://api.resend.com/emails",
-                headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <onboarding@resend.dev>"),
-                      "to":[email],
-                      "subject":"Your MarketSignalPro verification code",
-                      "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;color:#e2e8f0;padding:40px;">
-                        <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
-                        <h3>Verify your email</h3>
-                        <p style="color:#6b7fa0;">Your verification code is:</p>
-                        <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
-                        <p style="color:#6b7fa0;margin-top:20px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
-                      </div>"""})
-            if resp.status_code in (200,201): return True,None
-            return False, f"Email send failed: {resp.text}"
-    except: pass
-    # Simulated — show code in UI
-    return False, f"DEMO_CODE:{code}"
+# NOTE: _send_verification_email is defined earlier (near _send_password_reset).
+# The duplicate that was here has been removed — Python uses the LAST definition,
+# which was missing timeout=10, causing silent hangs. Single canonical definition only.
 
 def page_verify_email():
     render_topbar()
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     _,cc,_=st.columns([1,2,1])
     with cc:
         email = st.session_state.get("_verify_email","")
-        st.markdown(f"""<div style="text-align:center;padding:40px 0 24px;">
-            <div style="font-size:32px;margin-bottom:12px;">📧</div>
-            <div style="font-size:24px;font-weight:800;color:#e2e8f0;margin-bottom:8px;">Check Your Email</div>
-            <div style="font-size:13px;color:#374f6e;">We sent a 6-digit verification code to<br>
-            <strong style="color:#93b4fd;">{email}</strong></div>
-        </div>""",unsafe_allow_html=True)
 
-        # Show demo code if email not configured
+        # Guard: if no pending verification session, redirect to signup
+        if not email or not st.session_state.get("_verify_code",""):
+            st.warning("No pending verification. Please sign up first.")
+            if st.button("← Go to Sign Up", key="v_nosess"):
+                nav("signup")
+            st.markdown('</div>', unsafe_allow_html=True)
+            return
+
+        # Check expiry
+        expiry = st.session_state.get("_verify_expiry", 0)
+        expired = expiry > 0 and time.time() > expiry
+
+        st.markdown(f"""<div style="text-align:center;padding:36px 0 20px;">
+            <div style="font-size:36px;margin-bottom:12px;">📧</div>
+            <div style="font-size:24px;font-weight:800;color:#e2e8f0;margin-bottom:8px;">Check Your Email</div>
+            <div style="font-size:13px;color:#374f6e;">We sent a 6-digit code to<br>
+            <strong style="color:#93b4fd;">{email}</strong></div>
+        </div>""", unsafe_allow_html=True)
+
+        if expired:
+            st.error("⏰ Your verification code has expired. Please request a new one.")
+
+        # Show code in demo mode (no RESEND_API_KEY configured)
         demo = st.session_state.get("_demo_code","")
-        if demo:
+        if demo and not expired:
             st.markdown(f'''<div style="background:#0d1525;border:1px solid rgba(37,99,235,0.3);border-radius:10px;padding:16px;margin-bottom:12px;">
-                <div style="font-size:12px;font-weight:700;color:#60a5fa;margin-bottom:6px;">📋 Demo Mode — Email Sending Not Configured</div>
-                <div style="font-size:11px;color:#374f6e;margin-bottom:8px;">Add <code style="background:#060a12;color:#4ade80;padding:1px 5px;border-radius:3px;">RESEND_API_KEY</code> to Streamlit Secrets to enable real email verification.</div>
-                <div style="font-size:14px;font-weight:700;color:#e2e8f0;">Your code: <span style="font-family:'JetBrains Mono',monospace;font-size:22px;color:#2563eb;letter-spacing:4px;">{demo}</span></div>
+                <div style="font-size:12px;font-weight:700;color:#60a5fa;margin-bottom:6px;">📋 Demo Mode — Email Not Configured</div>
+                <div style="font-size:11px;color:#374f6e;margin-bottom:8px;">Add <code style="background:#060a12;color:#4ade80;padding:1px 5px;border-radius:3px;">RESEND_API_KEY</code> to Streamlit Secrets to enable real emails.</div>
+                <div style="font-size:15px;font-weight:700;color:#e2e8f0;">Your code: <span style="font-family:'JetBrains Mono',monospace;font-size:24px;color:#2563eb;letter-spacing:6px;">{demo}</span></div>
             </div>''', unsafe_allow_html=True)
 
-        with st.form("vf"):
-            code_in = st.text_input("Enter 6-digit code", placeholder="123456", max_chars=6)
-            if st.form_submit_button("Verify Email →", type="primary", use_container_width=True):
-                stored = st.session_state.get("_verify_code","")
-                if code_in.strip() == stored:
-                    uemail = st.session_state.get("_verify_email","")
-                    if uemail in st.session_state.users_db:
-                        st.session_state.users_db[uemail]["verified"] = True
-                        _save_global_db(st.session_state.users_db)
-                        save_user_to_file(uemail, st.session_state.users_db[uemail])
-                    # Complete login
-                    udata = st.session_state.get("_verify_user",{})
-                    st.session_state.user = {"email":uemail,"name":udata.get("name","")}
-                    st.session_state.role = "free"
-                    for k in ["_verify_code","_verify_email","_verify_user","_demo_code"]:
-                        st.session_state.pop(k,None)
-                    st.session_state["_signup_success"] = udata.get("name","")
-                    st.success("✅ Email verified! Welcome to MarketSignalPro.")
-                    time.sleep(0.3)
-                    nav("dashboard")
-                else:
-                    st.error("❌ Incorrect code. Please try again.")
+        if not expired:
+            with st.form("vf"):
+                code_in = st.text_input("Enter 6-digit code", placeholder="123456", max_chars=6)
+                if st.form_submit_button("✅ Verify Email", type="primary", use_container_width=True):
+                    stored = st.session_state.get("_verify_code","")
+                    if not code_in.strip():
+                        st.error("Please enter your 6-digit code.")
+                    elif code_in.strip() != stored:
+                        st.error("❌ Incorrect code. Please check your email and try again.")
+                    else:
+                        # Mark verified in DB
+                        uemail = st.session_state.get("_verify_email","")
+                        db = st.session_state.users_db
+                        if uemail in db:
+                            db[uemail]["verified"] = True
+                            _save_global_db(db)
+                            save_user_to_file(uemail, db[uemail])
+                        # Complete login
+                        udata = st.session_state.get("_verify_user",{})
+                        st.session_state.user  = {"email":uemail,"name":udata.get("name","")}
+                        st.session_state.role  = db.get(uemail,{}).get("role","free")
+                        st.session_state.users_db = db
+                        for k in ["_verify_code","_verify_email","_verify_user","_demo_code","_verify_expiry"]:
+                            st.session_state.pop(k,None)
+                        st.session_state["_signup_success"] = udata.get("name","")
+                        st.success("✅ Email verified! Welcome to MarketSignalPro.")
+                        time.sleep(0.3)
+                        nav("dashboard")
 
-        st.markdown("<br>",unsafe_allow_html=True)
-        if st.button("Resend code", key="resend_v"):
-            code = str(random.randint(100000,999999))
-            st.session_state["_verify_code"] = code
-            ok,info = _send_verification_email(email, code)
-            if not ok and info and info.startswith("DEMO_CODE:"):
-                st.session_state["_demo_code"] = info.split(":",1)[1]
-                st.success("Code regenerated (demo mode — shown above)")
-            elif ok: st.success("✅ New code sent!")
-            else: st.error(f"Send failed: {info}")
-        if st.button("← Back to Sign Up", key="v_back"):
-            for k in ["_verify_code","_verify_email","_verify_user","_demo_code"]:
-                st.session_state.pop(k,None)
-            nav("signup")
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        col_r, col_b = st.columns(2, gap="small")
+        with col_r:
+            if st.button("🔄 Resend Code", key="resend_v", use_container_width=True):
+                code = str(random.randint(100000,999999))
+                st.session_state["_verify_code"]   = code
+                st.session_state["_verify_expiry"] = time.time() + 600  # 10 min
+                st.session_state.pop("_demo_code", None)
+                ok, info = _send_verification_email(email, code)
+                if not ok and info and info.startswith("DEMO_CODE:"):
+                    st.session_state["_demo_code"] = info.split(":",1)[1]
+                    st.success("New code generated (demo mode — shown above)")
+                elif ok:
+                    st.success("✅ New code sent to your email!")
+                else:
+                    st.error(f"Send failed: {info}")
+                st.rerun()
+        with col_b:
+            if st.button("← Back to Sign Up", key="v_back", use_container_width=True):
+                for k in ["_verify_code","_verify_email","_verify_user","_demo_code","_verify_expiry"]:
+                    st.session_state.pop(k,None)
+                nav("signup")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: CONTACT
