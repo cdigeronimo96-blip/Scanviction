@@ -514,8 +514,8 @@ def _save_global_db(db: dict):
 # ─────────────────────────────────────────────────────────────
 import json as _json, os as _os
 
-ALERTS_DB_PATH = _os.environ.get("ALERTS_DB_PATH", "marketsignalpro_alerts.json")
-USERS_DB_PATH  = _os.environ.get("USERS_DB_PATH",  "marketsignalpro_users.json")
+ALERTS_DB_PATH = _os.environ.get("ALERTS_DB_PATH", "/tmp/sw_alerts.json")
+USERS_DB_PATH  = _os.environ.get("USERS_DB_PATH",  "/tmp/sw_users.json")
 
 def _read_json(path, default=None):
     try:
@@ -533,23 +533,15 @@ def save_alerts_to_file(email, alerts):
 
 def save_user_to_file(email, user_data):
     db = _read_json(USERS_DB_PATH, {})
-    # Persist the full account record needed for login across reruns/reboots.
-    safe_data = dict(user_data)
-    safe_data.setdefault("role", "free")
-    safe_data.setdefault("verified", False)
-    safe_data.setdefault("plan", "Free")
-    safe_data.setdefault("watchlist", [])
-    safe_data.setdefault("alerts", [])
-    db[email] = safe_data
+    db[email] = {
+        "name":             user_data.get("name", ""),
+        "role":             user_data.get("role", "free"),
+        "telegram_chat_id": user_data.get("telegram_chat_id", ""),
+        "watchlist":        user_data.get("watchlist", []),
+        "digest_prefs":     user_data.get("digest_prefs", {}),
+        "category_alerts":  user_data.get("category_alerts", []),
+    }
     _write_json(USERS_DB_PATH, db)
-
-def _merge_persisted_users(seed_db: dict) -> dict:
-    persisted = _read_json(USERS_DB_PATH, {})
-    if isinstance(persisted, dict):
-        for email, user_data in persisted.items():
-            if isinstance(user_data, dict) and user_data.get("pw"):
-                seed_db[email] = user_data
-    return seed_db
 
 def _load_seed_accounts():
     today = datetime.now().strftime("%Y-%m-%d")
@@ -565,14 +557,14 @@ def _load_seed_accounts():
                 "premium@marketsignalpro.com": {"pw":_hp("premium1"),"name":"Alex Rivera","role":"premium","verified":True,"joined":today,"plan":"Monthly"},
             }
             if ae and ah: r[ae]={"pw":ah,"name":"Admin","role":"admin","verified":True,"joined":today,"plan":"Annual"}
-            return _merge_persisted_users(r)
+            return r
     except: pass
-    return _merge_persisted_users({
+    return {
         "demo@marketsignalpro.com":    {"pw":_hp("demo123"), "name":"Demo User",  "role":"free",   "verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Free"},
         "premium@marketsignalpro.com": {"pw":_hp("premium1"),"name":"Alex Rivera","role":"premium","verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Monthly"},
         "admin@marketsignalpro.com":   {"pw":_hp("admin_change_me"),"name":"Admin","role":"admin","verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Annual"},
         "owner@marketsignalpro.com":   {"pw":_hp("owner_change_me"),"name":"Owner","role":"owner","verified":True,"joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Annual"},
-    })
+    }
 
 def get_td_key():
     try:
@@ -692,24 +684,17 @@ def handle_payment_return():
     try: params = st.query_params.to_dict()
     except: return False
 
-    # ── Logout link from topbar ──
-    if params.get("logout"):
-        try:
-            st.query_params.clear()
-        except Exception:
-            pass
-        logout()
-        return True
-
-    # Legacy topbar_nav support for older cached pages
+    # ── Topbar HTML-link navigation ──
     if params.get("topbar_nav"):
         target = params.get("topbar_nav","").strip()
+        st.query_params.clear()
         if target == "__logout__":
-            try: st.query_params.clear()
-            except Exception: pass
             logout()
             return True
-        if target in VALID_PAGES:
+        valid_pages = {"landing","features","login","signup","verify_email","forgot_pw","pricing",
+                       "contact","dashboard","discover","watchlist","screener","bi_dashboard",
+                       "stock_detail","settings","admin","signal_track"}
+        if target in valid_pages:
             nav(target)
             return True
         return True
@@ -1374,650 +1359,121 @@ button[role="tab"][aria-selected="true"]{{
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""<style>
-
-/* ─────────────────────────────────────────────────────────────
-   MarketSignalPro desktop/layout cleanup overrides
-───────────────────────────────────────────────────────────── */
-.sw-back-btn-wrap { display:none !important; }
-.pg { max-width:1180px !important; margin:0 auto !important; padding:30px 34px 52px !important; }
-@media (min-width:901px) {
-  .sw-desktop-topbar {
-    min-height:54px !important;
-    padding:8px 36px 8px 28px !important;
-    margin-bottom:0 !important;
-    gap:28px !important;
-  }
-  .sw-topbar-logo { margin-left:16px !important; }
-  .sw-topbar-logo span { font-size:26px !important; }
-  .sw-topbar-nav { gap:12px !important; margin-left:auto !important; margin-right:8px !important; }
-  .sw-topbar-link { min-width:112px !important; text-align:center !important; padding:11px 18px !important; font-size:14px !important; }
-  .sw-topbar-link.primary { min-width:122px !important; }
-  .sw-divider { margin:0 0 16px 0 !important; }
-  .sw-hero-row { max-width:1180px !important; margin:0 auto !important; padding:8px 28px 0 !important; }
-  .sw-hero-left-block { padding:18px 0 14px 0 !important; max-width:440px !important; }
-  .sw-hero-demo-wrap { padding-top:8px !important; max-width:560px !important; margin-left:auto !important; }
-  .sw-hero-row .stButton, .sw-hero-row .stButton > button,
-  button[aria-label="🚀 Create Free Account"], button[aria-label="Sign In"] {
-    width:420px !important; max-width:420px !important; min-height:42px !important; flex:0 0 auto !important;
-  }
-  [data-testid="stSidebar"] {
-    width:250px !important; min-width:250px !important; max-width:250px !important;
-    position:sticky !important; transform:none !important;
-  }
-  [data-testid="stSidebar"] .stButton>button {
-    color:#a8bdd4 !important; background:rgba(255,255,255,0.025) !important;
-    border-left:2px solid rgba(37,99,235,0.18) !important;
-  }
-  [data-testid="stSidebar"] .stButton>button:hover { color:#ffffff !important; background:rgba(37,99,235,0.16) !important; }
-  [data-testid="collapsedControl"], [data-testid="stSidebarCollapseButton"], [data-testid="stSidebarCollapsedControl"] {
-    left:216px !important; top:10px !important;
-  }
-}
-@media (max-width:900px) {
-  .pg { padding:18px 16px 34px !important; }
-  .sw-hero-row .stButton, .sw-hero-row .stButton > button,
-  button[aria-label="🚀 Create Free Account"], button[aria-label="Sign In"] { max-width:100% !important; width:100% !important; }
-}
-</style>""", unsafe_allow_html=True)
-
-
-
-st.markdown("""<style>
-/* ─────────────────────────────────────────────────────────────
-   MarketSignalPro overflow/sidebar/session-safe navigation fixes
-───────────────────────────────────────────────────────────── */
-html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
-  overflow-x: hidden !important;
-  max-width: 100vw !important;
-}
-.main .block-container, div.block-container {
-  overflow-x: hidden !important;
-  max-width: 100vw !important;
-}
-.pg {
-  width: min(1180px, calc(100vw - 72px)) !important;
-  max-width: 1180px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  padding: 30px 0 52px !important;
-}
-@media (max-width:900px) {
-  .pg { width: calc(100vw - 28px) !important; padding: 18px 0 34px !important; }
-}
-[data-testid="stHorizontalBlock"], [data-testid="column"], .element-container {
-  max-width: 100% !important;
-}
-
-/* Signed-in Streamlit-button topbar */
-.sw-auth-nav {
-  width: min(1180px, calc(100vw - 64px)) !important;
-  margin: 12px auto 14px !important;
-}
-.sw-auth-nav .stButton>button {
-  min-height: 48px !important;
-  border-radius: 9px !important;
-  font-size: 14px !important;
-  font-weight: 650 !important;
-  color: #bfdbfe !important;
-  background: rgba(255,255,255,0.045) !important;
-  border: 1px solid rgba(255,255,255,0.16) !important;
-  white-space: nowrap !important;
-}
-.sw-auth-nav .stButton>button:hover {
-  background: rgba(37,99,235,0.16) !important;
-  color: #fff !important;
-  border-color: rgba(96,165,250,0.55) !important;
-}
-.sw-auth-nav .stButton>button[kind="primary"] {
-  background: #2563eb !important;
-  border-color: #2563eb !important;
-  color: #fff !important;
-}
-.sw-auth-nav [data-testid="column"]:first-child .stButton>button {
-  background: transparent !important;
-  border: none !important;
-  justify-content: flex-start !important;
-  padding-left: 0 !important;
-  color: #e2e8f0 !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  font-size: 24px !important;
-  font-weight: 800 !important;
-  letter-spacing: -1px !important;
-}
-.sw-auth-nav [data-testid="column"]:first-child .stButton>button::first-letter { color:#e2e8f0 !important; }
-.sw-topbar-user-label {
-  margin-top: -8px;
-  font-size: 10px;
-  color: #526985;
-}
-@media (max-width:900px) {
-  .sw-auth-nav { display:none !important; }
-}
-
-/* Cleaner sidebar */
-[data-testid="stSidebar"] {
-  width: 252px !important;
-  min-width: 252px !important;
-  max-width: 252px !important;
-  background: #080d19 !important;
-  border-right: 1px solid rgba(255,255,255,0.08) !important;
-}
-[data-testid="stSidebar"] > div {
-  padding: 8px 10px 18px !important;
-}
-[data-testid="stSidebar"] .stButton>button {
-  color: #b8cce0 !important;
-  background: rgba(255,255,255,0.035) !important;
-  border: 1px solid rgba(255,255,255,0.06) !important;
-  border-left: 2px solid rgba(37,99,235,0.35) !important;
-  border-radius: 0 !important;
-  min-height: 42px !important;
-  padding: 10px 12px !important;
-  margin: 3px 0 !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  justify-content: flex-start !important;
-}
-[data-testid="stSidebar"] .stButton>button:hover {
-  color: #ffffff !important;
-  background: rgba(37,99,235,0.18) !important;
-  border-color: rgba(96,165,250,0.36) !important;
-  border-left-color: #2563eb !important;
-}
-[data-testid="stSidebar"] hr { margin: 10px 0 !important; }
-
-/* Collapse/expand control: right edge when open, visible left rail when collapsed */
-[data-testid="stSidebarCollapseButton"] {
-  left: 204px !important;
-  top: 10px !important;
-  width: 42px !important;
-  height: 42px !important;
-  background: rgba(13,21,37,0.98) !important;
-  border: 1px solid rgba(96,165,250,0.65) !important;
-  box-shadow: 0 0 0 1px rgba(37,99,235,0.15), 0 8px 24px rgba(0,0,0,0.45) !important;
-}
-[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"] {
-  left: 8px !important;
-  top: 10px !important;
-  width: 46px !important;
-  height: 46px !important;
-  background: #0d2548 !important;
-  border: 1px solid rgba(96,165,250,0.95) !important;
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.25), 0 8px 30px rgba(0,0,0,0.55) !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  z-index: 1000000 !important;
-}
-[data-testid="collapsedControl"] svg,
-[data-testid="stSidebarCollapsedControl"] svg {
-  width: 24px !important;
-  height: 24px !important;
-  color: #dbeafe !important;
-  fill: #dbeafe !important;
-  transform: rotate(180deg) !important;
-}
-[data-testid="stSidebarCollapseButton"] svg {
-  width: 22px !important;
-  height: 22px !important;
-  color: #dbeafe !important;
-  fill: #dbeafe !important;
-}
-@media (max-width:900px) {
-  [data-testid="stSidebar"] { width: 82vw !important; min-width: 82vw !important; max-width: 310px !important; }
-  [data-testid="stSidebarCollapseButton"] { left: calc(min(82vw, 310px) - 54px) !important; }
-}
-
-/* Discover/category grids should not run off-screen */
-.disc-cat-header, .lock, .card, .sr { max-width: 100% !important; }
-</style>""", unsafe_allow_html=True)
-
-
-st.markdown("""<style>
-/* ─────────────────────────────────────────────────────────────
-   FINAL SHELL / SIDEBAR / OVERFLOW OVERRIDES
-   Keep every page inside the visible main pane and make the sidebar toggle reachable.
-───────────────────────────────────────────────────────────── */
-:root { --msp-shell-max: 1180px; --msp-edge-pad: 28px; --msp-sidebar-w: 252px; }
-html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], .main, div.block-container {
-  overflow-x: clip !important;
-  max-width: 100% !important;
-}
-.main .block-container, div.block-container {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-/* One consistent page shell for all internal/public pages */
-.pg,
-.sw-page-shell,
-.sw-hero-row,
-.sw-auth-nav,
-.sw-desktop-topbar {
-  width: min(var(--msp-shell-max), calc(100% - (var(--msp-edge-pad) * 2))) !important;
-  max-width: var(--msp-shell-max) !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  box-sizing: border-box !important;
-}
-.pg, .sw-page-shell {
-  padding: 28px 0 52px !important;
-}
-.sw-hero-row {
-  padding: 18px 0 0 !important;
-}
-.sw-desktop-topbar {
-  padding: 10px 0 8px !important;
-  min-height: 54px !important;
-  margin-top: 6px !important;
-  margin-bottom: 0 !important;
-}
-.sw-topbar-logo { margin-left: 0 !important; }
-.sw-topbar-logo span { font-size: 25px !important; }
-.sw-topbar-nav { margin-left: auto !important; gap: 10px !important; }
-.sw-topbar-link { min-width: 104px !important; text-align: center !important; }
-.sw-divider {
-  width: min(var(--msp-shell-max), calc(100% - (var(--msp-edge-pad) * 2))) !important;
-  margin: 0 auto 18px !important;
-}
-/* Signed-in button nav must stay inside the main content pane */
-.sw-auth-nav {
-  margin-top: 10px !important;
-  margin-bottom: 12px !important;
-}
-.sw-auth-nav .stButton>button {
-  min-height: 44px !important;
-  font-size: 13px !important;
-  padding: 8px 10px !important;
-}
-.sw-auth-nav [data-testid="column"]:first-child .stButton>button {
-  font-size: 22px !important;
-  overflow: visible !important;
-}
-/* Prevent any Streamlit columns/grids/cards from creating right-side overflow */
-[data-testid="stHorizontalBlock"], [data-testid="column"], .element-container, iframe, canvas, svg,
-.card, .sr, .stat, .price-card, .price-card-featured, .price-card-gold {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-iframe { overflow: hidden !important; }
-/* Landing hero balance */
-.sw-hero-left-block {
-  padding: 14px 0 16px 0 !important;
-  max-width: 430px !important;
-}
-.sw-hero-demo-wrap {
-  max-width: 560px !important;
-  margin-left: auto !important;
-  overflow: hidden !important;
-}
-/* Sidebar sizing/spacing */
-[data-testid="stSidebar"] {
-  width: var(--msp-sidebar-w) !important;
-  min-width: var(--msp-sidebar-w) !important;
-  max-width: var(--msp-sidebar-w) !important;
-  background: #080d19 !important;
-  border-right: 1px solid rgba(255,255,255,0.09) !important;
-  overflow: visible !important;
-}
-[data-testid="stSidebar"] > div {
-  padding: 10px 10px 18px !important;
-  overflow-x: hidden !important;
-}
-[data-testid="stSidebar"] .stButton>button {
-  min-height: 40px !important;
-  padding: 9px 12px !important;
-  margin: 4px 0 !important;
-  color: #c8d8ea !important;
-  background: rgba(255,255,255,0.035) !important;
-  border: 1px solid rgba(255,255,255,0.065) !important;
-  border-left: 2px solid rgba(37,99,235,0.45) !important;
-  border-radius: 0 !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  justify-content: flex-start !important;
-}
-[data-testid="stSidebar"] .stButton>button:hover {
-  color: #fff !important;
-  background: rgba(37,99,235,0.18) !important;
-  border-left-color: #60a5fa !important;
-}
-/* Make the native Streamlit toggle clickable and obvious.
-   Open sidebar: button sits on right edge of sidebar.
-   Collapsed sidebar: button sits on far-left visible rail. */
-[data-testid="stSidebarCollapseButton"] {
-  position: fixed !important;
-  left: calc(var(--msp-sidebar-w) - 50px) !important;
-  top: 10px !important;
-  width: 42px !important;
-  height: 42px !important;
-  z-index: 2147483647 !important;
-  pointer-events: auto !important;
-  background: #0d2548 !important;
-  border: 1px solid rgba(96,165,250,0.95) !important;
-  border-radius: 10px !important;
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.28), 0 8px 28px rgba(0,0,0,0.55) !important;
-}
-[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"] {
-  position: fixed !important;
-  left: 12px !important;
-  top: 12px !important;
-  width: 48px !important;
-  height: 48px !important;
-  z-index: 2147483647 !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  display: flex !important;
-  background: #0d2548 !important;
-  border: 1px solid rgba(96,165,250,1) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.30), 0 8px 30px rgba(0,0,0,0.60) !important;
-}
-[data-testid="collapsedControl"] svg,
-[data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="stSidebarCollapseButton"] svg {
-  width: 24px !important;
-  height: 24px !important;
-  color: #ffffff !important;
-  fill: #ffffff !important;
-}
-[data-testid="collapsedControl"] svg,
-[data-testid="stSidebarCollapsedControl"] svg { transform: rotate(180deg) !important; }
-@media (max-width: 900px) {
-  :root { --msp-edge-pad: 14px; --msp-sidebar-w: min(82vw, 310px); }
-  .pg, .sw-page-shell { padding: 18px 0 34px !important; }
-  .sw-hero-row { padding: 12px 0 0 !important; }
-  [data-testid="stSidebar"] { width: var(--msp-sidebar-w) !important; min-width: var(--msp-sidebar-w) !important; max-width: var(--msp-sidebar-w) !important; }
-  [data-testid="stSidebarCollapseButton"] { left: calc(var(--msp-sidebar-w) - 54px) !important; }
-}
-</style>""", unsafe_allow_html=True)
-
-
-st.markdown("""
-<script>
-(function(){
-  function fixMspSidebarToggle(){
-    const openBtn = document.querySelector('[data-testid="stSidebarCollapseButton"]');
-    const collapsedBtn = document.querySelector('[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"]');
-    [openBtn, collapsedBtn].forEach(function(btn){
-      if(!btn) return;
-      btn.style.pointerEvents = 'auto';
-      btn.style.zIndex = '2147483647';
-      btn.style.opacity = '1';
-      btn.style.visibility = 'visible';
-      btn.removeAttribute('hidden');
-    });
-  }
-  window.addEventListener('load', fixMspSidebarToggle);
-  setInterval(fixMspSidebarToggle, 250);
-  new MutationObserver(fixMspSidebarToggle).observe(document.body, {childList:true, subtree:true, attributes:true});
-})();
-</script>
-""", unsafe_allow_html=True)
-
 
 
 st.markdown("""
 <style>
 /* ─────────────────────────────────────────────────────────────
-   MSP FINAL PUBLIC/APP LAYOUT OVERRIDES
-   Header/footer/reviews can flow full width. App page content stays in a centered safe container.
+   MSP FINAL LANDING PATCH
+   Use safe max-width wrappers as guardrails only; do not force components to fill them.
 ───────────────────────────────────────────────────────────── */
-:root {
-  --msp-public-pad: clamp(28px, 12vw, 220px);
-  --msp-shell-max: 1180px;
-  --msp-edge-pad: clamp(22px, 4vw, 56px);
-  --msp-sidebar-w: 250px;
-}
-html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], .main, div.block-container {
-  overflow-x: hidden !important;
-  max-width: 100vw !important;
-}
-.main .block-container, div.block-container {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-/* Header ignores the page shell and spans the screen, but content is pulled in from the edges. */
+:root { --msp-safe-max: 1180px; --msp-safe-pad: 28px; }
 .sw-desktop-topbar {
-  width: 100vw !important;
+  width: 100% !important;
   max-width: none !important;
-  margin-left: calc(50% - 50vw) !important;
-  margin-right: calc(50% - 50vw) !important;
-  padding: 14px var(--msp-public-pad) 10px var(--msp-public-pad) !important;
-  min-height: 62px !important;
-  box-sizing: border-box !important;
+  padding-left: max(36px, calc((100vw - var(--msp-safe-max)) / 2)) !important;
+  padding-right: max(36px, calc((100vw - var(--msp-safe-max)) / 2)) !important;
 }
-.sw-topbar-logo { margin-left: 0 !important; flex: 0 0 auto !important; }
-.sw-topbar-logo span { font-size: 27px !important; }
-.sw-topbar-nav {
-  margin-left: auto !important;
-  margin-right: 0 !important;
-  gap: 12px !important;
-  justify-content: flex-end !important;
-}
-.sw-topbar-link {
-  min-width: 114px !important;
-  padding: 12px 18px !important;
-  text-align: center !important;
-  font-size: 14px !important;
-}
-.sw-topbar-link.primary { min-width: 126px !important; }
-.sw-divider {
-  width: calc(100vw - (var(--msp-public-pad) * 2)) !important;
-  max-width: none !important;
-  margin: 0 auto 18px auto !important;
-}
-/* Main app/public content shell: same width on every page, no right-edge overflow. */
-.pg, .sw-page-shell, .sw-hero-row, .sw-auth-nav {
-  width: min(var(--msp-shell-max), calc(100vw - (var(--msp-edge-pad) * 2))) !important;
-  max-width: var(--msp-shell-max) !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  box-sizing: border-box !important;
-  overflow: hidden !important;
-}
-.pg, .sw-page-shell { padding: 28px 0 52px !important; }
-/* Landing hero: keep both sides in the container, equal safe widths. */
+.sw-topbar-logo { margin-left: 0 !important; }
+.sw-topbar-nav { margin-left: auto !important; margin-right: 0 !important; }
+.sw-divider { width: 100% !important; max-width: none !important; margin: 0 0 18px !important; }
 .sw-hero-row {
+  width: min(var(--msp-safe-max), calc(100vw - 56px)) !important;
+  max-width: var(--msp-safe-max) !important;
+  margin: 0 auto !important;
   padding: 18px 0 0 !important;
   overflow: visible !important;
 }
 .sw-hero-left-block {
+  padding: 22px 0 18px 0 !important;
   max-width: 430px !important;
-  padding-top: 12px !important;
 }
 .sw-hero-demo-wrap {
+  width: min(560px, 100%) !important;
   max-width: 560px !important;
-  width: 100% !important;
   margin-left: auto !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
+  padding-top: 10px !important;
+  overflow: visible !important;
 }
-.sw-hero-demo-wrap * { max-width: 100% !important; box-sizing: border-box !important; }
+.sw-hero-demo-wrap * { box-sizing: border-box !important; }
+.msp-hero-tabs { display:flex; flex-wrap:wrap; gap:14px 18px; margin-bottom:8px; align-items:center; }
+.msp-hero-tabs span { font-size:13px; font-weight:500; color:#374f6e; padding-bottom:5px; border-bottom:2px solid transparent; white-space:nowrap; }
+.msp-hero-tabs span.active { color:#e2e8f0; font-weight:800; border-bottom-color:#2563eb; }
+.msp-hero-dots { display:flex; gap:6px; margin:4px 0 10px; }
+.msp-hero-dots span { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.15); display:block; }
+.msp-hero-dots span.active { width:18px; border-radius:3px; background:#2563eb; }
+.msp-hero-title { font-size:22px; font-weight:900; color:#f1f5f9; line-height:1.15; letter-spacing:-.5px; margin-bottom:12px; }
+.msp-hero-title span { color:#2563eb; }
+.msp-hero-demo-card { width:100%; max-width:560px; overflow:hidden; }
+.msp-hero-demo-card > div { max-width:100% !important; }
 .sw-hero-row .stButton,
 .sw-hero-row .stButton > button,
 button[aria-label="🚀 Create Free Account"],
 button[aria-label="Sign In"] {
   width: min(420px, 100%) !important;
   max-width: 420px !important;
-  min-height: 42px !important;
   flex: 0 0 auto !important;
 }
-/* Keep internal grids/cards from bleeding outside the shell. */
-[data-testid="stHorizontalBlock"], [data-testid="column"], .element-container,
-.card, .sr, .stat, .price-card, .price-card-featured, .price-card-gold,
-[data-testid="stDataFrame"], iframe, canvas, svg {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
+.sw-feat-grid {
+  width: min(1120px, calc(100vw - 56px)) !important;
+  max-width:1120px !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+  padding-left:0 !important;
+  padding-right:0 !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap:28px !important;
 }
-[data-testid="stHorizontalBlock"] { overflow: hidden !important; }
-/* Signed-in Streamlit nav is a shell item, not a full browser-width item. */
-.sw-auth-nav {
-  margin-top: 10px !important;
-  margin-bottom: 12px !important;
+.sw-feat-grid .sw-demo-wrap,
+.sw-feat-grid .sw-prem-box { width:100% !important; max-width:100% !important; }
+.sw-feat-grid .sw-demo-wrap > div { max-width:100% !important; }
+.msp-signal-grid-wrap {
+  width: min(1120px, calc(100vw - 56px)) !important;
+  max-width:1120px !important;
+  margin: 0 auto !important;
   overflow: visible !important;
 }
-.sw-auth-nav .stButton>button {
-  min-height: 44px !important;
-  font-size: 13px !important;
-  padding: 8px 10px !important;
+.msp-signal-grid {
+  display:grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap:10px 14px !important;
+  align-items:stretch !important;
 }
-.sw-auth-nav [data-testid="column"]:first-child .stButton>button {
-  font-size: 22px !important;
-  overflow: visible !important;
-  justify-content: flex-start !important;
+.msp-signal-card {
+  background:#0d1525;
+  border:1px solid rgba(255,255,255,.08);
+  border-left:3px solid #2563eb;
+  border-radius:10px;
+  padding:12px 14px;
+  min-height:78px;
+  max-width:100%;
+  box-sizing:border-box;
 }
-/* Footer and testimonial/reviews intentionally ignore the shell. */
-.sw-footer-wrap {
-  width: 100vw !important;
-  max-width: none !important;
-  margin-left: calc(50% - 50vw) !important;
-  margin-right: calc(50% - 50vw) !important;
+.msp-signal-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.msp-signal-card-title { font-size:13px; font-weight:800; color:#e2e8f0; line-height:1.25; }
+.msp-signal-card-desc { font-size:11px; color:#374f6e; line-height:1.45; }
+.sw-signal-card-badge { font-size:9px; font-weight:800; padding:2px 6px; border-radius:3px; white-space:nowrap; }
+.sw-signal-card-badge.pro { color:#f59e0b; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3); }
+.sw-signal-card-badge.free { color:#4ade80; background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); }
+button[aria-label="👑 Unlock Premium Access — Start Today"] {
+  max-width: 760px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
-.sw-reviews-track, .sw-testimonials-track, .sw-reviews-scroll, .reviews-row, .testimonial-row {
-  width: 100vw !important;
-  max-width: none !important;
-  margin-left: calc(50% - 50vw) !important;
-  margin-right: calc(50% - 50vw) !important;
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+.sw-hero-demo-wrap pre,
+.sw-hero-demo-wrap code { display:none !important; }
+@media (max-width:900px) {
+  .sw-hero-row { width:calc(100vw - 28px) !important; }
+  .sw-hero-demo-wrap { margin-left:0 !important; width:100% !important; max-width:100% !important; }
+  .sw-feat-grid { width:calc(100vw - 28px) !important; grid-template-columns:1fr !important; }
+  .msp-signal-grid-wrap { width:calc(100vw - 28px) !important; }
+  .msp-signal-grid { grid-template-columns:repeat(2, minmax(0, 1fr)) !important; gap:8px !important; }
+  .msp-signal-card { padding:9px 10px; min-height:auto; }
+  .msp-signal-card-title { font-size:11px; }
+  .msp-signal-card-desc { font-size:10px; }
 }
-.sw-reviews-track::-webkit-scrollbar,
-.sw-testimonials-track::-webkit-scrollbar,
-.sw-reviews-scroll::-webkit-scrollbar,
-.reviews-row::-webkit-scrollbar,
-.testimonial-row::-webkit-scrollbar { display: none !important; }
-/* Sidebar only exists for signed-in users via Python. Make it clean and usable. */
-[data-testid="stSidebar"] {
-  width: var(--msp-sidebar-w) !important;
-  min-width: var(--msp-sidebar-w) !important;
-  max-width: var(--msp-sidebar-w) !important;
-  background: #080d19 !important;
-  border-right: 1px solid rgba(255,255,255,0.09) !important;
-  overflow: visible !important;
-}
-[data-testid="stSidebar"] > div {
-  padding: 12px 12px 18px !important;
-  overflow-x: hidden !important;
-}
-[data-testid="stSidebar"] .stButton>button {
-  min-height: 42px !important;
-  padding: 10px 12px !important;
-  margin: 4px 0 !important;
-  color: #c8d8ea !important;
-  background: rgba(255,255,255,0.04) !important;
-  border: 1px solid rgba(255,255,255,0.07) !important;
-  border-left: 2px solid rgba(37,99,235,0.5) !important;
-  border-radius: 0 !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  justify-content: flex-start !important;
-}
-[data-testid="stSidebar"] .stButton>button:hover {
-  color: #fff !important;
-  background: rgba(37,99,235,0.20) !important;
-  border-left-color: #60a5fa !important;
-}
-/* Native sidebar controls. Open button on right edge, collapsed button plus our fallback at left. */
-[data-testid="stSidebarCollapseButton"] {
-  position: fixed !important;
-  left: calc(var(--msp-sidebar-w) - 52px) !important;
-  top: 10px !important;
-  width: 44px !important;
-  height: 44px !important;
-  z-index: 2147483647 !important;
-  pointer-events: auto !important;
-  background: #0d2548 !important;
-  border: 1px solid rgba(96,165,250,0.95) !important;
-  border-radius: 11px !important;
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.30), 0 8px 28px rgba(0,0,0,0.58) !important;
-}
-[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"], #msp-sidebar-open-fallback {
-  position: fixed !important;
-  left: 16px !important;
-  top: 16px !important;
-  width: 54px !important;
-  height: 54px !important;
-  z-index: 2147483647 !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  background: #12315f !important;
-  border: 1px solid rgba(147,197,253,1) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.34), 0 8px 32px rgba(0,0,0,0.65) !important;
-}
-#msp-sidebar-open-fallback {
-  color: #fff !important;
-  font-size: 26px !important;
-  font-weight: 900 !important;
-  cursor: pointer !important;
-}
-[data-testid="collapsedControl"] svg,
-[data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="stSidebarCollapseButton"] svg {
-  width: 25px !important;
-  height: 25px !important;
-  color: #ffffff !important;
-  fill: #ffffff !important;
-}
-[data-testid="collapsedControl"] svg,
-[data-testid="stSidebarCollapsedControl"] svg { transform: rotate(180deg) !important; }
-@media (max-width: 900px) {
-  :root { --msp-public-pad: 16px; --msp-edge-pad: 14px; --msp-sidebar-w: min(82vw, 310px); }
-  .sw-desktop-topbar { display:none !important; }
-  .sw-divider { width: calc(100vw - 28px) !important; }
-  .pg, .sw-page-shell { padding: 18px 0 34px !important; }
-  .sw-hero-row { padding: 12px 0 0 !important; }
-  [data-testid="stSidebar"] { width: var(--msp-sidebar-w) !important; min-width: var(--msp-sidebar-w) !important; max-width: var(--msp-sidebar-w) !important; }
-  [data-testid="stSidebarCollapseButton"] { left: calc(var(--msp-sidebar-w) - 56px) !important; }
-}
+@media (max-width:560px) { .msp-signal-grid { grid-template-columns:1fr !important; } }
 </style>
-<script>
-(function(){
-  function mspFixSidebarOpenButton(){
-    const hasSidebar = !!document.querySelector('[data-testid="stSidebar"]');
-    let fallback = document.getElementById('msp-sidebar-open-fallback');
-    if(!hasSidebar){ if(fallback) fallback.remove(); return; }
-    const collapsed = document.querySelector('[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"]');
-    const openBtn = document.querySelector('[data-testid="stSidebarCollapseButton"]');
-    [collapsed, openBtn].forEach(function(btn){
-      if(!btn) return;
-      btn.style.pointerEvents = 'auto';
-      btn.style.zIndex = '2147483647';
-      btn.style.opacity = '1';
-      btn.style.visibility = 'visible';
-      btn.removeAttribute('hidden');
-    });
-    // Build a reliable click target only when Streamlit has collapsed the sidebar.
-    const sidebar = document.querySelector('[data-testid="stSidebar"]');
-    const collapsedLikely = collapsed && (!sidebar || sidebar.getAttribute('aria-expanded') === 'false' || getComputedStyle(sidebar).display === 'none');
-    if(collapsedLikely){
-      if(!fallback){
-        fallback = document.createElement('button');
-        fallback.id = 'msp-sidebar-open-fallback';
-        fallback.type = 'button';
-        fallback.innerHTML = '›';
-        fallback.title = 'Open sidebar';
-        fallback.onclick = function(e){
-          e.preventDefault(); e.stopPropagation();
-          const c = document.querySelector('[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"]');
-          if(c) c.click();
-        };
-        document.body.appendChild(fallback);
-      }
-    } else if(fallback) {
-      fallback.remove();
-    }
-  }
-  window.addEventListener('load', mspFixSidebarOpenButton);
-  setInterval(mspFixSidebarOpenButton, 300);
-  new MutationObserver(mspFixSidebarOpenButton).observe(document.body, {childList:true, subtree:true, attributes:true});
-})();
-</script>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -2061,29 +1517,6 @@ BROAD_UNI   = ["AAPL","MSFT","NVDA","AMD","TSLA","META","AMZN","GOOGL","PLTR","M
 
 FREE_COMPOSITE  = [k for k,(d,t) in COMPOSITE_CATS.items() if t=="free"]
 PREM_COMPOSITE  = [k for k,(d,t) in COMPOSITE_CATS.items() if t=="premium"]
-
-# ─────────────────────────────────────────────────────────────
-# URL NAVIGATION
-# ─────────────────────────────────────────────────────────────
-VALID_PAGES = {"landing","features","login","signup","verify_email","forgot_pw","pricing",
-               "contact","dashboard","discover","watchlist","screener","bi_dashboard",
-               "stock_detail","settings","admin","signal_track"}
-
-def _set_url_page(page_name: str):
-    try:
-        if page_name in VALID_PAGES:
-            st.query_params["page"] = page_name
-    except Exception:
-        pass
-
-def _sync_page_from_url():
-    try:
-        params = st.query_params.to_dict()
-    except Exception:
-        return
-    page_name = params.get("page")
-    if page_name in VALID_PAGES:
-        st.session_state.page = page_name
 
 # ─────────────────────────────────────────────────────────────
 # SESSION STATE
@@ -2148,14 +1581,13 @@ def nav(p):
     cur = st.session_state.get("page")
     if cur and cur != p:
         hist = st.session_state.get("_page_hist", [])
+        # Don't add duplicates
         if not hist or hist[-1] != cur:
             hist.append(cur)
-        if len(hist) > 20:
-            hist = hist[-20:]
+        if len(hist) > 20: hist = hist[-20:]
         st.session_state["_page_hist"] = hist
     st.session_state.prev_page = cur
     st.session_state.page = p
-    _set_url_page(p)
     st.rerun()
 
 def go_back():
@@ -2169,8 +1601,13 @@ def go_back():
         nav("discover" if is_authed() else "landing")
 
 def back_button(key="page_back"):
-    """In-page back buttons removed. Use logo/browser back instead."""
-    return
+    """Render a sticky back button at the top of any page."""
+    st.markdown('<div class="sw-back-btn-wrap">', unsafe_allow_html=True)
+    bc1, _ = st.columns([1, 6])
+    with bc1:
+        if st.button("← Back", key=key, use_container_width=True):
+            go_back()
+    st.markdown('</div>', unsafe_allow_html=True)
 # ─────────────────────────────────────────────────────────────
 # EXCEL EXPORT
 # ─────────────────────────────────────────────────────────────
@@ -2720,7 +2157,7 @@ def render_cat(cat,limit=10,show_why=False):
             q=get_quote(t); df=yf_ohlcv(t,60); info=yf_fund(t); sent=st_sent(t)
             sc,bd,op,risk,conf=compute_scores(df,info,sent); ig=get_insights(df,info)
             if q: stocks.append({"t":t,"q":q,"sc":sc,"bd":bd,"ig":ig,"op":op,"risk":risk,"conf":conf,"hot":t in hot,"df":df,"info":info,"sent":sent,"comp":sc,"why":""})
-        prog_container.empty()
+        prog.empty()
         stocks.sort(key=lambda x:x["sc"],reverse=True)
     if not stocks:
         st.markdown('''<div style="background:#0d1525;border:1px solid rgba(255,255,255,0.08);
@@ -2926,67 +2363,83 @@ def _render_bottom_nav(active=""):
 
 
 def render_topbar(active=""):
-    """Top navigation.
-
-    Signed-in navigation uses Streamlit buttons instead of raw <a href> links.
-    That prevents opening a new browser tab/session and keeps the user signed in
-    while still letting nav() update the ?page= URL for browser history.
-    """
     st.markdown(NAV_CSS, unsafe_allow_html=True)
-
+    # ── PWA bottom nav (only visible when launched as installed app, hidden on desktop & in browser) ──
     if is_authed():
         _render_bottom_nav(active)
 
+    # ════════════════════════════════════════════════════════════
+    # DESKTOP TOPBAR — pure HTML/CSS so we can reliably hide on mobile
+    # Uses URL params for navigation (no Streamlit button machinery)
+    # ════════════════════════════════════════════════════════════
     if is_authed():
         pages=[("Dashboard","dashboard"),("Discover","discover"),("Watchlist","watchlist"),
                ("Screener","screener"),("BI Analytics","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
-        if is_admin():
-            pages.append(("Admin","admin"))
+        if is_admin(): pages.append(("🛠 Admin","admin"))
 
         ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
         user_name = st.session_state.user.get("name","")
 
-        st.markdown('<div class="sw-nav sw-auth-nav sw-auth-nav-marker">', unsafe_allow_html=True)
-        nav_cols = st.columns([2.35] + [1.18]*len(pages) + [0.62,0.62], gap="small")
-        with nav_cols[0]:
-            if st.button("MarketSignalPro", key=f"top_logo_{active}", use_container_width=True):
-                nav("dashboard")
-            st.markdown(f'<div class="sw-topbar-user-label">{ri} {user_name}</div>', unsafe_allow_html=True)
-        for idx,(lbl,pg) in enumerate(pages, start=1):
-            with nav_cols[idx]:
-                if st.button(lbl, key=f"topnav_{pg}_{active}", type=("primary" if active==pg else "secondary"), use_container_width=True):
-                    nav(pg)
-        with nav_cols[-2]:
-            if st.button("⚙️", key=f"top_settings_{active}", use_container_width=True):
-                nav("settings")
-        with nav_cols[-1]:
-            if st.button("↩️", key=f"top_logout_{active}", use_container_width=True):
-                logout()
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        # Logged-out public topbar. Links stay in the same tab and are okay because there is no active session to preserve.
+        # Build nav links as pure HTML
+        nav_links = ""
+        for lbl, pg in pages:
+            is_active_cls = " active" if active == pg else ""
+            nav_links += f'<a href="?topbar_nav={pg}" class="sw-topbar-link{is_active_cls}">{lbl}</a>'
+
         st.markdown(f"""
         <div class="sw-desktop-topbar">
             <div class="sw-topbar-logo">
                 <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
-                    <a href="?page=landing" target="_self" style="text-decoration:none;">
+                    <a href="?topbar_nav=dashboard" style="text-decoration:none;">
+                        <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                    </a>
+                </span>
+            </div>
+            <div class="sw-topbar-nav">{nav_links}</div>
+            <div class="sw-topbar-user">
+                <span style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {user_name}</span>
+                <a href="?topbar_nav=settings" class="sw-topbar-icon" title="Settings">⚙️</a>
+                <a href="?topbar_nav=__logout__" class="sw-topbar-icon" title="Log out">↩️</a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Mobile-only topbar: logo + tiny settings icon
+        st.markdown(f"""
+        <div class="sw-mobile-topbar-bar">
+            <a href="?topbar_nav=dashboard" class="sw-mobile-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
+                    <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                </span>
+            </a>
+            <a href="?topbar_nav=settings" class="sw-mobile-icon">⚙️</a>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        # Logged-out: same approach
+        st.markdown(f"""
+        <div class="sw-desktop-topbar">
+            <div class="sw-topbar-logo">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
+                    <a href="?topbar_nav=landing" style="text-decoration:none;">
                         <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
                     </a>
                 </span>
             </div>
             <div class="sw-topbar-nav">
-                <a href="?page=features" target="_self" class="sw-topbar-link">Features</a>
-                <a href="?page=pricing" target="_self" class="sw-topbar-link">Pricing</a>
-                <a href="?page=contact" target="_self" class="sw-topbar-link">Contact</a>
-                <a href="?page=login" target="_self" class="sw-topbar-link">Login</a>
-                <a href="?page=signup" target="_self" class="sw-topbar-link primary">Sign Up →</a>
+                <a href="?topbar_nav=features" class="sw-topbar-link">Features</a>
+                <a href="?topbar_nav=pricing" class="sw-topbar-link">Pricing</a>
+                <a href="?topbar_nav=contact" class="sw-topbar-link">Contact</a>
+                <a href="?topbar_nav=login" class="sw-topbar-link">Login</a>
+                <a href="?topbar_nav=signup" class="sw-topbar-link primary">Sign Up →</a>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
+        # Mobile-only: just the logo
         st.markdown(f"""
         <div class="sw-mobile-topbar-bar">
-            <a href="?page=landing" target="_self" class="sw-mobile-logo">
+            <a href="?topbar_nav=landing" class="sw-mobile-logo">
                 <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
                     <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
                 </span>
@@ -3235,20 +2688,20 @@ def page_landing():
     <div class="sw-desktop-topbar">
         <div class="sw-topbar-logo">
             <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
-                <a href="?page=landing" target="_self" style="text-decoration:none;">
+                <a href="?topbar_nav=landing" style="text-decoration:none;">
                     <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
                 </a>
             </span>
         </div>
         <div class="sw-topbar-nav">
-            <a href="?page=features" target="_self" class="sw-topbar-link">Features</a>
-            <a href="?page=pricing" target="_self" class="sw-topbar-link">Pricing</a>
-            <a href="?page=login" target="_self" class="sw-topbar-link">Login</a>
-            <a href="?page=signup" target="_self" class="sw-topbar-link primary">Sign Up →</a>
+            <a href="?topbar_nav=features" class="sw-topbar-link">Features</a>
+            <a href="?topbar_nav=pricing" class="sw-topbar-link">Pricing</a>
+            <a href="?topbar_nav=login" class="sw-topbar-link">Login</a>
+            <a href="?topbar_nav=signup" class="sw-topbar-link primary">Sign Up →</a>
         </div>
     </div>
     <div class="sw-mobile-topbar-bar">
-        <a href="?page=landing" target="_self" class="sw-mobile-logo">
+        <a href="?topbar_nav=landing" class="sw-mobile-logo">
             <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
                 <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
             </span>
@@ -3258,81 +2711,50 @@ def page_landing():
     """, unsafe_allow_html=True)
 
     # ── HERO ──
-    # Pure HTML layout so the hero and slider stay inside one consistent container
-    # instead of relying on Streamlit columns that can overflow the page shell.
-    hero_html = (
-        '<style>'
-        '.msp-contained{width:min(1180px,calc(100vw - 112px));max-width:1180px;margin-left:auto;margin-right:auto;box-sizing:border-box;}'
-        '.msp-hero-section{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:72px;align-items:start;padding:36px 0 28px;overflow:hidden;}'
-        '.msp-hero-copy{min-width:0;padding:18px 0 0 0;}'
-        '.msp-kicker{font-size:11px;font-weight:800;color:#2563eb;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:16px;}'
-        '.msp-hero-title{font-size:48px;font-weight:900;color:#f1f5f9;line-height:1.05;letter-spacing:-2px;margin-bottom:18px;}'
-        '.msp-hero-title .hi{color:#2563eb}.msp-hero-title .hg{color:#f59e0b}'
-        '.msp-hero-sub{font-size:16px;color:#3d5270;line-height:1.75;max-width:460px;margin-bottom:34px;}'
-        '.msp-hero-actions{width:min(420px,100%);max-width:420px;}'
-        '.msp-hero-primary,.msp-hero-secondary{display:flex;align-items:center;justify-content:center;width:100%;height:46px;border-radius:9px;text-decoration:none!important;font-size:14px;font-weight:800;box-sizing:border-box;}'
-        '.msp-hero-primary{background:#2563eb;color:#fff!important;border:1px solid #2563eb;box-shadow:0 10px 28px rgba(37,99,235,.20);}'
-        '.msp-hero-primary:hover{background:#1d4ed8;}'
-        '.msp-hero-secondary{background:rgba(255,255,255,.035);color:#d7e5f7!important;border:1px solid rgba(255,255,255,.16);}'
-        '.msp-signin-note{text-align:center;font-size:12px;color:#6b7fa0;margin:18px 0 8px;}'
-        '.msp-trust-line{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:20px;font-size:11px;color:#4a5e7a;flex-wrap:wrap;width:min(420px,100%);}'
-        '.msp-hero-demo{min-width:0;max-width:560px;width:100%;justify-self:end;overflow:hidden;box-sizing:border-box;}'
-        '.msp-hero-demo *{max-width:100%;box-sizing:border-box;}'
-        '.msp-demo-tabs{display:flex;flex-wrap:wrap;gap:14px 18px;margin-bottom:8px;padding:14px 0 0;}'
-        '.msp-demo-tab{font-size:13px;font-weight:500;color:#374f6e;cursor:pointer;padding-bottom:5px;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;}'
-        '.msp-demo-tab.active{color:#e2e8f0;font-weight:800;border-bottom-color:#2563eb;}'
-        '.msp-demo-dots{display:flex;gap:6px;margin-bottom:10px;}'
-        '.msp-demo-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.15);cursor:pointer;transition:all .3s;}'
-        '.msp-demo-dot.active{background:#2563eb;width:18px;border-radius:3px;}'
-        '.msp-demo-title{font-size:22px;font-weight:900;color:#f1f5f9;letter-spacing:-.5px;line-height:1.2;margin-bottom:12px;min-height:52px;}'
-        '@media(max-width:992px){.msp-contained{width:min(100% - 28px,1180px)}.msp-hero-section{grid-template-columns:1fr;gap:18px;padding:18px 0 24px}.msp-hero-copy{text-align:center;padding-top:6px}.msp-hero-title{font-size:32px;letter-spacing:-1px}.msp-hero-sub{margin-left:auto;margin-right:auto;font-size:14px}.msp-hero-actions,.msp-trust-line{margin-left:auto;margin-right:auto}.msp-hero-demo{display:none}}'
-        '</style>'
-        '<section class="msp-contained msp-hero-section">'
-          '<div class="msp-hero-copy">'
-            '<div class="msp-kicker">Smart Stock Discovery Platform</div>'
-            '<div class="msp-hero-title">Spot Market<br>Opportunities<br><span class="hi">Before They</span><br><span class="hg">Get Crowded</span></div>'
-            '<div class="msp-hero-sub">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>'
-            '<div class="msp-hero-actions">'
-              '<a class="msp-hero-primary" href="?page=signup" target="_self">🚀 Create Free Account</a>'
-              '<div class="msp-signin-note">Already have an account?</div>'
-              '<a class="msp-hero-secondary" href="?page=login" target="_self">Sign In</a>'
-            '</div>'
-            '<div class="msp-trust-line"><span>✓ Free forever plan</span><span>·</span><span>✓ No credit card</span><span>·</span><span>✓ Setup in 30 seconds</span></div>'
-          '</div>'
-          '<div class="msp-hero-demo">'
-            '<div class="msp-demo-tabs">'
-              '<div class="msp-demo-tab active" id="msp_t0" onclick="mspSw(0)">📊 Market Overview</div>'
-              '<div class="msp-demo-tab" id="msp_t1" onclick="mspSw(1)">💥 Squeeze Radar</div>'
-              '<div class="msp-demo-tab" id="msp_t2" onclick="mspSw(2)">💡 Smart Insights</div>'
-              '<div class="msp-demo-tab" id="msp_t3" onclick="mspSw(3)">🎯 Score Breakdown</div>'
-              '<div class="msp-demo-tab" id="msp_t4" onclick="mspSw(4)">📈 BI Analytics</div>'
-            '</div>'
-            '<div class="msp-demo-dots">'
-              '<div class="msp-demo-dot active" id="msp_d0" onclick="mspSw(0)"></div>'
-              '<div class="msp-demo-dot" id="msp_d1" onclick="mspSw(1)"></div>'
-              '<div class="msp-demo-dot" id="msp_d2" onclick="mspSw(2)"></div>'
-              '<div class="msp-demo-dot" id="msp_d3" onclick="mspSw(3)"></div>'
-              '<div class="msp-demo-dot" id="msp_d4" onclick="mspSw(4)"></div>'
-            '</div>'
-            '<div id="msp_h0" class="msp-demo-title">Find Trending Stocks<br><span style="color:#2563eb;">Before the Crowd</span></div>'
-            '<div id="msp_h1" class="msp-demo-title" style="display:none">Scan For Short Squeeze<br><span style="color:#2563eb;">Candidates</span></div>'
-            '<div id="msp_h2" class="msp-demo-title" style="display:none">Smart Insights<br>in <span style="color:#2563eb;">Simple Language</span></div>'
-            '<div id="msp_h3" class="msp-demo-title" style="display:none">Premium <span style="color:#f59e0b;">Score Breakdowns</span><br>&amp; Deep Analysis</div>'
-            '<div id="msp_h4" class="msp-demo-title" style="display:none">BI Analytics &amp;<br><span style="color:#2563eb;">Opportunity Matrix</span></div>'
-            '<div id="msp_p0">' + DEMO[0] + '</div>'
-            '<div id="msp_p1" style="display:none">' + DEMO[1] + '</div>'
-            '<div id="msp_p2" style="display:none">' + DEMO[2] + '</div>'
-            '<div id="msp_p3" style="display:none">' + DEMO_SCORE + '</div>'
-            '<div id="msp_p4" style="display:none">' + DEMO_BI + '</div>'
-          '</div>'
-        '</section>'
-        '<script>'
-        'var mspC=0;'
-        'function mspSw(n){for(var i=0;i<5;i++){document.getElementById("msp_t"+i).className="msp-demo-tab"+(i===n?" active":"");document.getElementById("msp_d"+i).className="msp-demo-dot"+(i===n?" active":"");document.getElementById("msp_h"+i).style.display=i===n?"block":"none";document.getElementById("msp_p"+i).style.display=i===n?"block":"none";}mspC=n;}'
-        'setInterval(function(){mspSw((mspC+1)%5);},5000);'
-        '</script>'
-    )
-    st.markdown(hero_html, unsafe_allow_html=True)
+    p_idx=st.session_state.get("hero_panel",0)
+    st.markdown('<div class="sw-hero-row">', unsafe_allow_html=True)
+    hl,hr=st.columns([5,5],gap="large")
+    with hl:
+        st.markdown(f"""
+        <div class="sw-hero-left-block" style="padding:48px 0 32px 48px;">
+            <div style="font-size:11px;font-weight:700;color:{BLUE};letter-spacing:2.5px;text-transform:uppercase;margin-bottom:16px;">Smart Stock Discovery Platform</div>
+            <div class="hero-h1">Spot Market<br>Opportunities<br><span class="hi">Before They</span><br><span class="hg">Get Crowded</span></div>
+            <div class="hero-sub">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Single CTA section (works on all screens) ──
+        if st.button("🚀 Create Free Account", key="h_su", type="primary", use_container_width=True): nav("signup")
+        st.markdown('<div style="text-align:center;font-size:13px;color:#6b7fa0;padding:14px 0 6px;">Already have an account?</div>', unsafe_allow_html=True)
+        if st.button("Sign In", key="h_login", use_container_width=True): nav("login")
+
+        # Trust line under CTA
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:18px;font-size:11px;color:#4a5e7a;flex-wrap:wrap;">
+            <span>✓ Free forever plan</span>
+            <span>·</span>
+            <span>✓ No credit card</span>
+            <span>·</span>
+            <span>✓ Setup in 30 seconds</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with hr:
+        st.markdown(f"""
+        <div class="sw-hero-demo-wrap">
+            <div class="msp-hero-tabs">
+                <span class="active">📊 Market Overview</span>
+                <span>💥 Squeeze Radar</span>
+                <span>💡 Smart Insights</span>
+                <span>🎯 Score Breakdown</span>
+                <span>📈 BI Analytics</span>
+            </div>
+            <div class="msp-hero-dots"><span class="active"></span><span></span><span></span><span></span><span></span></div>
+            <div class="msp-hero-title">Find Trending Stocks<br><span>Before the Crowd</span></div>
+            <div class="msp-hero-demo-card">{DEMO[0]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)  # close sw-hero-row
 
     # ── Trust bar ──
     st.markdown(f"""
@@ -3529,7 +2951,16 @@ def page_landing():
     st.markdown("<br>",unsafe_allow_html=True)
 
     # ── Composite categories grid ──
-    # Pure HTML grid so this section follows the same safe container as the hero.
+    st.markdown(f"""
+    <div style="padding:0 48px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+            <div style="font-size:18px;font-weight:800;color:#e2e8f0;">🎯 Our Proprietary Signal Categories</div>
+            <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;">✨ Unique to MarketSignalPro</span>
+        </div>
+        <div style="font-size:13px;color:#374f6e;margin-bottom:18px;">We combine multiple independent data signals into composite categories you won't find anywhere else. Each one has a specific multi-factor entry criterion.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     color_map={
         "🔥💥 Squeeze + Buzz":"#ef4444","💡 Hidden Movers":"#3b82f6","🎭 Social Catalyst":"#f97316",
         "🌡️ Sentiment Flip":"#ec4899","📉→📈 Fallen Angels":"#8b5cf6","🔬 Micro-Cap Movers":"#06b6d4",
@@ -3538,53 +2969,32 @@ def page_landing():
         "🔁 Mean Reversion":"#60a5fa","⚡🧲 Smart Money Signal":"#fbbf24","🌪️ Volatility Squeeze":"#c084fc",
         "🎯📊 Triple Lock":"#4ade80","🦈 Sustained Strength":"#34d399",
     }
+    cg_items=list(COMPOSITE_CATS.items())
+    # Pure HTML signal grid: safe width, no Streamlit column overflow
     cards_html = ""
-    for cat,(desc,tier) in COMPOSITE_CATS.items():
-        c=color_map.get(cat,BLUE)
-        if tier == "premium":
-            tier_b = '<span class="msp-signal-badge pro">⭐ PRO</span>'
-        else:
-            tier_b = '<span class="msp-signal-badge free">FREE</span>'
-        cards_html += (
-            f'<div class="msp-signal-card" style="border-left-color:{c};">'
-            f'<div class="msp-signal-card-top">'
-            f'<div class="msp-signal-title">{cat}</div>{tier_b}'
-            f'</div>'
-            f'<div class="msp-signal-desc">{desc}</div>'
-            f'</div>'
-        )
-
-    st.markdown(f'''
-    <style>
-    .msp-signal-section{{width:min(1180px,calc(100vw - 112px));max-width:1180px;margin:34px auto 20px;box-sizing:border-box;overflow:hidden;}}
-    .msp-signal-head{{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;}}
-    .msp-signal-head-title{{font-size:18px;font-weight:900;color:#e2e8f0;}}
-    .msp-signal-pill{{background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;white-space:nowrap;}}
-    .msp-signal-copy{{font-size:13px;color:#374f6e;margin-bottom:18px;line-height:1.6;}}
-    .msp-signal-grid-real{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch;}}
-    .msp-signal-card{{background:#0d1525;border:1px solid rgba(255,255,255,.08);border-left:3px solid #2563eb;border-radius:10px;padding:13px 14px;min-width:0;box-sizing:border-box;}}
-    .msp-signal-card-top{{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;}}
-    .msp-signal-title{{font-size:13px;font-weight:800;color:#e2e8f0;line-height:1.35;min-width:0;}}
-    .msp-signal-desc{{font-size:11px;color:#374f6e;line-height:1.5;}}
-    .msp-signal-badge{{font-size:9px;font-weight:900;padding:2px 7px;border-radius:4px;white-space:nowrap;}}
-    .msp-signal-badge.pro{{background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.3);}}
-    .msp-signal-badge.free{{background:rgba(34,197,94,.1);color:#4ade80;border:1px solid rgba(34,197,94,.3);}}
-    .msp-signal-cta{{display:flex;justify-content:center;margin:24px 0 4px;}}
-    .msp-signal-cta a{{display:flex;align-items:center;justify-content:center;width:min(320px,100%);height:44px;background:#2563eb;border:1px solid #2563eb;border-radius:9px;color:#fff!important;text-decoration:none!important;font-weight:800;font-size:14px;}}
-    .msp-signal-cta a:hover{{background:#1d4ed8;}}
-    @media(max-width:992px){{.msp-signal-section{{width:min(100% - 28px,1180px);margin-top:24px}}.msp-signal-grid-real{{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}}.msp-signal-card{{padding:10px}}.msp-signal-title{{font-size:11px}}.msp-signal-desc{{font-size:10px}}}}
-    @media(max-width:560px){{.msp-signal-grid-real{{grid-template-columns:1fr}}}}
-    </style>
-    <section class="msp-signal-section">
-        <div class="msp-signal-head">
-            <div class="msp-signal-head-title">🎯 Our Proprietary Signal Categories</div>
-            <span class="msp-signal-pill">✨ Unique to MarketSignalPro</span>
+    for cat,(desc,tier) in cg_items:
+        c = color_map.get(cat, BLUE)
+        tier_b = (f'<span class="sw-signal-card-badge pro">⭐ PRO</span>' if tier=="premium"
+                  else '<span class="sw-signal-card-badge free">FREE</span>')
+        cards_html += f"""
+        <div class="msp-signal-card" style="border-left-color:{c};">
+            <div class="msp-signal-card-head">
+                <div class="msp-signal-card-title">{cat}</div>{tier_b}
+            </div>
+            <div class="msp-signal-card-desc">{desc}</div>
         </div>
-        <div class="msp-signal-copy">We combine multiple independent data signals into composite categories you won't find anywhere else. Each one has a specific multi-factor entry criterion.</div>
-        <div class="msp-signal-grid-real">{cards_html}</div>
-        <div class="msp-signal-cta"><a href="?page=signup" target="_self">Explore All Categories →</a></div>
-    </section>
-    ''', unsafe_allow_html=True)
+        """
+    st.markdown(f"""
+    <div class="msp-signal-grid-wrap">
+        <div class="msp-signal-grid">{cards_html}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _,pc,_=st.columns([2,1,2])
+    with pc:
+        if st.button("Explore All Categories →",key="land_cats",type="primary",use_container_width=True): nav("signup")
+
+    st.markdown("<br>",unsafe_allow_html=True)
 
     # ── Testimonials — auto-scrolling ──
     st.markdown('<div style="padding:0 48px;"><div class="sec-hd">What Traders Are Saying</div></div>',unsafe_allow_html=True)
@@ -3611,7 +3021,7 @@ def page_landing():
 
     testimonial_comp = (
         '<style>'
-        'html,body{margin:0;padding:0;background:transparent;overflow:hidden!important;}::-webkit-scrollbar{display:none;}'
+        'body{margin:0;padding:0;background:transparent;overflow:hidden;}'
         '@keyframes scroll-left{'
         '  0%{transform:translateX(0);}'
         '  100%{transform:translateX(-50%);}'
@@ -3638,7 +3048,7 @@ def page_landing():
     )
 
     import streamlit.components.v1 as components
-    components.html(testimonial_comp, height=150, scrolling=False)
+    components.html(testimonial_comp, height=160)
 
     st.markdown("<br>",unsafe_allow_html=True)
 
@@ -3781,18 +3191,13 @@ def page_signup():
     with cc:
         st.markdown('<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Create Your Account 🚀</div><div style="font-size:13px;color:#374f6e;">Free forever. No credit card. No API keys.</div></div>',unsafe_allow_html=True)
         with st.form("sf"):
-            fn_col, ln_col = st.columns(2)
-            with fn_col:
-                first_name=st.text_input("First Name",placeholder="Jane")
-            with ln_col:
-                last_name=st.text_input("Last Name",placeholder="Doe")
-            name=(first_name.strip()+" "+last_name.strip()).strip()
+            name=st.text_input("Full name",placeholder="Jane Doe")
             email=st.text_input("Email",placeholder="you@example.com")
             pw=st.text_input("Password",type="password",placeholder="Min 6 characters")
             pw2=st.text_input("Confirm password",type="password")
             agree=st.checkbox("I agree to the Terms of Service. I understand MarketSignalPro is for educational purposes only and is not financial advice.")
             if st.form_submit_button("Create Free Account →",type="primary",use_container_width=True):
-                if not all([first_name,last_name,email,pw,pw2]): st.error("Please fill in all fields.")
+                if not all([name,email,pw,pw2]): st.error("Please fill in all fields.")
                 elif pw!=pw2: st.error("Passwords don't match.")
                 elif len(pw)<6: st.error("Password must be 6+ characters.")
                 elif not agree: st.error("Please agree to the Terms of Service.")
@@ -3863,92 +3268,50 @@ def _send_push_notification(player_ids, title, message, url=None):
         return False, str(e)
 
 def _send_password_reset(email, reset_token):
-    """Send password reset email through Resend. Returns (True,None) or (False, info)."""
+    """Send password reset email. Returns (True,None) or (False, info)."""
     try:
-        resend_key = st.secrets.get("RESEND_API_KEY", "")
-        app_url = _get_app_url()
-        reset_url = f"{app_url}/?reset_token={reset_token}&email={email}"
-        if not resend_key:
-            return False, "RESEND_API_KEY missing from Streamlit Secrets"
-        import requests as _r
-        html = f"""
-        <div style="margin:0;padding:0;background:#07090f;font-family:Inter,Arial,sans-serif;color:#e2e8f0;">
-          <div style="max-width:560px;margin:0 auto;padding:38px 28px;">
-            <div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;margin-bottom:24px;">
-              <span style="color:#2563eb;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
-            </div>
-            <div style="background:#0d1525;border:1px solid rgba(96,165,250,0.25);border-radius:16px;padding:28px;">
-              <h2 style="margin:0 0 10px;color:#f8fafc;font-size:22px;line-height:1.25;">Reset your password</h2>
-              <p style="margin:0 0 22px;color:#8aa0bd;font-size:14px;line-height:1.7;">Click the secure button below to reset your MarketSignalPro password. This link expires in 1 hour.</p>
-              <a href="{reset_url}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:10px;padding:13px 22px;font-size:14px;font-weight:800;">Reset Password</a>
-              <p style="margin:22px 0 0;color:#5f7694;font-size:11px;line-height:1.6;word-break:break-all;">If the button does not work, copy and paste this link:<br>{reset_url}</p>
-            </div>
-            <p style="margin:18px 0 0;color:#475569;font-size:11px;line-height:1.6;">If you did not request this email, you can ignore it.</p>
-          </div>
-        </div>"""
-        text_body = f"MarketSignalPro\n\nReset your password:\n{reset_url}\n\nThis link expires in 1 hour. If you did not request this, ignore this email."
-        resp = _r.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={
-                "from": "MarketSignalPro <support@marketsignalpro.com>",
-                "to": [email],
-                "subject": "Reset your MarketSignalPro password",
-                "html": html,
-                "text": text_body,
-                "reply_to": ["support@marketsignalpro.com"],
-            },
-            timeout=10,
-        )
-        if resp.status_code in (200, 201):
-            return True, None
-        return False, f"Resend error {resp.status_code}: {resp.text}"
-    except Exception as e:
-        return False, f"Email exception: {e}"
-
+        resend_key = st.secrets.get("RESEND_API_KEY","")
+        app_url    = _get_app_url()
+        reset_url  = f"{app_url}/?reset_token={reset_token}&email={email}"
+        if resend_key:
+            import requests as _r
+            html = f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;">
+                <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
+                <h3 style="color:#e2e8f0;">Reset your password</h3>
+                <p style="color:#6b7fa0;">Click below to reset. Expires in 1 hour.</p>
+                <a href="{reset_url}" style="display:inline-block;padding:12px 28px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Reset Password →</a>
+                <p style="color:#374f6e;font-size:11px;margin-top:16px;">Or copy: {reset_url}</p>
+            </div>"""
+            resp = _r.post("https://api.resend.com/emails",
+                headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
+                json={"from":"MarketSignalPro <support@marketsignalpro.com>","to":[email],
+                      "subject":"Reset your MarketSignalPro password","html":html},
+                timeout=10)
+            if resp.status_code in (200,201): return True, None
+    except Exception: pass
+    return False, f"DEMO_RESET:{reset_token}"
 
 def _send_verification_email(email, code):
-    """Send 6-digit email verification code through Resend. Returns (True,None) or (False, info)."""
+    """Send 6-digit email verification code. Falls back to demo mode."""
     try:
-        resend_key = st.secrets.get("RESEND_API_KEY", "")
-        if not resend_key:
-            return False, "RESEND_API_KEY missing from Streamlit Secrets"
-        import requests as _r
-        html = f"""
-        <div style="margin:0;padding:0;background:#07090f;font-family:Inter,Arial,sans-serif;color:#e2e8f0;">
-          <div style="max-width:560px;margin:0 auto;padding:38px 28px;">
-            <div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;margin-bottom:24px;">
-              <span style="color:#2563eb;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
-            </div>
-            <div style="background:#0d1525;border:1px solid rgba(96,165,250,0.25);border-radius:16px;padding:28px;">
-              <h2 style="margin:0 0 10px;color:#f8fafc;font-size:22px;line-height:1.25;">Verify your email</h2>
-              <p style="margin:0 0 20px;color:#8aa0bd;font-size:14px;line-height:1.7;">Enter this 6-digit code in MarketSignalPro to finish creating your account.</p>
-              <div style="background:#101827;border:1px solid rgba(37,99,235,0.35);border-radius:14px;text-align:center;padding:22px 16px;margin:0 0 20px;">
-                <span style="font-size:42px;font-weight:900;letter-spacing:9px;color:#3b82f6;line-height:1;">{code}</span>
-              </div>
-              <p style="margin:0;color:#6f85a3;font-size:12px;line-height:1.6;">This code expires in 10 minutes. If you did not request this, you can ignore this email.</p>
-            </div>
-          </div>
-        </div>"""
-        text_body = f"MarketSignalPro\n\nYour verification code is: {code}\n\nThis code expires in 10 minutes. If you did not request this, ignore this email."
-        resp = _r.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={
-                "from": "MarketSignalPro <support@marketsignalpro.com>",
-                "to": [email],
-                "subject": "Your MarketSignalPro verification code",
-                "html": html,
-                "text": text_body,
-                "reply_to": ["support@marketsignalpro.com"],
-            },
-            timeout=10,
-        )
-        if resp.status_code in (200, 201):
-            return True, None
-        return False, f"Resend error {resp.status_code}: {resp.text}"
-    except Exception as e:
-        return False, f"Email exception: {e}"
+        resend_key = st.secrets.get("RESEND_API_KEY","")
+        if resend_key:
+            import requests as _r
+            resp = _r.post("https://api.resend.com/emails",
+                headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
+                json={"from":"MarketSignalPro <support@marketsignalpro.com>","to":[email],
+                      "subject":"Your MarketSignalPro verification code",
+                      "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">
+                        <h2>Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
+                        <h3>Verify your email</h3>
+                        <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
+                        <p style="color:#6b7fa0;margin-top:20px;">Expires in 10 minutes.</p>
+                      </div>"""},
+                timeout=10)
+            if resp.status_code in (200,201): return True,None
+            return False, f"Email error: {resp.text}"
+    except Exception: pass
+    return False, f"DEMO_CODE:{code}"
 
 def page_forgot():
     render_topbar()
@@ -4360,7 +3723,6 @@ def page_dashboard():
 # ─────────────────────────────────────────────────────────────
 def page_discover():
     render_topbar("discover")
-    st.markdown('<div class="pg">', unsafe_allow_html=True)
     st.markdown(f"""<style>
     .disc-tabs{{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px;padding:0;}}
     .disc-section-label{{font-size:10px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin:14px 0 8px;}}
@@ -4405,9 +3767,9 @@ def page_discover():
 
     # Render composite cats in a grid (4 per row)
     comp_items = list(COMPOSITE_CATS.items())
-    for row_start in range(0, len(comp_items), 3):
-        cols = st.columns(3, gap="medium")
-        for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+3]):
+    for row_start in range(0, len(comp_items), 4):
+        cols = st.columns(4, gap="small")
+        for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+4]):
             with cols[col_idx]:
                 is_l = tier=="premium" and not is_premium()
                 safe = cat.replace(" ","_").replace("+","p").replace("→","r").replace("🌡️","T").replace("📉","D").replace("📈","U").replace("⚡","E")[:30]
@@ -4421,9 +3783,9 @@ def page_discover():
     # Standard categories
     st.markdown('<div class="disc-section-label">🌐 Standard Categories</div>', unsafe_allow_html=True)
     std_items = list(CATEGORIES.keys())
-    for row_start in range(0, len(std_items), 3):
-        cols = st.columns(3, gap="medium")
-        for col_idx, cat in enumerate(std_items[row_start:row_start+3]):
+    for row_start in range(0, len(std_items), 4):
+        cols = st.columns(4, gap="small")
+        for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
             with cols[col_idx]:
                 is_active = cat==sel
                 btn_type = "primary" if is_active else "secondary"
@@ -4469,7 +3831,6 @@ def page_discover():
         </div>
         """, unsafe_allow_html=True)
         if gold_btn("Upgrade to Premium →", "disc_upgrade_bottom"): nav("pricing")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: STOCK DETAIL
@@ -7192,8 +6553,35 @@ APP_URL = "https://your-app.streamlit.app"</pre>
 
 # ─────────────────────────────────────────────────────────────
 # EMAIL VERIFICATION
-# Uses _send_verification_email defined above.
 # ─────────────────────────────────────────────────────────────
+def _send_verification_email(email, code):
+    """
+    Send verification email. Requires RESEND_API_KEY or SENDGRID_API_KEY in Secrets.
+    Falls back to simulated mode (shows code in UI) if not configured.
+    Returns (True, None) or (False, error_msg).
+    """
+    # Try Resend
+    try:
+        resend_key = st.secrets.get("RESEND_API_KEY","")
+        if resend_key:
+            import requests as _r
+            resp = _r.post("https://api.resend.com/emails",
+                headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
+                json={"from":"MarketSignalPro <support@marketsignalpro.com>",
+                      "to":[email],
+                      "subject":"Your MarketSignalPro verification code",
+                      "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;color:#e2e8f0;padding:40px;">
+                        <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
+                        <h3>Verify your email</h3>
+                        <p style="color:#6b7fa0;">Your verification code is:</p>
+                        <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
+                        <p style="color:#6b7fa0;margin-top:20px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
+                      </div>"""})
+            if resp.status_code in (200,201): return True,None
+            return False, f"Email send failed: {resp.text}"
+    except: pass
+    # Simulated — show code in UI
+    return False, f"DEMO_CODE:{code}"
 
 def page_verify_email():
     render_topbar()
@@ -7388,8 +6776,7 @@ Be helpful, concise, and friendly. If asked about a specific stock or investment
 # ─────────────────────────────────────────────────────────────
 # ROUTER
 # ─────────────────────────────────────────────────────────────
-if is_authed():
-    render_sidebar()
+render_sidebar()
 
 # ── 1. Handle Stripe payment returns (URL params) ──
 handle_payment_return()
@@ -7560,7 +6947,6 @@ if is_authed() and st.session_state.get("_pending_checkout"):
     if url: st.session_state["_redirect_url"] = url; st.rerun()
     else:   st.error(f"Checkout error: {err}")
 
-_sync_page_from_url()
 page=st.session_state.get("page","landing")
 auth_required={"dashboard","discover","watchlist","screener","bi_dashboard","stock_detail","settings","admin"}
 premium_required={"screener","bi_dashboard"}  # These show upgrade gate for free users
