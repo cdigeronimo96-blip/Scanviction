@@ -485,6 +485,60 @@ button:active, [role="button"]:active, .stButton button:active {{
             if (btn) btn.click();
         }}
     }}, true);
+
+    // ── TOPBAR VISIBILITY MANAGER ──
+    // Hide desktop topbar on mobile and vice versa by finding the marker anchor
+    // and walking up to its st.container() parent (stVerticalBlockBorderWrapper).
+    function manageTopbarVisibility() {{
+        const isMobile = window.innerWidth <= 900;
+
+        // Find all marker anchors and toggle their PARENT CONTAINER's visibility
+        document.querySelectorAll('.sw-desktop-nav-anchor').forEach(anchor => {{
+            // Walk up to find the closest st.container wrapper
+            let container = anchor.closest('[data-testid="stVerticalBlockBorderWrapper"]');
+            if (!container) {{
+                // Fallback: closest stVerticalBlock that is NOT the main app
+                let el = anchor.parentElement;
+                while (el && el !== document.body) {{
+                    if (el.getAttribute && el.getAttribute('data-testid') === 'stVerticalBlock' &&
+                        !el.closest('.stMainBlockContainer > [data-testid="stVerticalBlock"]')) {{
+                        container = el;
+                        break;
+                    }}
+                    el = el.parentElement;
+                }}
+                if (!container) container = anchor.parentElement?.parentElement?.parentElement;
+            }}
+            if (container) {{
+                container.style.display = isMobile ? 'none' : '';
+            }}
+        }});
+
+        document.querySelectorAll('.sw-mobile-nav-anchor').forEach(anchor => {{
+            let container = anchor.closest('[data-testid="stVerticalBlockBorderWrapper"]');
+            if (!container) {{
+                let el = anchor.parentElement;
+                while (el && el !== document.body) {{
+                    if (el.getAttribute && el.getAttribute('data-testid') === 'stVerticalBlock' &&
+                        !el.closest('.stMainBlockContainer > [data-testid="stVerticalBlock"]')) {{
+                        container = el;
+                        break;
+                    }}
+                    el = el.parentElement;
+                }}
+                if (!container) container = anchor.parentElement?.parentElement?.parentElement;
+            }}
+            if (container) {{
+                container.style.display = isMobile ? '' : 'none';
+            }}
+        }});
+    }}
+    // Run on load, resize, and DOM updates
+    manageTopbarVisibility();
+    setInterval(manageTopbarVisibility, 500);
+    window.addEventListener('resize', manageTopbarVisibility);
+    const topbarObserver = new MutationObserver(manageTopbarVisibility);
+    topbarObserver.observe(document.body, {{ childList: true, subtree: true }});
 }})();
 </script>
 """, unsafe_allow_html=True)
@@ -1143,10 +1197,12 @@ button[role="tab"][aria-selected="true"]{{
 
 /* ── Mobile & Tablet Responsive ── */
 @media (max-width:900px) {{
-    /* ════════════════════════════════════════════════════════════
-       MOBILE: Hide ALL desktop topbar navs across every page
-    ════════════════════════════════════════════════════════════ */
-    .sw-desktop-nav {{ display: none !important; }}
+    /* Marker div - hidden, just used as a JS hook */
+    .sw-desktop-nav-anchor, .sw-mobile-nav-anchor {{ display: none; }}
+}}
+@media (min-width: 901px) {{
+    .sw-desktop-nav-anchor, .sw-mobile-nav-anchor {{ display: none; }}
+}}
 
     /* Hero text */
     .hero-h1{{font-size:32px !important;letter-spacing:-1px !important;}}
@@ -2127,44 +2183,61 @@ def render_topbar(active=""):
         pages=[("Dashboard","dashboard"),("Discover","discover"),("Watchlist","watchlist"),
                ("Screener","screener"),("BI Analytics","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
         if is_admin(): pages.append(("🛠 Admin","admin"))
-        c1,c2,c3=st.columns([2,8,3])
-        with c1: render_logo_click("top_logo","dashboard")
-        with c2:
-            st.markdown('<div class="sw-nav sw-desktop-nav">', unsafe_allow_html=True)
-            nc=st.columns(len(pages))
-            for col,(lbl,pg) in zip(nc,pages):
-                with col:
-                    if st.button(lbl,key=f"top_{pg}",type="primary" if active==pg else "secondary",use_container_width=True):
-                        nav(pg)
-            st.markdown('</div>', unsafe_allow_html=True)
-        with c3:
-            ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
-            st.markdown('<div class="sw-desktop-nav">', unsafe_allow_html=True)
-            uc1,uc2,uc3=st.columns([4,1,1])
-            with uc1: st.markdown(f'<div style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {st.session_state.user["name"]}</div>',unsafe_allow_html=True)
-            with uc2:
-                if st.button("⚙️",key="top_set",help="Account settings"): nav("settings")
-            with uc3:
-                if st.button("↩️",key="top_out",help="Log out"): logout()
-            st.markdown('</div>', unsafe_allow_html=True)
+
+        # Desktop topbar — wrapped in a container that gets a CSS class
+        with st.container():
+            st.markdown('<div class="sw-desktop-nav-anchor"></div>', unsafe_allow_html=True)
+            c1,c2,c3=st.columns([2,8,3])
+            with c1: render_logo_click("top_logo","dashboard")
+            with c2:
+                st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
+                nc=st.columns(len(pages))
+                for col,(lbl,pg) in zip(nc,pages):
+                    with col:
+                        if st.button(lbl,key=f"top_{pg}",type="primary" if active==pg else "secondary",use_container_width=True):
+                            nav(pg)
+                st.markdown('</div>', unsafe_allow_html=True)
+            with c3:
+                ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
+                uc1,uc2,uc3=st.columns([4,1,1])
+                with uc1: st.markdown(f'<div style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {st.session_state.user["name"]}</div>',unsafe_allow_html=True)
+                with uc2:
+                    if st.button("⚙️",key="top_set",help="Account settings"): nav("settings")
+                with uc3:
+                    if st.button("↩️",key="top_out",help="Log out"): logout()
+
+        # Mobile topbar — just the logo, with a small Sign Up/Settings button
+        with st.container():
+            st.markdown('<div class="sw-mobile-nav-anchor"></div>', unsafe_allow_html=True)
+            mc1, mc2 = st.columns([3, 1])
+            with mc1: render_logo_click("top_logo_mob","dashboard")
+            with mc2:
+                if st.button("⚙️",key="top_set_mob",help="Settings",use_container_width=True): nav("settings")
     else:
-        # Logged-out topbar: logo + desktop nav buttons (hidden on mobile)
-        c1,_,c3=st.columns([2,5,4])
-        with c1: render_logo_click("top_logo","landing")
-        with c3:
-            st.markdown('<div class="sw-nav sw-desktop-nav">', unsafe_allow_html=True)
-            a1,a2,a3,a4,a5=st.columns(5,gap="small")
-            with a1:
-                if st.button("Features",key="top_features",use_container_width=True): nav("features")
-            with a2:
-                if st.button("Pricing",key="top_pricing",use_container_width=True): nav("pricing")
-            with a3:
-                if st.button("Contact",key="top_contact",use_container_width=True): nav("contact")
-            with a4:
-                if st.button("Login",key="top_login",use_container_width=True): nav("login")
-            with a5:
-                if st.button("Sign Up →",key="top_signup",type="primary",use_container_width=True): nav("signup")
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Desktop topbar
+        with st.container():
+            st.markdown('<div class="sw-desktop-nav-anchor"></div>', unsafe_allow_html=True)
+            c1,_,c3=st.columns([2,5,4])
+            with c1: render_logo_click("top_logo","landing")
+            with c3:
+                st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
+                a1,a2,a3,a4,a5=st.columns(5,gap="small")
+                with a1:
+                    if st.button("Features",key="top_features",use_container_width=True): nav("features")
+                with a2:
+                    if st.button("Pricing",key="top_pricing",use_container_width=True): nav("pricing")
+                with a3:
+                    if st.button("Contact",key="top_contact",use_container_width=True): nav("contact")
+                with a4:
+                    if st.button("Login",key="top_login",use_container_width=True): nav("login")
+                with a5:
+                    if st.button("Sign Up →",key="top_signup",type="primary",use_container_width=True): nav("signup")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        # Mobile topbar — just the logo (sidebar handles nav)
+        with st.container():
+            st.markdown('<div class="sw-mobile-nav-anchor"></div>', unsafe_allow_html=True)
+            render_logo_click("top_logo_mob","landing")
     st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -2210,15 +2283,9 @@ def render_sidebar():
             </div>''',unsafe_allow_html=True)
             if st.button("Log Out",key="sb_logout",use_container_width=True): logout()
         else:
-            st.markdown('<div style="padding:12px 18px;font-size:12px;color:#374f6e;margin-bottom:8px;">Sign in to access the full dashboard.</div>',unsafe_allow_html=True)
+            st.markdown('<div style="padding:12px 18px;font-size:12px;color:#374f6e;margin-bottom:8px;">Sign in to access StockWins.</div>',unsafe_allow_html=True)
             if st.button("🚀 Sign Up Free",key="sb_signup",use_container_width=True,type="primary"): nav("signup")
             if st.button("Login →",key="sb_login",use_container_width=True): nav("login")
-
-            # ── Navigation links (replaces topbar nav on mobile) ──
-            st.markdown('<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1.5px;text-transform:uppercase;padding:14px 18px 5px;">Explore</div>',unsafe_allow_html=True)
-            if st.button("✨ Features",key="sb_features_link",use_container_width=True): nav("features")
-            if st.button("💰 Pricing",key="sb_pricing_link",use_container_width=True): nav("pricing")
-            if st.button("💬 Contact",key="sb_contact_link",use_container_width=True): nav("contact")
 
             st.markdown("""<div style="margin:14px 10px;background:#080c18;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 14px;">
                 <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1px;text-transform:uppercase;margin-bottom:7px;">Free Includes</div>
@@ -2408,21 +2475,29 @@ def page_landing():
     </style>
     """, unsafe_allow_html=True)
 
-    # ── TOPBAR — Mobile shows logo + hamburger via Streamlit sidebar; Desktop gets full nav ──
-    c1,_,c3=st.columns([2,5,4])
-    with c1: render_logo_click("top_logo_land","landing")
-    with c3:
-        st.markdown('<div class="sw-nav sw-desktop-nav">', unsafe_allow_html=True)
-        a1,a2,a3,a4=st.columns(4,gap="small")
-        with a1:
-            if st.button("Features",key="land_feat",use_container_width=True): nav("features")
-        with a2:
-            if st.button("Pricing",key="land_price",use_container_width=True): nav("pricing")
-        with a3:
-            if st.button("Login",key="land_login",use_container_width=True): nav("login")
-        with a4:
-            if st.button("Sign Up →",key="land_su",type="primary",use_container_width=True): nav("signup")
-        st.markdown('</div>', unsafe_allow_html=True)
+    # ── TOPBAR — Desktop shows logo + full nav; Mobile shows ONLY the logo ──
+    # Desktop version (hidden on mobile via JS in main CSS)
+    with st.container():
+        st.markdown('<div class="sw-desktop-nav-anchor"></div>', unsafe_allow_html=True)
+        c1,_,c3=st.columns([2,5,4])
+        with c1: render_logo_click("top_logo_land","landing")
+        with c3:
+            st.markdown('<div class="sw-nav">', unsafe_allow_html=True)
+            a1,a2,a3,a4=st.columns(4,gap="small")
+            with a1:
+                if st.button("Features",key="land_feat",use_container_width=True): nav("features")
+            with a2:
+                if st.button("Pricing",key="land_price",use_container_width=True): nav("pricing")
+            with a3:
+                if st.button("Login",key="land_login",use_container_width=True): nav("login")
+            with a4:
+                if st.button("Sign Up →",key="land_su",type="primary",use_container_width=True): nav("signup")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # Mobile version (logo only, hidden on desktop via JS)
+    with st.container():
+        st.markdown('<div class="sw-mobile-nav-anchor"></div>', unsafe_allow_html=True)
+        render_logo_click("top_logo_land_mob","landing")
     st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
 
     # ── HERO ──
@@ -2461,15 +2536,17 @@ def page_landing():
         hero_comp = (
             '<style>'
             'body{margin:0;padding:0;background:transparent;font-family:Inter,sans-serif;overflow:hidden;}'
-            '.tab-row{display:flex;gap:24px;margin-bottom:8px;padding:14px 0 0;}'
+            '.tab-row{display:flex;flex-wrap:wrap;gap:14px 18px;margin-bottom:8px;padding:14px 0 0;}'
             '.tab-item{font-size:13px;font-weight:500;color:#374f6e;cursor:pointer;'
             'padding-bottom:5px;border-bottom:2px solid transparent;transition:all 0.2s;white-space:nowrap;}'
             '.tab-item.active{color:#e2e8f0;font-weight:700;border-bottom-color:#2563eb;}'
             '.tab-item:hover{color:#a8bdd4;}'
+            '@media(max-width:768px){.tab-row{gap:10px 14px;}.tab-item{font-size:11px;}}'
             '.dots{display:flex;gap:6px;margin-bottom:10px;}'
             '.dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.15);cursor:pointer;transition:all 0.3s;}'
             '.dot.active{background:#2563eb;width:18px;border-radius:3px;}'
             '.slide-title{font-size:22px;font-weight:900;color:#f1f5f9;letter-spacing:-0.5px;line-height:1.2;margin-bottom:12px;min-height:52px;}'
+            '@media(max-width:768px){.slide-title{font-size:18px;min-height:44px;}}'
             '.hi{color:#2563eb;}.hg{color:#f59e0b;}'
             '</style>'
             '<div>'
@@ -2731,17 +2808,41 @@ def page_landing():
         "🎯📊 Triple Lock":"#4ade80","🦈 Sustained Strength":"#34d399",
     }
     cg_items=list(COMPOSITE_CATS.items())
+    # Wrap signal cards in styled container so we can make them mobile-friendly
+    st.markdown("""
+    <style>
+    .sw-signal-grid [data-testid="stHorizontalBlock"]{flex-wrap:wrap;gap:10px;}
+    .sw-signal-grid .card{padding:12px 14px !important;min-height:78px !important;}
+    @media (max-width:900px){
+        /* 2-column grid on mobile (instead of 1-column stack from global rule) */
+        .sw-signal-grid [data-testid="stHorizontalBlock"]{flex-wrap:wrap !important;gap:8px !important;}
+        .sw-signal-grid [data-testid="stHorizontalBlock"] [data-testid="column"]{
+            min-width:48% !important;max-width:48% !important;flex:1 1 48% !important;
+        }
+        .sw-signal-grid .card{
+            padding:8px 10px !important;
+            min-height:auto !important;
+            margin-bottom:6px !important;
+        }
+        .sw-signal-card-title{font-size:11px !important;line-height:1.3 !important;}
+        .sw-signal-card-desc{font-size:10px !important;line-height:1.4 !important;}
+        .sw-signal-card-badge{font-size:8px !important;padding:1px 5px !important;}
+    }
+    </style>
+    <div class="sw-signal-grid">
+    """, unsafe_allow_html=True)
     cg=st.columns(3,gap="small")
     for i,(cat,(desc,tier)) in enumerate(cg_items):
         with cg[i%3]:
             c=color_map.get(cat,BLUE)
-            tier_b=f'<span style="background:rgba(245,158,11,.12);color:{GOLD};font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(245,158,11,.3);">⭐ PRO</span>' if tier=="premium" else f'<span style="background:rgba(34,197,94,.1);color:#4ade80;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(34,197,94,.3);">FREE</span>'
-            st.markdown(f"""<div class="card" style="border-left:3px solid {c};min-height:90px;">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;">
-                    <div style="font-size:13px;font-weight:700;color:#e2e8f0;">{cat}</div>{tier_b}
+            tier_b=f'<span class="sw-signal-card-badge" style="background:rgba(245,158,11,.12);color:{GOLD};font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(245,158,11,.3);">⭐ PRO</span>' if tier=="premium" else f'<span class="sw-signal-card-badge" style="background:rgba(34,197,94,.1);color:#4ade80;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(34,197,94,.3);">FREE</span>'
+            st.markdown(f"""<div class="card" style="border-left:3px solid {c};">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;gap:6px;">
+                    <div class="sw-signal-card-title" style="font-size:13px;font-weight:700;color:#e2e8f0;">{cat}</div>{tier_b}
                 </div>
-                <div style="font-size:11px;color:#374f6e;line-height:1.5;">{desc}</div>
+                <div class="sw-signal-card-desc" style="font-size:11px;color:#374f6e;line-height:1.5;">{desc}</div>
             </div>""",unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     _,pc,_=st.columns([2,1,2])
     with pc:
