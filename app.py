@@ -1,14 +1,13 @@
 # ═══════════════════════════════════════════════════════════════
-# MARKETSIGNALPRO v7.0 — Premium Fintech SaaS
+# STOCKWINS v7.0 — Premium Fintech SaaS
 # "I trust this. I understand this. I want more."
 # ═══════════════════════════════════════════════════════════════
 
 import streamlit as st
+import streamlit.components.v1 as components
 import requests, pandas as pd, ta, yfinance as yf
 import hashlib, time, random, math, sys, os
 from datetime import datetime, timedelta
-from textwrap import dedent as _dedent
-import html as _html
 
 # Signal Performance Engine
 try:
@@ -52,7 +51,7 @@ except ImportError:
     HAS_PLOTLY = False
 
 st.set_page_config(
-    page_title="MarketSignalPro | AI-Powered Stock Signals",
+    page_title="MarketSignalPro | Spot Market Opportunities First",
     page_icon="📈", layout="wide",
     initial_sidebar_state="auto",
 )
@@ -69,7 +68,7 @@ _SW_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 <path d="M120 340 L120 380 L392 380 L392 340 L120 340 Z" fill="#fff" opacity=".3"/>
 <path d="M140 320 L200 240 L240 280 L320 160 L380 220 L380 240 L320 200 L240 320 L200 280 L160 340 Z" fill="#fff"/>
 <circle cx="380" cy="220" r="14" fill="#f59e0b"/>
-<text x="256" y="450" text-anchor="middle" fill="#fff" font-family="Inter,sans-serif" font-size="56" font-weight="900">MSP</text>
+<text x="256" y="450" text-anchor="middle" fill="#fff" font-family="Inter,sans-serif" font-size="32" font-weight="900">MSP</text>
 </svg>'''
 
 import base64 as _b64
@@ -77,9 +76,9 @@ _icon_b64 = _b64.b64encode(_SW_ICON_SVG.encode()).decode()
 _icon_data_uri = f"data:image/svg+xml;base64,{_icon_b64}"
 
 PWA_MANIFEST_JSON = (
-    '{"name":"MarketSignalPro — AI-Powered Stock Signals",'
+    '{"name":"MarketSignalPro — Premium Stock Intelligence",'
     '"short_name":"MarketSignalPro",'
-    '"description":"AI-powered stock signals, smart watchlists, alerts, and plain-English market insights.",'
+    '"description":"Proprietary stock signals, composite categories, and signal track record.",'
     '"start_url":"/",'
     '"display":"standalone",'
     '"orientation":"portrait",'
@@ -322,7 +321,7 @@ button:active, [role="button"]:active, .stButton button:active {{
 
 <!-- Splash screen (visible only when launched as installed app) -->
 <div id="sw-pwa-splash">
-    <div id="sw-pwa-splash-logo">MSP</div>
+    <div id="sw-pwa-splash-logo">SW</div>
     <div id="sw-pwa-splash-title">MarketSignalPro</div>
     <div id="sw-pwa-splash-tagline">Loading market intelligence…</div>
 </div>
@@ -431,7 +430,7 @@ button:active, [role="button"]:active, .stButton button:active {{
     // Uses a tiny inline SW served as data: URI (since Streamlit has no static root)
     if ('serviceWorker' in navigator) {{
         const swCode = `
-            const CACHE_NAME = 'marketsignalpro-v1';
+            const CACHE_NAME = 'msp-v1';
             self.addEventListener('install', e => self.skipWaiting());
             self.addEventListener('activate', e => e.waitUntil(clients.claim()));
             self.addEventListener('fetch', e => {{
@@ -499,25 +498,13 @@ def hp(pw):  return hashlib.sha256(pw.encode()).hexdigest()
 # ── Module-level DB: persists within the server process across reruns ──
 _GLOBAL_USERS_DB: dict = {}
 
-def _get_global_db() -> dict:
-    """Returns the shared in-process user database. Seeds from Secrets on first call."""
-    global _GLOBAL_USERS_DB
-    if not _GLOBAL_USERS_DB:
-        _GLOBAL_USERS_DB = _load_seed_accounts()
-    return _GLOBAL_USERS_DB
-
-def _save_global_db(db: dict):
-    """Sync session users_db back to global store."""
-    global _GLOBAL_USERS_DB
-    _GLOBAL_USERS_DB = db
-
 # ─────────────────────────────────────────────────────────────
 # FILE-BASED PERSISTENCE (alerts + users readable by worker)
 # ─────────────────────────────────────────────────────────────
 import json as _json, os as _os
 
-ALERTS_DB_PATH = _os.environ.get("ALERTS_DB_PATH", "/tmp/sw_alerts.json")
-USERS_DB_PATH  = _os.environ.get("USERS_DB_PATH",  "/tmp/sw_users.json")
+ALERTS_DB_PATH = _os.environ.get("ALERTS_DB_PATH", "/tmp/msp_alerts.json")
+USERS_DB_PATH  = _os.environ.get("USERS_DB_PATH",  "/tmp/msp_users.json")
 
 def _read_json(path, default=None):
     try:
@@ -534,15 +521,39 @@ def save_alerts_to_file(email, alerts):
     _write_json(ALERTS_DB_PATH, db)
 
 def save_user_to_file(email, user_data):
+    """Save ALL user data to disk — full record so users persist across reboots."""
     db = _read_json(USERS_DB_PATH, {})
-    db[email] = {
-        "name":             user_data.get("name", ""),
-        "role":             user_data.get("role", "free"),
-        "telegram_chat_id": user_data.get("telegram_chat_id", ""),
-        "watchlist":        user_data.get("watchlist", []),
-        "digest_prefs":     user_data.get("digest_prefs", {}),
-        "category_alerts":  user_data.get("category_alerts", []),
-    }
+    db[email] = dict(user_data)  # save EVERYTHING about the user
+    _write_json(USERS_DB_PATH, db)
+
+def load_all_users_from_file() -> dict:
+    """Read full users database from disk."""
+    return _read_json(USERS_DB_PATH, {})
+
+def _get_global_db() -> dict:
+    """Returns the shared user database — ALWAYS merges disk + seed accounts.
+    This ensures users persist across reboots and across browser tabs."""
+    global _GLOBAL_USERS_DB
+    # Start with the seed accounts (always present)
+    seed = _load_seed_accounts()
+    # Merge with disk (disk wins for conflicts — that's the live data)
+    disk = load_all_users_from_file()
+    # Merge: seed first, then overlay disk
+    merged = dict(seed)
+    for email, user_data in disk.items():
+        if email in merged:
+            # Merge per-user dicts so we don't lose seed fields
+            merged[email] = {**merged[email], **user_data}
+        else:
+            merged[email] = user_data
+    _GLOBAL_USERS_DB = merged
+    return _GLOBAL_USERS_DB
+
+def _save_global_db(db: dict):
+    """Sync session users_db back to global store AND write to disk for durability."""
+    global _GLOBAL_USERS_DB
+    _GLOBAL_USERS_DB = db
+    # Persist every user to disk
     _write_json(USERS_DB_PATH, db)
 
 def _load_seed_accounts():
@@ -587,8 +598,8 @@ def stripe_configured():
     return bool(_stripe_key())
 
 def _get_app_url():
-    try: return st.secrets.get("APP_URL","https://marketsignalpro.streamlit.app")
-    except: return "https://marketsignalpro.streamlit.app"
+    try: return st.secrets.get("APP_URL","https://stockwins.streamlit.app")
+    except: return "https://stockwins.streamlit.app"
 
 def create_checkout_session(plan, user_email):
     """Create Stripe Checkout Session. Returns (url, error)."""
@@ -686,7 +697,13 @@ def handle_payment_return():
     try: params = st.query_params.to_dict()
     except: return False
 
-    # ── Topbar HTML-link navigation ──
+    # ── Logout via URL ──
+    if params.get("page") == "__logout__":
+        st.query_params.clear()
+        logout()
+        return True
+
+    # ── Legacy topbar_nav support (backward compat) ──
     if params.get("topbar_nav"):
         target = params.get("topbar_nav","").strip()
         st.query_params.clear()
@@ -791,11 +808,11 @@ html,body,[data-testid="stAppViewContainer"]{{
 div.block-container{{padding:0 !important;max-width:100% !important;}}
 section.main>div{{padding-top:0 !important;}}
 
-/* ── Sidebar (Desktop default) ── */
+/* ── Sidebar (Desktop default — 240px fixed) ── */
 [data-testid="stSidebar"]{{
     background:#080c18 !important;
     border-right:1px solid {BORDER} !important;
-    width:225px !important;min-width:225px !important;max-width:225px !important;
+    width:240px !important;min-width:240px !important;max-width:240px !important;
     position:sticky !important;top:0 !important;
     height:100vh !important;
     transition: margin-left 0.3s ease !important;
@@ -806,8 +823,27 @@ section.main>div{{padding-top:0 !important;}}
     overflow-y:auto !important;
 }}
 
-/* ── Collapse/Expand Button — ALWAYS VISIBLE ── */
-/* The little arrow that toggles the sidebar (Streamlit hides this after collapse — we force it back) */
+/* ── SIDEBAR BUTTON VISIBILITY — always readable by default ── */
+[data-testid="stSidebar"] .stButton>button{{
+    background: rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.18) !important;
+    color: #d1dce8 !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease;
+}}
+[data-testid="stSidebar"] .stButton>button:hover{{
+    background: rgba(37,99,235,0.18) !important;
+    border-color: rgba(37,99,235,0.55) !important;
+    color: #fff !important;
+}}
+[data-testid="stSidebar"] .stButton>button[kind="primary"]{{
+    background: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+}}
+
+/* ── Collapse/Expand Button — ALWAYS VISIBLE — moved to right when open ── */
 [data-testid="collapsedControl"],
 [data-testid="stSidebarCollapseButton"],
 button[kind="header"][data-testid="baseButton-header"],
@@ -847,10 +883,10 @@ button[kind="header"][data-testid="baseButton-header"],
     fill: #93b4fd !important;
 }}
 
-/* When sidebar is OPEN, move the collapse button to top of sidebar (inside it) */
+/* When sidebar is OPEN, move the collapse button to the RIGHT side of the sidebar (inside it) */
 [data-testid="stSidebar"][aria-expanded="true"] ~ * [data-testid="collapsedControl"],
 [data-testid="stSidebar"]:not([aria-expanded="false"]) ~ * [data-testid="collapsedControl"]{{
-    left: 188px !important;
+    left: 196px !important;  /* near right edge of 240px sidebar */
 }}
 
 /* ── Base Button ── */
@@ -1062,6 +1098,18 @@ button[aria-label="👑 Upgrade to Premium"]:hover {{
 .pg{{padding:20px 28px 40px;}}
 .div-line{{border-bottom:1px solid {BORDER};margin:20px 0;}}
 
+/* ── Page container — constrains content width on wide screens ── */
+.page-wrap{{
+    max-width:1340px;
+    width:100%;
+    margin:0 auto;
+    padding:20px 28px 40px;
+    box-sizing:border-box;
+}}
+@media(max-width:900px){{
+    .page-wrap{{padding:12px 14px 28px !important;}}
+}}
+
 /* Hero */
 .hero-h1{{font-size:48px;font-weight:900;color:#f1f5f9;line-height:1.05;letter-spacing:-2px;margin-bottom:12px;}}
 .hero-h1 .hi{{color:{BLUE};}}
@@ -1183,35 +1231,43 @@ button[role="tab"][aria-selected="true"]{{
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 8px;
-    margin-bottom: 18px;
+    padding: 6px 0;          /* reduced vertical height */
+    margin: 0 0 12px 0;       /* tighter spacing under header */
     gap: 24px;
+    min-height: 56px;        /* shorter than before */
 }}
-.sw-topbar-logo {{ flex-shrink: 0; }}
+.sw-topbar-logo {{
+    flex-shrink: 0;
+    margin-right: 24px;
+}}
 .sw-topbar-nav {{
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
     flex-wrap: nowrap;
+    margin-right: auto;       /* push nav farther left, away from user widget */
+    margin-left: 12px;
 }}
 .sw-topbar-link {{
     font-family: 'Inter', sans-serif;
-    font-size: 13px;
-    font-weight: 500;
-    color: #a8bdd4 !important;
+    font-size: 15px;          /* bigger */
+    font-weight: 600;
+    color: #cbd5e1 !important;
     text-decoration: none !important;
-    padding: 8px 14px;
-    border: 1px solid rgba(255,255,255,0.15);
-    background: rgba(255,255,255,0.04);
-    border-radius: 7px;
+    padding: 11px 22px;       /* larger touch targets */
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
     transition: all 0.18s ease;
     white-space: nowrap;
     cursor: pointer;
+    min-width: 92px;          /* uniform pill width */
+    text-align: center;
 }}
 .sw-topbar-link:hover {{
-    border-color: rgba(37,99,235,0.5);
-    background: rgba(37,99,235,0.1);
-    color: #93b4fd !important;
+    border-color: rgba(37,99,235,0.6);
+    background: rgba(37,99,235,0.12);
+    color: #fff !important;
 }}
 .sw-topbar-link.active {{
     background: #2563eb !important;
@@ -1239,19 +1295,20 @@ button[role="tab"][aria-selected="true"]{{
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    border: 1px solid rgba(255,255,255,0.15);
-    background: rgba(255,255,255,0.04);
-    border-radius: 7px;
-    color: #a8bdd4 !important;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    color: #cbd5e1 !important;
     text-decoration: none !important;
     font-size: 16px;
     transition: all 0.18s ease;
 }}
 .sw-topbar-icon:hover {{
-    background: rgba(37,99,235,0.1);
+    background: rgba(37,99,235,0.12);
     border-color: rgba(37,99,235,0.5);
+    color: #fff !important;
 }}
 
 /* ── MOBILE TOPBAR styling (pure HTML) ── */
@@ -1361,147 +1418,6 @@ button[role="tab"][aria-selected="true"]{{
 </style>
 """, unsafe_allow_html=True)
 
-
-
-st.markdown("""
-<style>
-/* ─────────────────────────────────────────────────────────────
-   MSP FINAL LANDING PATCH
-   Use safe max-width wrappers as guardrails only; do not force components to fill them.
-───────────────────────────────────────────────────────────── */
-:root { --msp-safe-max: 1180px; --msp-safe-pad: 28px; }
-.sw-desktop-topbar {
-  width: 100% !important;
-  max-width: none !important;
-  padding-left: max(36px, calc((100vw - var(--msp-safe-max)) / 2)) !important;
-  padding-right: max(36px, calc((100vw - var(--msp-safe-max)) / 2)) !important;
-}
-.sw-topbar-logo { margin-left: 0 !important; }
-.sw-topbar-nav { margin-left: auto !important; margin-right: 0 !important; }
-.sw-divider { width: 100% !important; max-width: none !important; margin: 0 0 18px !important; }
-.sw-hero-row {
-  width: min(var(--msp-safe-max), calc(100vw - 56px)) !important;
-  max-width: var(--msp-safe-max) !important;
-  margin: 0 auto !important;
-  padding: 18px 0 0 !important;
-  overflow: visible !important;
-}
-.sw-hero-left-block {
-  padding: 22px 0 18px 0 !important;
-  max-width: 430px !important;
-}
-.sw-hero-demo-wrap {
-  width: min(560px, 100%) !important;
-  max-width: 560px !important;
-  margin-left: auto !important;
-  padding-top: 10px !important;
-  overflow: visible !important;
-}
-.sw-hero-demo-wrap * { box-sizing: border-box !important; }
-.msp-hero-tabs { display:flex; flex-wrap:wrap; gap:14px 18px; margin-bottom:8px; align-items:center; }
-.msp-hero-tabs span { font-size:13px; font-weight:500; color:#374f6e; padding-bottom:5px; border-bottom:2px solid transparent; white-space:nowrap; }
-.msp-hero-tabs span.active { color:#e2e8f0; font-weight:800; border-bottom-color:#2563eb; }
-.msp-hero-dots { display:flex; gap:6px; margin:4px 0 10px; }
-.msp-hero-dots span { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.15); display:block; }
-.msp-hero-dots span.active { width:18px; border-radius:3px; background:#2563eb; }
-.msp-hero-title { font-size:22px; font-weight:900; color:#f1f5f9; line-height:1.15; letter-spacing:-.5px; margin-bottom:12px; }
-.msp-hero-title span { color:#2563eb; }
-.msp-hero-demo-card { width:100%; max-width:560px; overflow:hidden; }
-.msp-hero-demo-card > div { max-width:100% !important; }
-.sw-hero-row .stButton,
-.sw-hero-row .stButton > button,
-button[aria-label="🚀 Create Free Account"],
-button[aria-label="Sign In"] {
-  width: min(420px, 100%) !important;
-  max-width: 420px !important;
-  flex: 0 0 auto !important;
-}
-.sw-feat-grid {
-  width: min(1120px, calc(100vw - 56px)) !important;
-  max-width:1120px !important;
-  margin-left:auto !important;
-  margin-right:auto !important;
-  padding-left:0 !important;
-  padding-right:0 !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap:28px !important;
-}
-.sw-feat-grid .sw-demo-wrap,
-.sw-feat-grid .sw-prem-box { width:100% !important; max-width:100% !important; }
-.sw-feat-grid .sw-demo-wrap > div { max-width:100% !important; }
-.msp-signal-grid-wrap {
-  width: min(1120px, calc(100vw - 56px)) !important;
-  max-width:1120px !important;
-  margin: 0 auto !important;
-  overflow: visible !important;
-}
-.msp-signal-grid {
-  display:grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap:10px 14px !important;
-  align-items:stretch !important;
-}
-.msp-signal-card {
-  background:#0d1525;
-  border:1px solid rgba(255,255,255,.08);
-  border-left:3px solid #2563eb;
-  border-radius:10px;
-  padding:12px 14px;
-  min-height:78px;
-  max-width:100%;
-  box-sizing:border-box;
-}
-.msp-signal-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }
-.msp-signal-card-title { font-size:13px; font-weight:800; color:#e2e8f0; line-height:1.25; }
-.msp-signal-card-desc { font-size:11px; color:#374f6e; line-height:1.45; }
-.sw-signal-card-badge { font-size:9px; font-weight:800; padding:2px 6px; border-radius:3px; white-space:nowrap; }
-.sw-signal-card-badge.pro { color:#f59e0b; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3); }
-.sw-signal-card-badge.free { color:#4ade80; background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); }
-button[aria-label="👑 Unlock Premium Access — Start Today"] {
-  max-width: 760px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-}
-.sw-hero-demo-wrap pre,
-.sw-hero-demo-wrap code { display:none !important; }
-@media (max-width:900px) {
-  .sw-hero-row { width:calc(100vw - 28px) !important; }
-  .sw-hero-demo-wrap { margin-left:0 !important; width:100% !important; max-width:100% !important; }
-  .sw-feat-grid { width:calc(100vw - 28px) !important; grid-template-columns:1fr !important; }
-  .msp-signal-grid-wrap { width:calc(100vw - 28px) !important; }
-  .msp-signal-grid { grid-template-columns:repeat(2, minmax(0, 1fr)) !important; gap:8px !important; }
-  .msp-signal-card { padding:9px 10px; min-height:auto; }
-  .msp-signal-card-title { font-size:11px; }
-  .msp-signal-card-desc { font-size:10px; }
-}
-@media (max-width:560px) { .msp-signal-grid { grid-template-columns:1fr !important; } }
-</style>
-""", unsafe_allow_html=True)
-
-
-
-st.markdown("""
-<style>
-/* MSP emergency layout guardrails */
-.msp-signal-grid-wrap, .msp-landing-hero { overflow-x: hidden !important; }
-.msp-signal-grid { width:100% !important; }
-.msp-signal-card pre, .msp-signal-card code, .msp-hero-preview pre, .msp-hero-preview code { display:none !important; }
-</style>
-""", unsafe_allow_html=True)
-
-
-
-st.markdown("""
-<style>
-/* MSP hero/category sizing refinement */
-.msp-signal-grid-wrap { width:min(1120px, calc(100vw - 56px)) !important; max-width:1120px !important; margin-left:auto !important; margin-right:auto !important; overflow:visible !important; }
-.msp-signal-grid { display:grid !important; grid-template-columns:repeat(3, minmax(260px, 1fr)) !important; gap:10px 14px !important; align-items:stretch !important; }
-.msp-signal-card { min-height:76px !important; height:auto !important; }
-@media (max-width:900px) { .msp-signal-grid { grid-template-columns:repeat(2, minmax(0, 1fr)) !important; } }
-@media (max-width:560px) { .msp-signal-grid { grid-template-columns:1fr !important; } }
-</style>
-""", unsafe_allow_html=True)
-
 # ─────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────
@@ -1548,7 +1464,15 @@ PREM_COMPOSITE  = [k for k,(d,t) in COMPOSITE_CATS.items() if t=="premium"]
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
 def init():
-    if "initialized" in st.session_state: return
+    # ── Always reload users_db from disk on every session start ──
+    # This ensures registered users survive container restarts
+    if "users_db" not in st.session_state:
+        st.session_state.users_db = _get_global_db()
+
+    if "initialized" in st.session_state:
+        # Even after init, refresh users_db from disk so new signups in other tabs are visible
+        st.session_state.users_db = _get_global_db()
+        return
     st.session_state.initialized=True
     st.session_state.update({
         "page":"landing","user":None,"role":"guest",
@@ -1558,7 +1482,7 @@ def init():
         "users_db":_get_global_db(),
         "site_stats":{"total_signups":1847,"premium_users":312,"daily_active":634,"conversion":16.9},
         "email_digest_enabled":False,"digest_frequency":"Daily",
-        "ranking_sort":"Signal Score","ranking_filter":"All",
+        "ranking_sort":"SW Score","ranking_filter":"All",
     })
 init()
 
@@ -1566,6 +1490,8 @@ init()
 # AUTH
 # ─────────────────────────────────────────────────────────────
 def login(email, pw):
+    # Always reload users_db from disk first (in case signups happened in other tabs)
+    st.session_state.users_db = _get_global_db()
     db=st.session_state.users_db
     if email in db and db[email]["pw"]==hp(pw):
         st.session_state.user={"email":email,"name":db[email]["name"]}
@@ -1573,18 +1499,36 @@ def login(email, pw):
         # Load this user's alerts from file
         user_alerts_db = _read_json(ALERTS_DB_PATH, {})
         st.session_state.alerts = user_alerts_db.get(email, [])
+        # Load watchlist from user record
+        st.session_state.watchlist = db[email].get("watchlist", [])
         return True
     return False
 
-def signup(email, pw, name):
+def signup(email, pw, first_name, last_name=""):
+    """Register a new user. Accepts first+last name (last name optional for backward compatibility)."""
+    full_name = f"{first_name} {last_name}".strip() if last_name else first_name
+    # Always reload users_db from disk first
+    st.session_state.users_db = _get_global_db()
     db=st.session_state.users_db
     if email in db: return False,"Account already exists."
-    db[email]={"pw":hp(pw),"name":name,"role":"free","verified":False,
-               "joined":datetime.now().strftime("%Y-%m-%d"),"plan":"Free"}
-    _save_global_db(db)  # persist to process-level store
-    save_user_to_file(email, db[email])  # persist to file for worker
+    db[email]={
+        "pw":hp(pw),
+        "name":full_name,
+        "first_name": first_name,
+        "last_name": last_name,
+        "role":"free",
+        "verified":False,
+        "joined":datetime.now().strftime("%Y-%m-%d"),
+        "plan":"Free",
+        "watchlist": [],
+        "saved_screeners": [],
+        "watchlist_notes": {},
+        "recently_viewed": [],
+    }
+    _save_global_db(db)  # persist to process-level store AND disk
+    save_user_to_file(email, db[email])  # double-save to file for worker visibility
     st.session_state.site_stats["total_signups"]+=1
-    st.session_state.user={"email":email,"name":name}
+    st.session_state.user={"email":email,"name":full_name}
     st.session_state.role="free"
     return True,""
 
@@ -1604,36 +1548,56 @@ def is_premium(): return st.session_state.get("role") in ("owner","admin","premi
 def is_authed():  return st.session_state.get("user") is not None
 
 def nav(p):
+    """Navigate to a page and update URL params so browser back/forward works."""
     cur = st.session_state.get("page")
     if cur and cur != p:
         hist = st.session_state.get("_page_hist", [])
-        # Don't add duplicates
         if not hist or hist[-1] != cur:
             hist.append(cur)
         if len(hist) > 20: hist = hist[-20:]
         st.session_state["_page_hist"] = hist
     st.session_state.prev_page = cur
     st.session_state.page = p
+    # ── Update URL so browser back/forward works natively ──
+    try:
+        st.query_params["page"] = p
+    except Exception:
+        pass
     st.rerun()
 
 def go_back():
+    """Back button helper — navigates via in-app history."""
     hist = st.session_state.get("_page_hist", [])
     if hist:
         prev = hist.pop()
         st.session_state["_page_hist"] = hist
         st.session_state.page = prev
+        try: st.query_params["page"] = prev
+        except: pass
         st.rerun()
     else:
         nav("discover" if is_authed() else "landing")
 
 def back_button(key="page_back"):
-    """Render a sticky back button at the top of any page."""
-    st.markdown('<div class="sw-back-btn-wrap">', unsafe_allow_html=True)
-    bc1, _ = st.columns([1, 6])
-    with bc1:
-        if st.button("← Back", key=key, use_container_width=True):
-            go_back()
-    st.markdown('</div>', unsafe_allow_html=True)
+    """No-op: in-page Back button removed per design. Users navigate via logo (home) or browser back."""
+    pass
+
+def _restore_page_from_url():
+    """On initial page load, check URL for ?page= and restore navigation state."""
+    try:
+        params = st.query_params.to_dict() if hasattr(st.query_params, 'to_dict') else dict(st.query_params)
+    except Exception:
+        return
+    url_page = params.get("page", "")
+    if url_page:
+        valid = {"landing","features","login","signup","verify_email","forgot_pw","pricing",
+                 "contact","dashboard","discover","watchlist","screener","bi_dashboard",
+                 "stock_detail","settings","admin","signal_track"}
+        if url_page in valid and st.session_state.get("page") != url_page:
+            st.session_state.page = url_page
+
+# Restore page from URL on every run — supports browser back/forward
+_restore_page_from_url()
 # ─────────────────────────────────────────────────────────────
 # EXCEL EXPORT
 # ─────────────────────────────────────────────────────────────
@@ -2183,7 +2147,7 @@ def render_cat(cat,limit=10,show_why=False):
             q=get_quote(t); df=yf_ohlcv(t,60); info=yf_fund(t); sent=st_sent(t)
             sc,bd,op,risk,conf=compute_scores(df,info,sent); ig=get_insights(df,info)
             if q: stocks.append({"t":t,"q":q,"sc":sc,"bd":bd,"ig":ig,"op":op,"risk":risk,"conf":conf,"hot":t in hot,"df":df,"info":info,"sent":sent,"comp":sc,"why":""})
-        prog.empty()
+        prog_container.empty()
         stocks.sort(key=lambda x:x["sc"],reverse=True)
     if not stocks:
         st.markdown('''<div style="background:#0d1525;border:1px solid rgba(255,255,255,0.08);
@@ -2284,7 +2248,7 @@ NAV_CSS = """<style>
 
 LOGO_HTML = """<div class="sw-logo-click-target">
 <span style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;letter-spacing:-0.5px;">
-<span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+<span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
 </span></div>"""
 
 def render_logo_click(key,dest):
@@ -2398,9 +2362,15 @@ def render_topbar(active=""):
     # DESKTOP TOPBAR — pure HTML/CSS so we can reliably hide on mobile
     # Uses URL params for navigation (no Streamlit button machinery)
     # ════════════════════════════════════════════════════════════
+    msp_logo_desktop = '''<span style="font-family:'Inter',sans-serif;font-size:28px;font-weight:900;letter-spacing:-1px;display:inline-flex;align-items:center;">
+        <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+    </span>'''
+    msp_logo_mobile = '''<span style="font-family:'Inter',sans-serif;font-size:22px;font-weight:900;letter-spacing:-0.8px;display:inline-flex;align-items:center;">
+        <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+    </span>'''
     if is_authed():
         pages=[("Dashboard","dashboard"),("Discover","discover"),("Watchlist","watchlist"),
-               ("Screener","screener"),("BI Analytics","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
+               ("Screener","screener"),("BI","bi_dashboard"),("Pricing","pricing"),("Contact","contact")]
         if is_admin(): pages.append(("🛠 Admin","admin"))
 
         ri={"owner":"👑","admin":"🛡️","premium":"⭐","free":"👤"}.get(st.session_state.role,"👤")
@@ -2410,22 +2380,18 @@ def render_topbar(active=""):
         nav_links = ""
         for lbl, pg in pages:
             is_active_cls = " active" if active == pg else ""
-            nav_links += f'<a href="?topbar_nav={pg}" class="sw-topbar-link{is_active_cls}">{lbl}</a>'
+            nav_links += f'<a href="?page={pg}" class="sw-topbar-link{is_active_cls}">{lbl}</a>'
 
         st.markdown(f"""
         <div class="sw-desktop-topbar">
             <div class="sw-topbar-logo">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
-                    <a href="?topbar_nav=dashboard" style="text-decoration:none;">
-                        <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
-                    </a>
-                </span>
+                <a href="?page=dashboard" style="text-decoration:none;">{msp_logo_desktop}</a>
             </div>
             <div class="sw-topbar-nav">{nav_links}</div>
             <div class="sw-topbar-user">
                 <span style="font-size:12px;color:#6b7fa0;white-space:nowrap;">{ri} {user_name}</span>
-                <a href="?topbar_nav=settings" class="sw-topbar-icon" title="Settings">⚙️</a>
-                <a href="?topbar_nav=__logout__" class="sw-topbar-icon" title="Log out">↩️</a>
+                <a href="?page=settings" class="sw-topbar-icon" title="Settings">⚙️</a>
+                <a href="?page=__logout__" class="sw-topbar-icon" title="Log out">↩️</a>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -2433,12 +2399,8 @@ def render_topbar(active=""):
         # Mobile-only topbar: logo + tiny settings icon
         st.markdown(f"""
         <div class="sw-mobile-topbar-bar">
-            <a href="?topbar_nav=dashboard" class="sw-mobile-logo">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
-                    <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
-                </span>
-            </a>
-            <a href="?topbar_nav=settings" class="sw-mobile-icon">⚙️</a>
+            <a href="?page=dashboard" class="sw-mobile-logo">{msp_logo_mobile}</a>
+            <a href="?page=settings" class="sw-mobile-icon">⚙️</a>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -2446,18 +2408,14 @@ def render_topbar(active=""):
         st.markdown(f"""
         <div class="sw-desktop-topbar">
             <div class="sw-topbar-logo">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
-                    <a href="?topbar_nav=landing" style="text-decoration:none;">
-                        <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
-                    </a>
-                </span>
+                <a href="?page=landing" style="text-decoration:none;">{msp_logo_desktop}</a>
             </div>
             <div class="sw-topbar-nav">
-                <a href="?topbar_nav=features" class="sw-topbar-link">Features</a>
-                <a href="?topbar_nav=pricing" class="sw-topbar-link">Pricing</a>
-                <a href="?topbar_nav=contact" class="sw-topbar-link">Contact</a>
-                <a href="?topbar_nav=login" class="sw-topbar-link">Login</a>
-                <a href="?topbar_nav=signup" class="sw-topbar-link primary">Sign Up →</a>
+                <a href="?page=features" class="sw-topbar-link">Features</a>
+                <a href="?page=pricing" class="sw-topbar-link">Pricing</a>
+                <a href="?page=contact" class="sw-topbar-link">Contact</a>
+                <a href="?page=login" class="sw-topbar-link">Login</a>
+                <a href="?page=signup" class="sw-topbar-link primary">Sign Up →</a>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -2465,11 +2423,7 @@ def render_topbar(active=""):
         # Mobile-only: just the logo
         st.markdown(f"""
         <div class="sw-mobile-topbar-bar">
-            <a href="?topbar_nav=landing" class="sw-mobile-logo">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
-                    <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
-                </span>
-            </a>
+            <a href="?page=landing" class="sw-mobile-logo">{msp_logo_mobile}</a>
         </div>
         """, unsafe_allow_html=True)
     st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
@@ -2537,7 +2491,7 @@ def render_footer():
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:24px;margin-bottom:24px;">
                 <div>
                     <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-.5px;">
-                        <span style="color:#e2e8f0;">Market</span><span style="color:{GOLD};">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                        <span style="color:#e2e8f0;">Stock</span><span style="color:{GOLD};">W</span><span style="color:#e2e8f0;">ins</span>
                     </span>
                     <div style="font-size:12px;color:rgba(255,255,255,.2);margin-top:6px;">Market Intelligence Platform</div>
                 </div>
@@ -2715,7 +2669,7 @@ def page_landing():
         <div class="sw-topbar-logo">
             <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.5px;">
                 <a href="?topbar_nav=landing" style="text-decoration:none;">
-                    <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                    <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
                 </a>
             </span>
         </div>
@@ -2729,7 +2683,7 @@ def page_landing():
     <div class="sw-mobile-topbar-bar">
         <a href="?topbar_nav=landing" class="sw-mobile-logo">
             <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
-                <span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span>
+                <span style="color:#e2e8f0;">Stock</span><span style="color:#f59e0b;">W</span><span style="color:#e2e8f0;">ins</span>
             </span>
         </a>
     </div>
@@ -2737,116 +2691,95 @@ def page_landing():
     """, unsafe_allow_html=True)
 
     # ── HERO ──
-    # Native Streamlit/HTML render. This avoids iframe/raw-code issues while keeping the hero
-    # within a visual max-width guardrail instead of forcing it full-screen.
-    st.markdown(f"""
-    <style>
-    .msp-hero-shell {{
-        width: min(1440px, calc(100vw - 56px));
-        max-width: 1440px;
-        margin: 0 auto;
-        padding: 42px 0 42px;
-        overflow: visible;
-    }}
-    .msp-hero-grid {{
-        display: grid;
-        grid-template-columns: minmax(430px, 520px) minmax(620px, 720px);
-        gap: 86px;
-        align-items: start;
-        justify-content: center;
-    }}
-    .msp-hero-copy {{ min-width:0; padding-top: 4px; }}
-    .msp-hero-eyebrow {{
-        font-size: 11px; font-weight: 800; color: {BLUE};
-        letter-spacing: 2.7px; text-transform: uppercase; margin-bottom: 18px;
-    }}
-    .msp-hero-headline {{
-        font-size: 52px; line-height: 1.03; letter-spacing: -2px;
-        font-weight: 950; color: #f1f5f9; margin: 0 0 20px;
-    }}
-    .msp-hero-headline .blue {{ color:{BLUE}; }}
-    .msp-hero-headline .gold {{ color:{GOLD}; }}
-    .msp-hero-subcopy {{
-        color:#3d5270; font-size:16px; line-height:1.75;
-        max-width: 480px; margin-bottom: 32px;
-    }}
-    .msp-hero-actions {{ width: min(440px, 100%); }}
-    .msp-hero-primary, .msp-hero-secondary {{
-        display:flex; align-items:center; justify-content:center;
-        width:100%; min-height:50px; border-radius:9px;
-        font-size:14px; font-weight:800; text-decoration:none !important;
-        box-sizing:border-box;
-    }}
-    .msp-hero-primary {{ background:{BLUE}; color:white !important; border:1px solid {BLUE}; }}
-    .msp-hero-primary:hover {{ background:#1d4ed8; box-shadow:0 8px 26px rgba(37,99,235,.32); }}
-    .msp-hero-secondary {{ background:rgba(255,255,255,.045); color:#cfe2ff !important; border:1px solid rgba(255,255,255,.18); }}
-    .msp-hero-secondary:hover {{ border-color:rgba(37,99,235,.55); background:rgba(37,99,235,.12); }}
-    .msp-hero-small {{ text-align:center; font-size:12px; color:#6b7fa0; padding:14px 0 8px; }}
-    .msp-hero-trust {{
-        display:flex; align-items:center; justify-content:center; gap:13px; flex-wrap:wrap;
-        margin-top:18px; font-size:11px; color:#4a5e7a;
-    }}
-    .msp-preview-wrap {{ width: min(700px, 100%); overflow: hidden; }}
-    .msp-preview-tabs {{ display:flex; flex-wrap:wrap; gap:12px 18px; margin-bottom:10px; align-items:center; }}
-    .msp-preview-tab {{
-        color:#374f6e; font-family:Inter,sans-serif; font-size:13px; font-weight:600;
-        padding:0 0 7px; border-bottom:2px solid transparent; white-space:nowrap;
-    }}
-    .msp-preview-tab:first-child {{ color:#e2e8f0; font-weight:850; border-bottom-color:#2563eb; }}
-    .msp-preview-dots {{ display:flex; gap:7px; margin:5px 0 13px; }}
-    .msp-preview-dots span {{ width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.16); display:block; }}
-    .msp-preview-dots span:first-child {{ width:21px; border-radius:5px; background:#2563eb; }}
-    .msp-preview-title {{ font-size:27px; font-weight:950; color:#f1f5f9; line-height:1.12; letter-spacing:-.7px; margin-bottom:14px; }}
-    .msp-preview-title span {{ color:#2563eb; }}
-    .msp-preview-card {{ width:100%; max-width:700px; overflow:hidden; }}
-    .msp-preview-card > div {{ max-width:100% !important; width:100% !important; box-sizing:border-box !important; }}
-    .msp-preview-card * {{ box-sizing:border-box !important; }}
-    @media (max-width: 1180px) {{
-        .msp-hero-shell {{ width:calc(100vw - 36px); padding:34px 0; }}
-        .msp-hero-grid {{ grid-template-columns:1fr; gap:38px; }}
-        .msp-hero-copy {{ text-align:center; }}
-        .msp-hero-subcopy, .msp-hero-actions {{ margin-left:auto; margin-right:auto; }}
-        .msp-preview-wrap {{ margin:0 auto; }}
-        .msp-hero-headline {{ font-size:40px; }}
-    }}
-    @media (max-width: 560px) {{
-        .msp-hero-shell {{ width:calc(100vw - 24px); }}
-        .msp-hero-headline {{ font-size:32px; }}
-        .msp-preview-wrap {{ display:none; }}
-    }}
-    </style>
-    <section class="msp-hero-shell">
-      <div class="msp-hero-grid">
-        <div class="msp-hero-copy">
-          <div class="msp-hero-eyebrow">Smart Stock Discovery Platform</div>
-          <h1 class="msp-hero-headline">Spot Market<br>Opportunities<br><span class="blue">Before They</span><br><span class="gold">Get Crowded</span></h1>
-          <div class="msp-hero-subcopy">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
-          <div class="msp-hero-actions">
-            <a class="msp-hero-primary" href="?topbar_nav=signup" target="_self">🚀&nbsp; Create Free Account</a>
-            <div class="msp-hero-small">Already have an account?</div>
-            <a class="msp-hero-secondary" href="?topbar_nav=login" target="_self">Sign In</a>
-            <div class="msp-hero-trust"><span>✓ Free forever plan</span><span>·</span><span>✓ No credit card</span><span>·</span><span>✓ Setup in 30 seconds</span></div>
-          </div>
+    p_idx=st.session_state.get("hero_panel",0)
+    st.markdown('<div class="sw-hero-row">', unsafe_allow_html=True)
+    hl,hr=st.columns([5,5],gap="large")
+    with hl:
+        st.markdown(f"""
+        <div class="sw-hero-left-block" style="padding:48px 0 32px 48px;">
+            <div style="font-size:11px;font-weight:700;color:{BLUE};letter-spacing:2.5px;text-transform:uppercase;margin-bottom:16px;">Smart Stock Discovery Platform</div>
+            <div class="hero-h1">Spot Market<br>Opportunities<br><span class="hi">Before They</span><br><span class="hg">Get Crowded</span></div>
+            <div class="hero-sub">Discover trending stocks, squeeze candidates, and momentum shifts using our proprietary 17-signal composite scoring.</div>
         </div>
-        <div class="msp-preview-wrap">
-          <div class="msp-preview-tabs">
-            <span class="msp-preview-tab">📊 Market Overview</span>
-            <span class="msp-preview-tab">💥 Squeeze Radar</span>
-            <span class="msp-preview-tab">💡 Smart Insights</span>
-            <span class="msp-preview-tab">🎯 Score Breakdown</span>
-          </div>
-          <div class="msp-preview-dots"><span></span><span></span><span></span><span></span><span></span></div>
-          <div class="msp-preview-stage">
-            <div class="msp-preview-slide"><div class="msp-preview-title">Find Trending Stocks<br><span>Before the Crowd</span></div><div class="msp-preview-card">{DEMO[0]}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">Scan For Short Squeeze<br><span>Candidates</span></div><div class="msp-preview-card">{DEMO[1]}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">Plain-English Signals<br><span>That Make Sense</span></div><div class="msp-preview-card">{DEMO[2]}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">Understand Every<br><span>Signal Score</span></div><div class="msp-preview-card">{DEMO_SCORE}</div></div>
-            <div class="msp-preview-slide"><div class="msp-preview-title">BI Analytics &<br><span>Opportunity Matrix</span></div><div class="msp-preview-card">{DEMO_BI}</div></div>
-          </div>
+        """, unsafe_allow_html=True)
+
+        # ── Single CTA section (works on all screens) ──
+        if st.button("🚀 Create Free Account", key="h_su", type="primary", use_container_width=True): nav("signup")
+        st.markdown('<div style="text-align:center;font-size:13px;color:#6b7fa0;padding:14px 0 6px;">Already have an account?</div>', unsafe_allow_html=True)
+        if st.button("Sign In", key="h_login", use_container_width=True): nav("login")
+
+        # Trust line under CTA
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:18px;font-size:11px;color:#4a5e7a;flex-wrap:wrap;">
+            <span>✓ Free forever plan</span>
+            <span>·</span>
+            <span>✓ No credit card</span>
+            <span>·</span>
+            <span>✓ Setup in 30 seconds</span>
         </div>
-      </div>
-    </section>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+
+    with hr:
+        # Self-contained auto-advancing slideshow — rendered in isolated iframe
+        # NOTE: do NOT wrap components.html() in st.markdown divs — causes DOM issues
+        hero_comp = (
+            '<style>'
+            'body{margin:0;padding:0;background:transparent;font-family:Inter,sans-serif;overflow:hidden;}'
+            '.tab-row{display:flex;flex-wrap:wrap;gap:14px 18px;margin-bottom:8px;padding:14px 0 0;}'
+            '.tab-item{font-size:13px;font-weight:500;color:#374f6e;cursor:pointer;'
+            'padding-bottom:5px;border-bottom:2px solid transparent;transition:all 0.2s;white-space:nowrap;}'
+            '.tab-item.active{color:#e2e8f0;font-weight:700;border-bottom-color:#2563eb;}'
+            '.tab-item:hover{color:#a8bdd4;}'
+            '@media(max-width:768px){.tab-row{gap:10px 14px;}.tab-item{font-size:11px;}}'
+            '.dots{display:flex;gap:6px;margin-bottom:10px;}'
+            '.dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.15);cursor:pointer;transition:all 0.3s;}'
+            '.dot.active{background:#2563eb;width:18px;border-radius:3px;}'
+            '.slide-title{font-size:22px;font-weight:900;color:#f1f5f9;letter-spacing:-0.5px;line-height:1.2;margin-bottom:12px;min-height:52px;}'
+            '@media(max-width:768px){.slide-title{font-size:18px;min-height:44px;}}'
+            '.hi{color:#2563eb;}.hg{color:#f59e0b;}'
+            '</style>'
+            '<div>'
+            '<div class="tab-row">'
+            '<div class="tab-item active" id="t0" onclick="sw(0)">📊 Market Overview</div>'
+            '<div class="tab-item" id="t1" onclick="sw(1)">💥 Squeeze Radar</div>'
+            '<div class="tab-item" id="t2" onclick="sw(2)">💡 Smart Insights</div>'
+            '<div class="tab-item" id="t3" onclick="sw(3)">🎯 Score Breakdown</div>'
+            '<div class="tab-item" id="t4" onclick="sw(4)">📈 BI Analytics</div>'
+            '</div>'
+            '<div class="dots">'
+            '<div class="dot active" id="d0" onclick="sw(0)"></div>'
+            '<div class="dot" id="d1" onclick="sw(1)"></div>'
+            '<div class="dot" id="d2" onclick="sw(2)"></div>'
+            '<div class="dot" id="d3" onclick="sw(3)"></div>'
+            '<div class="dot" id="d4" onclick="sw(4)"></div>'
+            '</div>'
+            '<div id="h0" class="slide-title">Find Trending Stocks<br><span class="hi">Before the Crowd</span></div>'
+            '<div id="h1" class="slide-title" style="display:none">Scan For Short Squeeze<br><span class="hi">Candidates</span></div>'
+            '<div id="h2" class="slide-title" style="display:none">Smart Insights<br>in <span class="hi">Simple Language</span></div>'
+            '<div id="h3" class="slide-title" style="display:none">Premium <span class="hg">Score Breakdowns</span><br>&amp; Deep Analysis</div>'
+            '<div id="h4" class="slide-title" style="display:none">BI Analytics &amp;<br><span class="hi">Opportunity Matrix</span></div>'
+            '<div id="p0">' + DEMO[0] + '</div>'
+            '<div id="p1" style="display:none">' + DEMO[1] + '</div>'
+            '<div id="p2" style="display:none">' + DEMO[2] + '</div>'
+            '<div id="p3" style="display:none">' + DEMO_SCORE + '</div>'
+            '<div id="p4" style="display:none">' + DEMO_BI + '</div>'
+            '</div>'
+            '<script>'
+            'var c=0;'
+            'function sw(n){'
+            '  for(var i=0;i<5;i++){'
+            '    document.getElementById("t"+i).className="tab-item"+(i===n?" active":"");'
+            '    document.getElementById("d"+i).className="dot"+(i===n?" active":"");'
+            '    document.getElementById("h"+i).style.display=i===n?"block":"none";'
+            '    document.getElementById("p"+i).style.display=i===n?"block":"none";'
+            '  }'
+            '  c=n;'
+            '}'
+            'setInterval(function(){sw((c+1)%5);},5000);'
+            '</script>'
+        )
+        components.html(hero_comp, height=500, scrolling=False)
+    st.markdown('</div>', unsafe_allow_html=True)  # close sw-hero-row
 
     # ── Trust bar ──
     st.markdown(f"""
@@ -3043,15 +2976,15 @@ def page_landing():
     st.markdown("<br>",unsafe_allow_html=True)
 
     # ── Composite categories grid ──
-    st.markdown(_dedent(f"""
-    <div class="msp-signal-grid-wrap" style="margin-top:8px;margin-bottom:18px;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
-        <div style="font-size:18px;font-weight:800;color:#e2e8f0;">🎯 Our Proprietary Signal Categories</div>
-        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;">✨ Unique to MarketSignalPro</span>
-      </div>
-      <div style="font-size:13px;color:#374f6e;line-height:1.6;">We combine multiple independent data signals into composite categories you won't find anywhere else. Each one has a specific multi-factor entry criterion.</div>
+    st.markdown(f"""
+    <div style="padding:0 48px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+            <div style="font-size:18px;font-weight:800;color:#e2e8f0;">🎯 Our Proprietary Signal Categories</div>
+            <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;">✨ Unique to MarketSignalPro</span>
+        </div>
+        <div style="font-size:13px;color:#374f6e;margin-bottom:18px;">We combine multiple independent data signals into composite categories you won't find anywhere else. Each one has a specific multi-factor entry criterion.</div>
     </div>
-    """).strip(), unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
     color_map={
         "🔥💥 Squeeze + Buzz":"#ef4444","💡 Hidden Movers":"#3b82f6","🎭 Social Catalyst":"#f97316",
@@ -3062,38 +2995,41 @@ def page_landing():
         "🎯📊 Triple Lock":"#4ade80","🦈 Sustained Strength":"#34d399",
     }
     cg_items=list(COMPOSITE_CATS.items())
-    # Pure HTML signal grid: safe width, no Streamlit column overflow
-    cards_html = ""
-    for cat,(desc,tier) in cg_items:
-        c = color_map.get(cat, BLUE)
-        cat_safe = _html.escape(cat)
-        desc_safe = _html.escape(desc)
-        tier_b = (f'<span class="sw-signal-card-badge pro">⭐ PRO</span>' if tier=="premium"
-                  else '<span class="sw-signal-card-badge free">FREE</span>')
-        cards_html += (f'<div class="msp-signal-card" style="border-left-color:{c};">'
-                       f'<div class="msp-signal-card-head"><div class="msp-signal-card-title">{cat_safe}</div>{tier_b}</div>'
-                       f'<div class="msp-signal-card-desc">{desc_safe}</div></div>')
-    categories_html = _dedent(f"""
+    # Wrap signal cards in styled container so we can make them mobile-friendly
+    st.markdown("""
     <style>
-      html, body {{ margin:0; padding:0; background:#07090f; color:#d1d9e6; font-family:Inter, Arial, sans-serif; overflow:hidden; }}
-      * {{ box-sizing:border-box; }}
-      .msp-signal-grid-wrap {{ width:min(1180px, calc(100vw - 44px)); max-width:1180px; margin:0 auto; }}
-      .msp-signal-grid {{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px 16px; align-items:stretch; }}
-      .msp-signal-card {{ background:#0d1525; border:1px solid rgba(255,255,255,.08); border-left:3px solid #2563eb; border-radius:10px; padding:12px 14px; min-height:78px; }}
-      .msp-signal-card-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }}
-      .msp-signal-card-title {{ font-size:13px; font-weight:800; color:#e2e8f0; line-height:1.25; }}
-      .msp-signal-card-desc {{ font-size:11px; color:#374f6e; line-height:1.45; }}
-      .sw-signal-card-badge {{ font-size:9px; font-weight:800; padding:2px 6px; border-radius:3px; white-space:nowrap; }}
-      .sw-signal-card-badge.pro {{ color:#f59e0b; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3); }}
-      .sw-signal-card-badge.free {{ color:#4ade80; background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); }}
-      @media (max-width:900px) {{ .msp-signal-grid {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }} }}
-      @media (max-width:560px) {{ .msp-signal-grid {{ grid-template-columns:1fr; }} }}
+    .sw-signal-grid [data-testid="stHorizontalBlock"]{flex-wrap:wrap;gap:10px;}
+    .sw-signal-grid .card{padding:12px 14px !important;min-height:78px !important;}
+    @media (max-width:900px){
+        /* 2-column grid on mobile (instead of 1-column stack from global rule) */
+        .sw-signal-grid [data-testid="stHorizontalBlock"]{flex-wrap:wrap !important;gap:8px !important;}
+        .sw-signal-grid [data-testid="stHorizontalBlock"] [data-testid="column"]{
+            min-width:48% !important;max-width:48% !important;flex:1 1 48% !important;
+        }
+        .sw-signal-grid .card{
+            padding:8px 10px !important;
+            min-height:auto !important;
+            margin-bottom:6px !important;
+        }
+        .sw-signal-card-title{font-size:11px !important;line-height:1.3 !important;}
+        .sw-signal-card-desc{font-size:10px !important;line-height:1.4 !important;}
+        .sw-signal-card-badge{font-size:8px !important;padding:1px 5px !important;}
+    }
     </style>
-    <div class="msp-signal-grid-wrap">
-      <div class="msp-signal-grid">{cards_html}</div>
-    </div>
-    """).strip()
-    st.markdown(categories_html, unsafe_allow_html=True)
+    <div class="sw-signal-grid">
+    """, unsafe_allow_html=True)
+    cg=st.columns(3,gap="small")
+    for i,(cat,(desc,tier)) in enumerate(cg_items):
+        with cg[i%3]:
+            c=color_map.get(cat,BLUE)
+            tier_b=f'<span class="sw-signal-card-badge" style="background:rgba(245,158,11,.12);color:{GOLD};font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(245,158,11,.3);">⭐ PRO</span>' if tier=="premium" else f'<span class="sw-signal-card-badge" style="background:rgba(34,197,94,.1);color:#4ade80;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(34,197,94,.3);">FREE</span>'
+            st.markdown(f"""<div class="card" style="border-left:3px solid {c};">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;gap:6px;">
+                    <div class="sw-signal-card-title" style="font-size:13px;font-weight:700;color:#e2e8f0;">{cat}</div>{tier_b}
+                </div>
+                <div class="sw-signal-card-desc" style="font-size:11px;color:#374f6e;line-height:1.5;">{desc}</div>
+            </div>""",unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     _,pc,_=st.columns([2,1,2])
     with pc:
@@ -3152,7 +3088,6 @@ def page_landing():
         '</div>'
     )
 
-    import streamlit.components.v1 as components
     components.html(testimonial_comp, height=160)
 
     st.markdown("<br>",unsafe_allow_html=True)
@@ -3178,7 +3113,7 @@ def page_landing():
 def page_features():
     render_topbar()
     back_button("ft_back")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
     # CTA strip at top
     if not is_premium() and is_authed():
         st.markdown(f"""
@@ -3257,6 +3192,7 @@ def page_features():
 # ─────────────────────────────────────────────────────────────
 def page_login():
     render_topbar()
+    st.markdown('<div class="page-wrap">',unsafe_allow_html=True)
     _,cc,_=st.columns([1,2,1])
     with cc:
         st.markdown(f'<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Welcome Back 👋</div><div style="font-size:13px;color:#374f6e;">Sign in to your MarketSignalPro account</div></div>',unsafe_allow_html=True)
@@ -3289,31 +3225,38 @@ def page_login():
         with bc2:
             if st.button("Forgot password?",key="l2f",use_container_width=True): nav("forgot_pw")
         if st.button("← Back to Home",key="l2h",use_container_width=True): nav("landing")
+    st.markdown('</div>',unsafe_allow_html=True)  # close page-wrap
 
 def page_signup():
     render_topbar()
+    st.markdown('<div class="page-wrap">',unsafe_allow_html=True)
     _,cc,_=st.columns([1,2,1])
     with cc:
         st.markdown('<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Create Your Account 🚀</div><div style="font-size:13px;color:#374f6e;">Free forever. No credit card. No API keys.</div></div>',unsafe_allow_html=True)
         with st.form("sf"):
-            name=st.text_input("Full name",placeholder="Jane Doe")
+            name_col1, name_col2 = st.columns(2, gap="small")
+            with name_col1:
+                first_name = st.text_input("First name", placeholder="Jane", key="su_first")
+            with name_col2:
+                last_name  = st.text_input("Last name", placeholder="Doe", key="su_last")
             email=st.text_input("Email",placeholder="you@example.com")
             pw=st.text_input("Password",type="password",placeholder="Min 6 characters")
             pw2=st.text_input("Confirm password",type="password")
             agree=st.checkbox("I agree to the Terms of Service. I understand MarketSignalPro is for educational purposes only and is not financial advice.")
             if st.form_submit_button("Create Free Account →",type="primary",use_container_width=True):
-                if not all([name,email,pw,pw2]): st.error("Please fill in all fields.")
+                if not all([first_name, last_name, email, pw, pw2]): st.error("Please fill in all fields.")
                 elif pw!=pw2: st.error("Passwords don't match.")
                 elif len(pw)<6: st.error("Password must be 6+ characters.")
                 elif not agree: st.error("Please agree to the Terms of Service.")
                 else:
-                    ok,msg=signup(email,pw,name)
+                    ok,msg=signup(email, pw, first_name, last_name)
                     if ok:
                         # Generate verification code and send email
+                        full_name = f"{first_name} {last_name}".strip()
                         code=str(random.randint(100000,999999))
                         st.session_state["_verify_code"]=code
                         st.session_state["_verify_email"]=email
-                        st.session_state["_verify_user"]={"name":name}
+                        st.session_state["_verify_user"]={"name":full_name}
                         # Log out the just-created session — require verification first
                         st.session_state.pop("user",None); st.session_state.pop("role",None)
                         ok2,info=_send_verification_email(email,code)
@@ -3322,6 +3265,7 @@ def page_signup():
                         nav("verify_email")
                     else: st.error(msg)
         if st.button("Already have an account? Sign In",key="s2l",use_container_width=True): nav("login")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def _send_telegram(chat_id, message):
     """Send a Telegram message via the MarketSignalPro bot. Returns (True, None) or (False, error)."""
@@ -3381,7 +3325,7 @@ def _send_password_reset(email, reset_token):
         if resend_key:
             import requests as _r
             html = f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;">
-                <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
+                <h2 style="color:#2563eb;">Stock<span style="color:#f59e0b;">W</span>ins</h2>
                 <h3 style="color:#e2e8f0;">Reset your password</h3>
                 <p style="color:#6b7fa0;">Click below to reset. Expires in 1 hour.</p>
                 <a href="{reset_url}" style="display:inline-block;padding:12px 28px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Reset Password →</a>
@@ -3389,7 +3333,7 @@ def _send_password_reset(email, reset_token):
             </div>"""
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":"MarketSignalPro <support@marketsignalpro.com>","to":[email],
+                json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <onboarding@resend.dev>"),"to":[email],
                       "subject":"Reset your MarketSignalPro password","html":html},
                 timeout=10)
             if resp.status_code in (200,201): return True, None
@@ -3404,10 +3348,10 @@ def _send_verification_email(email, code):
             import requests as _r
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":"MarketSignalPro <support@marketsignalpro.com>","to":[email],
+                json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <onboarding@resend.dev>"),"to":[email],
                       "subject":"Your MarketSignalPro verification code",
                       "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">
-                        <h2>Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
+                        <h2>Stock<span style="color:#f59e0b;">W</span>ins</h2>
                         <h3>Verify your email</h3>
                         <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
                         <p style="color:#6b7fa0;margin-top:20px;">Expires in 10 minutes.</p>
@@ -3420,6 +3364,7 @@ def _send_verification_email(email, code):
 
 def page_forgot():
     render_topbar()
+    st.markdown('<div class="page-wrap">',unsafe_allow_html=True)
     _,cc,_=st.columns([1,2,1])
     with cc:
         st.markdown('<div style="text-align:center;padding:28px 0 16px;"><div style="font-size:24px;font-weight:800;color:#e2e8f0;">🔑 Reset Your Password</div><div style="font-size:13px;color:#374f6e;margin-top:6px;">Enter your email and we&#39;ll send a secure reset link.</div></div>',unsafe_allow_html=True)
@@ -3479,13 +3424,14 @@ def page_forgot():
                 else:
                     st.markdown(f'<div style="background:#04200d;border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:18px;text-align:center;margin-top:10px;"><div style="font-size:24px;margin-bottom:8px;">📧</div><div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:4px;">Check Your Email</div><div style="font-size:12px;color:#374f6e;">If {email} is registered, a reset link was sent.</div></div>',unsafe_allow_html=True)
         if st.button("← Back to Login",key="f2l",use_container_width=True): nav("login")
+    st.markdown('</div>',unsafe_allow_html=True)  # close page-wrap
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: DASHBOARD
 # ─────────────────────────────────────────────────────────────
 def page_dashboard():
     render_topbar("dashboard")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
 
     # ── Welcome strip ──
     user_name = st.session_state.user.get("name","Trader") if is_authed() else "Trader"
@@ -3840,6 +3786,7 @@ def page_discover():
     .disc-meta-pill{{font-size:11px;font-weight:600;padding:5px 12px;border-radius:20px;
         background:rgba(37,99,235,0.08);color:#93b4fd;border:1px solid rgba(37,99,235,0.2);}}
     </style>""", unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">',unsafe_allow_html=True)
 
     sel = st.session_state.get("discover_cat","💡 Hidden Movers")
 
@@ -3936,12 +3883,14 @@ def page_discover():
         </div>
         """, unsafe_allow_html=True)
         if gold_btn("Upgrade to Premium →", "disc_upgrade_bottom"): nav("pricing")
+    st.markdown('</div>',unsafe_allow_html=True)  # close page-wrap
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: STOCK DETAIL
 # ─────────────────────────────────────────────────────────────
 def page_detail():
     render_topbar()
+    st.markdown('<div class="page-wrap">',unsafe_allow_html=True)
     ticker=st.session_state.get("detail_ticker")
     data=st.session_state.get("detail_data",{})
 
@@ -3995,7 +3944,7 @@ def page_detail():
     mc_v=info.get("mktcap",0)
     mc_s=f"${mc_v/1e12:.2f}T" if mc_v>=1e12 else f"${mc_v/1e9:.2f}B" if mc_v>=1e9 else f"${mc_v/1e6:.0f}M" if mc_v else "N/A"
 
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
 
     # Report header
     h1,h2,h3=st.columns([3,2,2],gap="small")
@@ -4446,7 +4395,7 @@ def page_detail():
 # ─────────────────────────────────────────────────────────────
 def page_signal_track():
     render_topbar("signal_track")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
     back_button("st_back")
 
     st.markdown(f"""
@@ -4753,7 +4702,7 @@ def page_signal_track():
 # ─────────────────────────────────────────────────────────────
 def page_bi():
     render_topbar("bi_dashboard")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
     back_button("bi_back")
 
     # ── Page intro ──
@@ -4827,7 +4776,7 @@ def page_bi():
     # Export leaderboard data
     if movers:
         bi_export_rows=[{"Ticker":m["t"],"Price":f"${m['price']:,.2f}","Change %":f"{m['pct']:+.2f}%","Volume":f"{m['vol']:,}","Vol Ratio":f"{m['vr']:.1f}×"} for m in sorted(movers,key=lambda x:x["pct"],reverse=True)]
-        export_button(bi_export_rows,"marketsignalpro_bi_leaderboard.xlsx","📥 Export Leaderboard","bi_export")
+        export_button(bi_export_rows,"stockwins_bi_leaderboard.xlsx","📥 Export Leaderboard","bi_export")
 
     with tabs[1]:
         sec_sorted=sorted(secs.items(),key=lambda x:x[1],reverse=True)
@@ -4888,7 +4837,7 @@ def page_bi():
             prog.progress((i+1)/len(matrix_tickers),f"Analyzing {t}…")
             df2=yf_ohlcv(t,60); info2=yf_fund(t); sent2=st_sent(t)
             _,bd2,_,_,_=compute_scores(df2,info2,sent2); matrix_data[t]=bd2
-        prog.empty()
+        prog_container.empty()
         if HAS_PLOTLY:
             z=[[matrix_data.get(t,{}).get(sig,0)/max_vals.get(sig,15) for sig in signal_types] for t in matrix_tickers]
             raw=[[matrix_data.get(t,{}).get(sig,0) for sig in signal_types] for t in matrix_tickers]
@@ -5093,7 +5042,7 @@ def page_bi():
 # ─────────────────────────────────────────────────────────────
 def page_watchlist():
     render_topbar("watchlist")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
 
     wl=st.session_state.get("watchlist",[])
     back_button("wl_back")
@@ -5133,7 +5082,7 @@ def page_watchlist():
                 "_pct":pct,"_cc":cc_,"_rec_clr":rec_clr
             })
         except: continue
-    prog.empty()
+    prog_container.empty()
 
     if not rows:
         st.info("Could not load watchlist data. Try again in a moment.")
@@ -5180,7 +5129,7 @@ def page_watchlist():
     # Export button
     ex1,ex2=st.columns([1,3])
     with ex1:
-        export_button(display_rows, "marketsignalpro_watchlist.xlsx", "📥 Export Watchlist", "wl_export")
+        export_button(display_rows, "stockwins_watchlist.xlsx", "📥 Export Watchlist", "wl_export")
 
     # Sort selector
     with ex2:
@@ -5309,7 +5258,7 @@ def page_watchlist():
                         <table style="width:100%;font-size:12px;color:#e2e8f0;border-collapse:collapse;">
                             <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Price</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">{r['Price']}</td></tr>
                             <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Today</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{cc_color};">{r['Change']}</td></tr>
-                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Signal Score</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{'#4ade80' if r['Score']>=65 else '#fbbf24' if r['Score']>=45 else '#f87171'};">{r['Score']}/100</td></tr>
+                            <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">SW Score</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:{'#4ade80' if r['Score']>=65 else '#fbbf24' if r['Score']>=45 else '#f87171'};">{r['Score']}/100</td></tr>
                             <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Risk</td><td style="padding:6px 0;text-align:right;font-weight:700;">{r['Risk']}</td></tr>
                             <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Short Float</td><td style="padding:6px 0;text-align:right;font-family:'JetBrains Mono',monospace;">{r['Short Float']}</td></tr>
                             <tr style="border-top:1px solid rgba(255,255,255,0.06);"><td style="padding:6px 0;color:#6b7fa0;">Sector</td><td style="padding:6px 0;text-align:right;font-size:11px;">{r['Sector'][:18]}</td></tr>
@@ -5334,7 +5283,7 @@ def page_watchlist():
 # ─────────────────────────────────────────────────────────────
 def page_screener():
     render_topbar("screener")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
     back_button("scr_back")
     st.markdown(f'<div style="font-size:24px;font-weight:800;color:#e2e8f0;margin-bottom:4px;">🔍 Advanced Stock Screener</div>',unsafe_allow_html=True)
     st.markdown(f'<div style="font-size:13px;color:#374f6e;margin-bottom:16px;">Filter stocks by RSI, MACD, volume, sentiment, and more. Save your screens for one-click access.</div>',unsafe_allow_html=True)
@@ -5413,7 +5362,7 @@ def page_screener():
     with st.expander("⚙️ Screener Filters",expanded=True):
         c1,c2,c3,c4 = st.columns(4)
         with c1:
-            min_sc = st.slider("Min Signal Score", 0, 100, loaded.get("min_sc",40), help="MarketSignalPro composite score. 65+ = strong signal")
+            min_sc = st.slider("Min SW Score", 0, 100, loaded.get("min_sc",40), help="MarketSignalPro composite score. 65+ = strong signal")
             min_rsi = st.slider("Min RSI", 0, 100, loaded.get("min_rsi",20), help="Below 30 = oversold")
         with c2:
             max_rsi = st.slider("Max RSI", 0, 100, loaded.get("max_rsi",80))
@@ -5499,14 +5448,14 @@ def page_screener():
                         "Vol Ratio": f"{cur_v/avg_v:.1f}×" if pd.notna(avg_v) and avg_v > 0 else "N/A",
                     })
                 except: continue
-            prog.empty()
+            prog_container.empty()
             if results:
                 st.success(f"✅ {len(results)} stocks passed your filters!")
                 sorted_results = pd.DataFrame(results).sort_values("Score", ascending=False)
                 sc_ex1, sc_ex2 = st.columns([1,3])
                 with sc_ex1:
                     scr_rows = sorted_results.to_dict("records")
-                    export_button(scr_rows, "marketsignalpro_screener.xlsx", "📥 Export Results", "scr_export")
+                    export_button(scr_rows, "stockwins_screener.xlsx", "📥 Export Results", "scr_export")
                 st.dataframe(sorted_results, use_container_width=True, hide_index=True)
 
                 # Quick view buttons for top 3
@@ -5542,8 +5491,7 @@ def page_pricing():
             <div style="font-size:13px;color:#374f6e;">{plan_name} · Powered by Stripe · SSL Encrypted</div>
         </div>
         """, unsafe_allow_html=True)
-        import streamlit.components.v1 as _comp
-        _comp.html(f"""
+        components.html(f"""
         <script src="https://js.stripe.com/v3/"></script>
         <style>
         body{{margin:0;padding:20px;background:#07090f;font-family:Inter,sans-serif;}}
@@ -5580,7 +5528,7 @@ def page_pricing():
             st.rerun()
         return
 
-    st.markdown('<div class="pg">', unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
 
     # ── Header ──
     st.markdown(f"""
@@ -5834,7 +5782,7 @@ def _do_checkout(plan):
 # ─────────────────────────────────────────────────────────────
 def page_settings():
     render_topbar("settings")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
     back_button("set_back")
     # Settings header with user info
     db_u_hdr = st.session_state.users_db.get(st.session_state.user["email"],{}) if is_authed() else {}
@@ -5958,7 +5906,6 @@ def page_settings():
             </script>
             """
             try:
-                import streamlit.components.v1 as components
                 components.html(push_html, height=240)
             except Exception:
                 st.markdown(push_html, unsafe_allow_html=True)
@@ -5980,7 +5927,7 @@ def page_settings():
 
         if not current_tg_id:
             st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:2;">
-                <strong style="color:#93b4fd;">1.</strong> Open <a href="https://t.me/MarketSignalProAlertsBot" target="_blank" style="color:#60a5fa;text-decoration:none;">@MarketSignalProAlertsBot</a> in Telegram
+                <strong style="color:#93b4fd;">1.</strong> Open <a href="https://t.me/StockWinsAlertsBot" target="_blank" style="color:#60a5fa;text-decoration:none;">@StockWinsAlertsBot</a> in Telegram
                 · <strong style="color:#93b4fd;">2.</strong> Tap <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">/start</code>
                 · <strong style="color:#93b4fd;">3.</strong> Paste the Chat ID it replies with below
             </div>''', unsafe_allow_html=True)
@@ -5990,7 +5937,7 @@ def page_settings():
         with st.form("tg_setup"):
             tg_id = st.text_input("Telegram Chat ID", value=current_tg_id,
                                     placeholder="e.g. 1234567890",
-                                    help="The number @MarketSignalProAlertsBot replied with")
+                                    help="The number @StockWinsAlertsBot replied with")
             tg_c1, tg_c2 = st.columns(2)
             with tg_c1:
                 tg_save = st.form_submit_button(
@@ -6002,7 +5949,7 @@ def page_settings():
             if tg_save:
                 clean = "".join(c for c in tg_id if c.isdigit() or c == "-")
                 if not clean:
-                    st.error("Chat ID must be a number. Get it from @MarketSignalProAlertsBot.")
+                    st.error("Chat ID must be a number. Get it from @StockWinsAlertsBot.")
                 else:
                     st.session_state.users_db[email]["telegram_chat_id"] = clean
                     _save_global_db(st.session_state.users_db)
@@ -6193,7 +6140,7 @@ def page_settings():
                 if current_tg:
                     st.markdown(f'<div style="font-size:12px;color:#4ade80;margin-bottom:8px;">✅ Telegram connected (Chat ID: {current_tg})</div>',unsafe_allow_html=True)
                 else:
-                    st.markdown(f'<div style="font-size:12px;color:#374f6e;line-height:1.8;margin-bottom:8px;">1. Open Telegram → search <strong style="color:#e2e8f0;">@MarketSignalProAlertsBot</strong><br>2. Send /start to get your Chat ID<br>3. Paste it below</div>',unsafe_allow_html=True)
+                    st.markdown(f'<div style="font-size:12px;color:#374f6e;line-height:1.8;margin-bottom:8px;">1. Open Telegram → search <strong style="color:#e2e8f0;">@StockWinsAlertsBot</strong><br>2. Send /start to get your Chat ID<br>3. Paste it below</div>',unsafe_allow_html=True)
                 with st.form("tg_form"):
                     tg_id=st.text_input("Your Telegram Chat ID",value=current_tg,placeholder="1234567890",label_visibility="visible")
                     if st.form_submit_button("Save Telegram Connection",type="primary"):
@@ -6233,7 +6180,7 @@ def page_settings():
                                   help="Browser/mobile push via OneSignal — enable on the Profile tab first")
         with nc2:
             tg_disabled = not bool(db_user.get("telegram_chat_id",""))
-            tg_help = "Connect Telegram in Profile tab first" if tg_disabled else "Push messages via @MarketSignalProAlertsBot"
+            tg_help = "Connect Telegram in Profile tab first" if tg_disabled else "Push messages via @StockWinsAlertsBot"
             new_telegram = st.toggle("✈️ Telegram alerts",
                                        value=notif_prefs.get("telegram_enabled", False),
                                        key="np_telegram", disabled=tg_disabled, help=tg_help)
@@ -6242,7 +6189,7 @@ def page_settings():
                                     value=notif_prefs.get("email_enabled", True),
                                     key="np_email")
         if tg_disabled:
-            st.caption("⚠️ Connect Telegram in the Profile tab to enable @MarketSignalProAlertsBot alerts.")
+            st.caption("⚠️ Connect Telegram in the Profile tab to enable @StockWinsAlertsBot alerts.")
 
         st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
 
@@ -6347,8 +6294,7 @@ def page_settings():
                 if st.button("🔗 Open Billing Portal →", key="set_portal", type="primary", use_container_width=False):
                     url, err = create_portal_session(st.session_state.user["email"])
                     if url:
-                        import streamlit.components.v1 as _c
-                        _c.html(f'<script>window.top.open("{url}","_blank");</script>',height=0)
+                        components.html(f'<script>window.top.open("{url}","_blank");</script>',height=0)
                         st.info("Billing portal opened in a new tab.")
                     else:
                         st.error(err)
@@ -6372,7 +6318,7 @@ def page_admin():
     if not is_admin(): st.error("Access denied."); return
     render_topbar("admin")
     back_button("ad_back")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
     st.markdown('<div class="sec-hd">🛠️ Admin Panel</div>',unsafe_allow_html=True)
 
     # Admin role badge
@@ -6476,7 +6422,7 @@ def page_admin():
         st.markdown('<div class="sec-hd" style="font-size:13px;">Ranking & Display Controls</div>',unsafe_allow_html=True)
         rc1,rc2=st.columns(2,gap="small")
         with rc1:
-            sort_by=st.selectbox("Default sort order",["Signal Score","% Change Today","Volume Ratio","Short Float","Social Sentiment"],key="ranking_sort_ctrl")
+            sort_by=st.selectbox("Default sort order",["SW Score","% Change Today","Volume Ratio","Short Float","Social Sentiment"],key="ranking_sort_ctrl")
             st.session_state.ranking_sort=sort_by
         with rc2:
             filter_by=st.selectbox("Default category filter",["All","Free Only","Premium Only","Composite Only"],key="ranking_filter_ctrl")
@@ -6672,11 +6618,11 @@ def _send_verification_email(email, code):
             import requests as _r
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":"MarketSignalPro <support@marketsignalpro.com>",
+                json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <onboarding@resend.dev>"),
                       "to":[email],
                       "subject":"Your MarketSignalPro verification code",
                       "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;color:#e2e8f0;padding:40px;">
-                        <h2 style="color:#2563eb;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
+                        <h2 style="color:#2563eb;">Stock<span style="color:#f59e0b;">W</span>ins</h2>
                         <h3>Verify your email</h3>
                         <p style="color:#6b7fa0;">Your verification code is:</p>
                         <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#2563eb;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
@@ -6753,7 +6699,7 @@ def page_verify_email():
 def page_contact():
     render_topbar()
     back_button("ct_back")
-    st.markdown('<div class="pg">',unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
     st.markdown(f"""<div style="text-align:center;padding:32px 0 24px;">
         <div style="font-size:11px;font-weight:700;color:{BLUE};letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">We're Here to Help</div>
         <div style="font-size:34px;font-weight:900;color:#f1f5f9;letter-spacing:-1px;margin-bottom:8px;">Contact & Support</div>
@@ -6800,7 +6746,7 @@ def page_contact():
     for msg in st.session_state.support_chat:
         if msg["role"]=="assistant":
             st.markdown(f'''<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start;">
-                <div style="background:{BLUE};border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">MSP</div>
+                <div style="background:{BLUE};border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">SW</div>
                 <div style="background:{CARD};border:1px solid {BORDER};border-radius:0 10px 10px 10px;padding:10px 14px;font-size:13px;color:#d1d9e6;max-width:80%;line-height:1.6;">{msg["content"]}</div>
             </div>''',unsafe_allow_html=True)
         else:
@@ -6823,7 +6769,7 @@ def page_contact():
                     sys_prompt = """You are the MarketSignalPro customer support assistant. MarketSignalPro is a premium stock intelligence platform.
 
 Key facts:
-- MarketSignalPro has 17 AI-powered composite signal categories combining RSI, MACD, volume, social sentiment, short interest
+- MarketSignalPro has 17 proprietary composite signal categories combining RSI, MACD, volume, social sentiment, short interest
 - Free plan: 7 composite categories, market overview, watchlist (10 stocks), BUY/AVOID signals
 - Premium ($29/mo): All 17 categories, squeeze scanner, advanced screener, BI analytics, score breakdowns, unlimited watchlist
 - Annual ($199/yr): Everything in Premium + priority support, early access, export, API access
@@ -7091,7 +7037,7 @@ elif page=="bi_dashboard":
     else:
         # Show premium upgrade gate (not blank page)
         render_topbar("bi_dashboard")
-        st.markdown('<div class="pg">', unsafe_allow_html=True)
+        st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
         back_button("bi_lock_back")
         st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:8px;">📊 BI Analytics Dashboard</div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size:13px;color:#374f6e;margin-bottom:20px;">Market-wide intelligence across gainers, sectors, sentiment, and composite signals.</div>', unsafe_allow_html=True)
