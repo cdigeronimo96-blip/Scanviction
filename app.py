@@ -3898,16 +3898,16 @@ for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+4])
 else: st.session_state.discover_cat=cat; st.rerun()
 
     # Standard categories
-    st.markdown('<div class="disc-section-label">🌐 Standard Categories</div>', unsafe_allow_html=True)
-    std_items = list(CATEGORIES.keys())
-    for row_start in range(0, len(std_items), 4):
+st.markdown('<div class="disc-section-label">🌐 Standard Categories</div>', unsafe_allow_html=True)
+std_items = list(CATEGORIES.keys())
+for row_start in range(0, len(std_items), 4):
         cols = st.columns(4, gap="small")
-        for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
-            with cols[col_idx]:
-                is_active = cat==sel
-                btn_type = "primary" if is_active else "secondary"
-                if st.button(cat, key=f"disc_s_{cat[:24].replace(' ','_')}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
-                    st.session_state.discover_cat=cat; st.rerun()
+for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
+        with cols[col_idx]:
+            is_active = cat==sel
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(cat, key=f"disc_s_{cat[:24].replace(' ','_')}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
+            st.session_state.discover_cat=cat; st.rerun()
 
     # Spacing
     st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
