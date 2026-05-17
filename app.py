@@ -3880,7 +3880,7 @@ _dh += "</div></div>"
 st.markdown(_dh, unsafe_allow_html=True)
 
     # ── Category selector grid (horizontal, all visible) ──
-    st.markdown('<div class="disc-section-label">⭐ Composite Categories — MarketSignalPro Exclusive</div>', unsafe_allow_html=True)
+st.markdown('<div class="disc-section-label">⭐ Composite Categories — MarketSignalPro Exclusive</div>', unsafe_allow_html=True)
 
     # Render composite cats in a grid (4 per row)
     comp_items = list(COMPOSITE_CATS.items())
