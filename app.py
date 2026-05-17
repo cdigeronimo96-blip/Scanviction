@@ -3883,7 +3883,7 @@ st.markdown(_dh, unsafe_allow_html=True)
 st.markdown('<div class="disc-section-label">⭐ Composite Categories — MarketSignalPro Exclusive</div>', unsafe_allow_html=True)
 
     # Render composite cats in a grid (4 per row)
-    comp_items = list(COMPOSITE_CATS.items())
+comp_items = list(COMPOSITE_CATS.items())
     for row_start in range(0, len(comp_items), 4):
         cols = st.columns(4, gap="small")
         for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+4]):
