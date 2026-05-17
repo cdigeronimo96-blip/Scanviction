@@ -3913,26 +3913,26 @@ for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
 st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
 
     # ── Results area immediately below ──
-    if is_locked:
-        render_lock(sel)
-    else:
-        # Big loading indicator
-        loading_placeholder = st.empty()
-        loading_placeholder.markdown(f"""
-        <div style="background:#0d1525;border:1px solid rgba(37,99,235,0.3);border-radius:12px;
-                    padding:18px 24px;margin-bottom:14px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-                <div style="display:flex;align-items:center;gap:12px;">
-                    <div class="loader-spin" style="width:18px;height:18px;border:2px solid rgba(37,99,235,0.2);border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-                    <div>
-                        <div style="font-size:14px;font-weight:700;color:#e2e8f0;">⚡ Analyzing {sel}</div>
-                        <div style="font-size:11px;color:#374f6e;">Scanning stocks against composite criteria…</div>
-                    </div>
+if is_locked:
+    render_lock(sel)
+else:
+    # Big loading indicator
+    loading_placeholder = st.empty()
+    loading_placeholder.markdown(f"""
+    <div style="background:#0d1525;border:1px solid rgba(37,99,235,0.3);border-radius:12px;
+                padding:18px 24px;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div class="loader-spin" style="width:18px;height:18px;border:2px solid rgba(37,99,235,0.2);border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                <div>
+                    <div style="font-size:14px;font-weight:700;color:#e2e8f0;">⚡ Analyzing {sel}</div>
+                    <div style="font-size:11px;color:#374f6e;">Scanning stocks against composite criteria…</div>
                 </div>
             </div>
         </div>
-        <style>@keyframes spin{{to{{transform:rotate(360deg);}}}}</style>
-        """, unsafe_allow_html=True)
+    </div>
+    <style>@keyframes spin{{to{{transform:rotate(360deg);}}}}</style>
+    """, unsafe_allow_html=True)
 
         render_cat(sel, show_why=is_comp)
         loading_placeholder.empty()
