@@ -3871,13 +3871,13 @@ def page_discover():
 
     # ── Big anchor header at top ──
 _dh = "<div class='disc-cat-header'>"
-    _dh += f"<div class='disc-cat-title'>{sel}</div>"
-    _dh += f"<div class='disc-cat-desc'>{desc_str}</div>"
-    _dh += f"<div class='disc-cat-meta'>{tier_str}"
-    _dh += "<span class='disc-meta-pill'>📊 Real-time Yahoo Finance data</span>"
-    _dh += "<span class='disc-meta-pill'>🔄 Updates every market session</span>"
-    _dh += "</div></div>"
-    st.markdown(_dh, unsafe_allow_html=True)
+_dh += f"<div class='disc-cat-title'>{sel}</div>"
+_dh += f"<div class='disc-cat-desc'>{desc_str}</div>"
+_dh += f"<div class='disc-cat-meta'>{tier_str}"
+_dh += "<span class='disc-meta-pill'>📊 Real-time Yahoo Finance data</span>"
+_dh += "<span class='disc-meta-pill'>🔄 Updates every market session</span>"
+_dh += "</div></div>"
+st.markdown(_dh, unsafe_allow_html=True)
 
     # ── Category selector grid (horizontal, all visible) ──
     st.markdown('<div class="disc-section-label">⭐ Composite Categories — MarketSignalPro Exclusive</div>', unsafe_allow_html=True)
