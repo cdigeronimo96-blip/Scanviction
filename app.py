@@ -3870,55 +3870,55 @@ def page_discover():
     is_locked = is_comp and COMPOSITE_CATS.get(sel,("",None))[1]=="premium" and not is_premium()
 
     # ── Big anchor header at top ──
-_dh = "<div class='disc-cat-header'>"
-_dh += f"<div class='disc-cat-title'>{sel}</div>"
-_dh += f"<div class='disc-cat-desc'>{desc_str}</div>"
-_dh += f"<div class='disc-cat-meta'>{tier_str}"
-_dh += "<span class='disc-meta-pill'>📊 Real-time Yahoo Finance data</span>"
-_dh += "<span class='disc-meta-pill'>🔄 Updates every market session</span>"
-_dh += "</div></div>"
-st.markdown(_dh, unsafe_allow_html=True)
+    _dh = "<div class='disc-cat-header'>"
+    _dh += f"<div class='disc-cat-title'>{sel}</div>"
+    _dh += f"<div class='disc-cat-desc'>{desc_str}</div>"
+    _dh += f"<div class='disc-cat-meta'>{tier_str}"
+    _dh += "<span class='disc-meta-pill'>📊 Real-time Yahoo Finance data</span>"
+    _dh += "<span class='disc-meta-pill'>🔄 Updates every market session</span>"
+    _dh += "</div></div>"
+    st.markdown(_dh, unsafe_allow_html=True)
 
     # ── Category selector grid (horizontal, all visible) ──
-st.markdown('<div class="disc-section-label">⭐ Composite Categories — MarketSignalPro Exclusive</div>', unsafe_allow_html=True)
+    st.markdown('<div class="disc-section-label">⭐ Composite Categories — MarketSignalPro Exclusive</div>', unsafe_allow_html=True)
 
     # Render composite cats in a grid (4 per row)
-comp_items = list(COMPOSITE_CATS.items())
-for row_start in range(0, len(comp_items), 4):
-    cols = st.columns(4, gap="small")
-for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+4]):
-    with cols[col_idx]:
-        is_l = tier=="premium" and not is_premium()
-        safe = cat.replace(" ","_").replace("+","p").replace("→","r").replace("🌡️","T").replace("📉","D").replace("📈","U").replace("⚡","E")[:30]
-        is_active = cat==sel
-        lbl = cat+(" 🔒" if is_l else "")
-        btn_type = "primary" if is_active else "secondary"
-        if st.button(lbl, key=f"disc_c_{safe}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
-            if is_l: nav("pricing")
-else: st.session_state.discover_cat=cat; st.rerun()
+    comp_items = list(COMPOSITE_CATS.items())
+    for row_start in range(0, len(comp_items), 4):
+        cols = st.columns(4, gap="small")
+        for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+4]):
+            with cols[col_idx]:
+                is_l = tier=="premium" and not is_premium()
+                safe = cat.replace(" ","_").replace("+","p").replace("→","r").replace("🌡️","T").replace("📉","D").replace("📈","U").replace("⚡","E")[:30]
+                is_active = cat==sel
+                lbl = cat+(" 🔒" if is_l else "")
+                btn_type = "primary" if is_active else "secondary"
+                if st.button(lbl, key=f"disc_c_{safe}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
+                    if is_l: nav("pricing")
+                    else: st.session_state.discover_cat=cat; st.rerun()
 
     # Standard categories
-st.markdown('<div class="disc-section-label">🌐 Standard Categories</div>', unsafe_allow_html=True)
-std_items = list(CATEGORIES.keys())
-for row_start in range(0, len(std_items), 4):
+    st.markdown('<div class="disc-section-label">🌐 Standard Categories</div>', unsafe_allow_html=True)
+    std_items = list(CATEGORIES.keys())
+    for row_start in range(0, len(std_items), 4):
         cols = st.columns(4, gap="small")
-for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
-        with cols[col_idx]:
-            is_active = cat==sel
-            btn_type = "primary" if is_active else "secondary"
-            if st.button(cat, key=f"disc_s_{cat[:24].replace(' ','_')}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
-                st.session_state.discover_cat=cat; st.rerun()
+        for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
+            with cols[col_idx]:
+                is_active = cat==sel
+                btn_type = "primary" if is_active else "secondary"
+                if st.button(cat, key=f"disc_s_{cat[:24].replace(' ','_')}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
+                    st.session_state.discover_cat=cat; st.rerun()
 
     # Spacing
-st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
 
     # ── Results area immediately below ──
-if is_locked:
-    render_lock(sel)
-else:
-    # Big loading indicator
-    loading_placeholder = st.empty()
-    loading_placeholder.markdown(f"""
+    if is_locked:
+        render_lock(sel)
+    else:
+        # Big loading indicator
+        loading_placeholder = st.empty()
+        loading_placeholder.markdown(f"""
     <div style="background:#0d1525;border:1px solid rgba(37,99,235,0.3);border-radius:12px;
                 padding:18px 24px;margin-bottom:14px;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -3932,7 +3932,7 @@ else:
         </div>
     </div>
     <style>@keyframes spin{{to{{transform:rotate(360deg);}}}}</style>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
         render_cat(sel, show_why=is_comp)
         loading_placeholder.empty()
