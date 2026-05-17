@@ -3888,14 +3888,14 @@ for row_start in range(0, len(comp_items), 4):
     cols = st.columns(4, gap="small")
 for col_idx, (cat, (desc, tier)) in enumerate(comp_items[row_start:row_start+4]):
     with cols[col_idx]:
-is_l = tier=="premium" and not is_premium()
-safe = cat.replace(" ","_").replace("+","p").replace("→","r").replace("🌡️","T").replace("📉","D").replace("📈","U").replace("⚡","E")[:30]
-is_active = cat==sel
-lbl = cat+(" 🔒" if is_l else "")
-btn_type = "primary" if is_active else "secondary"
-if st.button(lbl, key=f"disc_c_{safe}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
-if is_l: nav("pricing")
-else: st.session_state.discover_cat=cat; st.rerun()
+    is_l = tier=="premium" and not is_premium()
+    safe = cat.replace(" ","_").replace("+","p").replace("→","r").replace("🌡️","T").replace("📉","D").replace("📈","U").replace("⚡","E")[:30]
+    is_active = cat==sel
+    lbl = cat+(" 🔒" if is_l else "")
+    btn_type = "primary" if is_active else "secondary"
+    if st.button(lbl, key=f"disc_c_{safe}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
+    if is_l: nav("pricing")
+    else: st.session_state.discover_cat=cat; st.rerun()
 
     # Standard categories
     st.markdown('<div class="disc-section-label">🌐 Standard Categories</div>', unsafe_allow_html=True)
