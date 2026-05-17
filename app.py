@@ -3907,7 +3907,7 @@ for col_idx, cat in enumerate(std_items[row_start:row_start+4]):
             is_active = cat==sel
             btn_type = "primary" if is_active else "secondary"
             if st.button(cat, key=f"disc_s_{cat[:24].replace(' ','_')}_{row_start}_{col_idx}", use_container_width=True, type=btn_type):
-            st.session_state.discover_cat=cat; st.rerun()
+                st.session_state.discover_cat=cat; st.rerun()
 
     # Spacing
     st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
