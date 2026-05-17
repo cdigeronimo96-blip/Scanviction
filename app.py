@@ -4015,33 +4015,34 @@ def page_detail():
     st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
 
     # Report header
+# Report header
     h1,h2,h3=st.columns([3,2,2],gap="small")
-with h1:
+    with h1:
         hot_b='<span class="b b-hot">🔥 HOT</span>' if hot else ""
         st.markdown(f"""<div style="padding:4px 0;">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:800;color:#60a5fa;">{ticker}</span>{hot_b}
-                <span style="display:inline-block;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:800;background:{rec_clr}22;color:{rec_clr};border:1px solid {rec_clr}44;">{rec_lbl}</span>
-            </div>
-            <div style="font-size:15px;color:#4a5e7a;margin-bottom:2px;">{q.get('name','')}</div>
-            <div style="font-size:12px;color:#2a3a52;">{info.get('sector','N/A')} · {info.get('industry','N/A')}</div>
-            <div style="margin-top:8px;font-size:13px;color:#374f6e;font-style:italic;">→ {rec_txt}</div>
-            <div style="margin-top:6px;font-size:11px;color:{rc};">⚡ {risk} Risk · {conf} confidence</div>
-        </div>""",unsafe_allow_html=True)
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+<span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:800;color:#60a5fa;">{ticker}</span>{hot_b}
+<span style="display:inline-block;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:800;background:{rec_clr}22;color:{rec_clr};border:1px solid {rec_clr}44;">{rec_lbl}</span>
+</div>
+<div style="font-size:15px;color:#4a5e7a;margin-bottom:2px;">{q.get('name','')}</div>
+<div style="font-size:12px;color:#2a3a52;">{info.get('sector','N/A')} · {info.get('industry','N/A')}</div>
+<div style="margin-top:8px;font-size:13px;color:#374f6e;font-style:italic;">→ {rec_txt}</div>
+<div style="margin-top:6px;font-size:11px;color:{rc};">⚡ {risk} Risk · {conf} confidence</div>
+</div>""", unsafe_allow_html=True)
     with h2:
         st.markdown(f"""<div style="text-align:right;padding:4px 0;">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:36px;font-weight:800;color:#e2e8f0;letter-spacing:-1px;">${price:,.2f}</div>
-            <div style="font-size:17px;font-weight:700;color:{cc};">{ar} ${abs(chg):.2f} ({abs(pct):.2f}%)</div>
-            <div style="font-size:12px;color:#2a3a52;margin-top:4px;">Prev close: ${prev:,.2f}</div>
-        </div>""",unsafe_allow_html=True)
+<div style="font-family:'JetBrains Mono',monospace;font-size:36px;font-weight:800;color:#e2e8f0;letter-spacing:-1px;">${price:,.2f}</div>
+<div style="font-size:17px;font-weight:700;color:{cc};">{ar} ${abs(chg):.2f} ({abs(pct):.2f}%)</div>
+<div style="font-size:12px;color:#2a3a52;margin-top:4px;">Prev close: ${prev:,.2f}</div>
+</div>""", unsafe_allow_html=True)
     with h3:
         sc_c=GREEN if sc>=65 else GOLD if sc>=40 else RED
         sc_bg="#04200d" if sc>=65 else "#1a1000" if sc>=40 else "#200404"
         st.markdown(f"""<div style="background:{sc_bg};border:1px solid {sc_c};border-radius:10px;padding:16px;text-align:center;">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:800;color:{sc_c};">{sc}</div>
-            <div style="font-size:10px;color:{sc_c};text-transform:uppercase;letter-spacing:1px;margin-top:2px;">MarketSignalPro Score</div>
-            <div style="font-size:11px;color:#2a3a52;margin-top:4px;">{op}</div>
-        </div>""",unsafe_allow_html=True)
+<div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:800;color:{sc_c};">{sc}</div>
+<div style="font-size:10px;color:{sc_c};text-transform:uppercase;letter-spacing:1px;margin-top:2px;">MarketSignalPro Score</div>
+<div style="font-size:11px;color:#2a3a52;margin-top:4px;">{op}</div>
+</div>""", unsafe_allow_html=True)
 
     st.divider()
 
