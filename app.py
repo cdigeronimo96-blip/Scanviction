@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# STOCKWINS v7.0 — Premium Fintech SaaS
+# MarketSignalPro v7.0 — Premium Fintech SaaS
 # "I trust this. I understand this. I want more."
 # ═══════════════════════════════════════════════════════════════
 
