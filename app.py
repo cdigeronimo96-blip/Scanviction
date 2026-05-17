@@ -3997,10 +3997,10 @@ def page_detail():
     if not ticker: st.warning("No stock selected."); return
 
     q=data.get("q") or get_quote(ticker)
-    df=data.get("df") or yf_ohlcv(ticker,90)
+    df=data.get("df")
+    if df is None: df=yf_ohlcv(ticker,90)
     info=data.get("info") or yf_fund(ticker)
     sent=data.get("sent") or st_sent(ticker)
-    sc,bd,op,risk,conf=compute_scores(df,info,sent)
     ig=get_insights(df,info)
     rec_lbl,rec_clr,rec_txt=get_recommendation(sc,bd,info)
     hot=ticker in st_hot()
@@ -4017,17 +4017,15 @@ def page_detail():
     # Report header
     h1,h2,h3=st.columns([3,2,2],gap="small")
     with h1:
-        hot_b='<span class="b b-hot">🔥 HOT</span>' if hot else ""
-        st.markdown(f"""<div style="padding:4px 0;">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:800;color:#60a5fa;">{ticker}</span>{hot_b}
-                <span style="display:inline-block;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:800;background:{rec_clr}22;color:{rec_clr};border:1px solid {rec_clr}44;">{rec_lbl}</span>
-            </div>
-            <div style="font-size:15px;color:#4a5e7a;margin-bottom:2px;">{q.get('name','')}</div>
-            <div style="font-size:12px;color:#2a3a52;">{info.get('sector','N/A')} · {info.get('industry','N/A')}</div>
-            <div style="margin-top:8px;font-size:13px;color:#374f6e;font-style:italic;">→ {rec_txt}</div>
-            <div style="margin-top:6px;font-size:11px;color:{rc};">⚡ {risk} Risk · {conf} confidence</div>
-        </div>""",unsafe_allow_html=True)
+    st.markdown(f"""<div class="disc-cat-header">
+<div class="disc-cat-title">{sel}</div>
+<div class="disc-cat-desc">{desc_str}</div>
+<div class="disc-cat-meta">
+{tier_str}
+<span class="disc-meta-pill">📊 Real-time Yahoo Finance data</span>
+<span class="disc-meta-pill">🔄 Updates every market session</span>
+</div>
+</div>""", unsafe_allow_html=True)
     with h2:
         st.markdown(f"""<div style="text-align:right;padding:4px 0;">
             <div style="font-family:'JetBrains Mono',monospace;font-size:36px;font-weight:800;color:#e2e8f0;letter-spacing:-1px;">${price:,.2f}</div>
