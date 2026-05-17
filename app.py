@@ -3870,17 +3870,17 @@ def page_discover():
     is_locked = is_comp and COMPOSITE_CATS.get(sel,("",None))[1]=="premium" and not is_premium()
 
     # ── Big anchor header at top ──
-    st.markdown(f"""
-    <div class="disc-cat-header">
-        <div class="disc-cat-title">{sel}</div>
-        <div class="disc-cat-desc">{desc_str}</div>
-        <div class="disc-cat-meta">
-            {tier_str}
-            <span class="disc-meta-pill">📊 Real-time Yahoo Finance data</span>
-            <span class="disc-meta-pill">🔄 Updates every market session</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+ st.markdown(f"""
+<div class="disc-cat-header">
+<div class="disc-cat-title">{sel}</div>
+<div class="disc-cat-desc">{desc_str}</div>
+<div class="disc-cat-meta">
+{tier_str}
+<span class="disc-meta-pill">📊 Real-time Yahoo Finance data</span>
+<span class="disc-meta-pill">🔄 Updates every market session</span>
+</div>
+</div>
+""", unsafe_allow_html=True)
 
     # ── Category selector grid (horizontal, all visible) ──
     st.markdown('<div class="disc-section-label">⭐ Composite Categories — MarketSignalPro Exclusive</div>', unsafe_allow_html=True)
