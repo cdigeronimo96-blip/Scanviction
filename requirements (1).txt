@@ -1,0 +1,13 @@
+streamlit>=1.40
+yfinance
+pandas
+numpy
+plotly
+ta
+extra-streamlit-components
+scikit-learn
+requests
+# Postgres driver — REQUIRED for durable account storage via DATABASE_URL.
+# Without this, DATABASE_URL silently falls back to ephemeral file storage,
+# and accounts will NOT survive a Streamlit Cloud reboot/redeploy.
+psycopg[binary]>=3.1

@@ -1,0 +1,28 @@
+services:
+  - type: cron
+    name: marketsignalpro-alerts
+    runtime: python
+    buildCommand: pip install -r requirements_worker.txt
+    schedule: "*/15 * * * *"
+    startCommand: python alerts_worker.py
+    envVars:
+      - key: WORKER_MODE
+        value: once
+      # ── Durable shared storage (MUST match the Streamlit app's DATABASE_URL) ──
+      # Set this to the SAME Postgres URL the app uses, so the worker reads the
+      # SAME users/alerts the app writes. Without it the worker sees no users.
+      - key: DATABASE_URL
+        sync: false
+      # ── Delivery + branding (keep in sync with the app's secrets) ──
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: ONESIGNAL_APP_ID
+        sync: false
+      - key: ONESIGNAL_REST_API_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
