@@ -981,6 +981,29 @@ def _save_recs(d: dict):
 def _rec_key(category: str, ticker: str) -> str:
     return f"{category}|||{ticker}"
 
+# The recs store accumulates a snapshot per (category, ticker) — including a
+# "__universe__" anchor for EVERY scored ticker each warm (the systematic ML /
+# evaluate_all training set). Left unbounded it grows forever (delisted names,
+# categories a ticker has left) and every warm pays a bigger read+write, while
+# the ML sweep fetches OHLCV for each dead key. Bound it on write.
+RECS_RETENTION_DAYS = float(_os.environ.get("RECS_RETENTION_DAYS", "180"))
+RECS_MAX_KEYS       = int(_os.environ.get("RECS_MAX_KEYS", "20000"))
+
+def _prune_recs(recs: dict):
+    """Drop snapshots not updated within the retention window, then hard-cap by
+    most-recently-updated. Keys on `last_updated`, so an ACTIVE signal (refreshed
+    every warm → last_updated≈now) is never pruned or re-anchored; only abandoned
+    snapshots (ticker left the universe/category) age out. Returns (kept, dropped)."""
+    if not recs:
+        return recs, 0
+    cutoff = time.time() - RECS_RETENTION_DAYS * 86400
+    def _ts(s): return s.get("last_updated") or s.get("triggered_at") or 0
+    kept = {k: s for k, s in recs.items() if _ts(s) >= cutoff}
+    if len(kept) > RECS_MAX_KEYS:
+        top = sorted(kept.items(), key=lambda kv: _ts(kv[1]), reverse=True)[:RECS_MAX_KEYS]
+        kept = dict(top)
+    return kept, len(recs) - len(kept)
+
 @st.cache_resource(show_spinner=False)
 def _recs_lock():
     """Process-wide lock serializing the recommendation-store read-modify-write.
@@ -1072,6 +1095,7 @@ def record_recommendations_bulk(category: str, items):
                 if why is not None: snap["why"] = why
                 changed = True
         if changed:
+            recs, _ = _prune_recs(recs)   # bound store growth (runs every warm via the __universe__ bulk)
             _save_recs(recs)
 
 def get_recommendation_snapshot(category: str, ticker: str):
