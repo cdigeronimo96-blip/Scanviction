@@ -254,30 +254,26 @@ def detect_market_regime(sector_changes: dict, avg_mover_pct: float,
 # ─────────────────────────────────────────────────────────────
 # RECORD SIGNAL EVENT
 # ─────────────────────────────────────────────────────────────
-def record_signal_event(ticker: str, category: str, score: int,
-                         score_components: dict, price: float,
-                         info: dict = None, sent: dict = None,
-                         recommendation: str = "WATCH",
-                         confidence: dict = None,
-                         regime: str = "mixed") -> dict:
-    """
-    Called when a stock enters a composite category.
-    Stores the full snapshot for outcome tracking.
-    """
-    events = _read_json(SIGNAL_HISTORY_PATH, [])
+_EVT_SEQ = 0
+def _next_evt_id(ticker, category):
+    """Unique event id (ms + per-process counter) — avoids collisions when many events
+    are created in the same second by the bulk recorder (collisions caused duplicate
+    Streamlit widget keys in the feed)."""
+    global _EVT_SEQ
+    _EVT_SEQ += 1
+    return f"{ticker}_{category[:24].replace(' ', '_')}_{int(time.time()*1000)}_{_EVT_SEQ}"
 
-    # Deduplicate: same ticker+category in last 20h → skip
-    cutoff = (datetime.now() - timedelta(hours=20)).isoformat()
-    for e in events:
-        if (e["ticker"] == ticker and e["category"] == category
-                and e.get("triggered_at", "") > cutoff):
-            return e
-
-    event = {
-        "id": f"{ticker}_{category[:24].replace(' ','_')}_{int(time.time())}",
+def _build_signal_event(ticker, category, score, score_components, price,
+                        info=None, sent=None, recommendation="WATCH",
+                        confidence=None, regime="mixed"):
+    """Build one signal-event snapshot dict (pure — no I/O). Shared by the single and
+    bulk recorders so they stay identical."""
+    now_iso = datetime.now().isoformat()
+    return {
+        "id": _next_evt_id(ticker, category),
         "ticker": ticker,
         "category": category,
-        "triggered_at": datetime.now().isoformat(),
+        "triggered_at": now_iso,
         "trigger_price": float(price),
         "score_at_trigger": int(score),
         "components_at_trigger": score_components or {},
@@ -297,23 +293,64 @@ def record_signal_event(ticker: str, category: str, score: int,
             "message_count": sent.get("msgs", None) if sent else None,
             "watchlist_count": sent.get("wl", None) if sent else None,
         },
-        # Lifecycle
         "lifecycle_stage": "candidate",  # candidate → confirmed → active → extended → failed/completed
-        # Outcomes (filled by update_outcomes)
-        "outcomes": {
+        "outcomes": {                    # filled by update_signal_outcomes
             "1d_pct": None, "3d_pct": None, "5d_pct": None,
             "10d_pct": None, "20d_pct": None,
             "max_upside": None, "max_drawdown": None,
             "current_pct": None,
-            "label": "pending",  # pending, success, failure, mixed
+            "label": "pending",          # pending, success, failure, mixed
         },
-        "last_updated": datetime.now().isoformat(),
+        "last_updated": now_iso,
     }
+
+def record_signal_event(ticker: str, category: str, score: int,
+                         score_components: dict, price: float,
+                         info: dict = None, sent: dict = None,
+                         recommendation: str = "WATCH",
+                         confidence: dict = None,
+                         regime: str = "mixed") -> dict:
+    """Called when a stock enters a composite category. Stores the full snapshot for
+    outcome tracking. Deduped: same ticker+category within 20h returns the existing event."""
+    events = _read_json(SIGNAL_HISTORY_PATH, [])
+    cutoff = (datetime.now() - timedelta(hours=20)).isoformat()
+    for e in events:
+        if (e["ticker"] == ticker and e["category"] == category
+                and e.get("triggered_at", "") > cutoff):
+            return e
+    event = _build_signal_event(ticker, category, score, score_components, price,
+                                info, sent, recommendation, confidence, regime)
     events.append(event)
-    # Keep last 500 events only (FIFO)
-    events = events[-500:]
+    events = events[-500:]   # keep last 500 (FIFO)
     _write_json(SIGNAL_HISTORY_PATH, events)
     return event
+
+def record_signal_events_bulk(specs) -> list:
+    """Record MANY signal events in ONE history read+write (instead of a full-file
+    round-trip PER event — the warm loop fired up to ~76/cycle). `specs` is a list of
+    kwargs dicts accepted by record_signal_event. 20h-deduped against existing events
+    AND within the batch. Returns the events actually added."""
+    specs = [s for s in (specs or []) if s and s.get("ticker") and s.get("category")]
+    if not specs:
+        return []
+    events = _read_json(SIGNAL_HISTORY_PATH, [])
+    cutoff = (datetime.now() - timedelta(hours=20)).isoformat()
+    seen = set()
+    for e in events:
+        if e.get("triggered_at", "") > cutoff:
+            seen.add((e.get("ticker"), e.get("category")))
+    added = []
+    for s in specs:
+        key = (s["ticker"], s["category"])
+        if key in seen:
+            continue
+        seen.add(key)
+        added.append(_build_signal_event(**s))
+    if added:
+        events.extend(added)
+        events = events[-500:]
+        _write_json(SIGNAL_HISTORY_PATH, events)
+    return added
 
 
 # ─────────────────────────────────────────────────────────────

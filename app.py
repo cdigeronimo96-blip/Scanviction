@@ -109,7 +109,8 @@ MSP_COOKIE = "msp_sid"
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from signal_engine import (
-        record_signal_event, update_signal_outcomes, get_ticker_signal_history,
+        record_signal_event, record_signal_events_bulk, update_signal_outcomes,
+        get_ticker_signal_history,
         get_recent_signal_events, get_category_performance_stats,
         calculate_pnl, estimate_options_pnl, compute_confidence,
         detect_market_regime, seed_demo_signal_history
@@ -118,6 +119,7 @@ try:
 except Exception as _se:
     HAS_SIGNAL_ENGINE = False
     def record_signal_event(*a, **kw): return {}
+    def record_signal_events_bulk(*a, **kw): return []
     def get_ticker_signal_history(t, **kw): return []
     def get_recent_signal_events(**kw): return []
     def get_category_performance_stats(): return {}
@@ -4963,18 +4965,22 @@ def _record_category_entries(rows):
             fresh.append(r)
     if _PREV_CATS_READY and is_leader and fresh:
         fresh.sort(key=lambda r: r.get("comp", 0), reverse=True)   # strongest first
+        specs = []
         for r in fresh[:CATEGORY_ENTRY_MAX]:
             try:
                 q = r.get("q") or {}
                 try: rec_lbl, _, _ = get_recommendation(r.get("sc", 0), r.get("bd", {}), r.get("info"))
                 except Exception: rec_lbl = "WATCH"
-                record_signal_event(
+                specs.append(dict(
                     ticker=r["t"], category=r["primary_cat"], score=int(r.get("sc", 0) or 0),
                     score_components=r.get("bd", {}), price=float(q.get("price", 0) or 0),
                     info=r.get("info"), sent=r.get("sent"), recommendation=rec_lbl,
-                )
+                ))
             except Exception:
                 pass
+        if specs:
+            try: record_signal_events_bulk(specs)   # one history read+write, not one per event
+            except Exception: pass
     _PREV_CATS = new_map
     _PREV_CATS_READY = True
 
@@ -5023,14 +5029,15 @@ def _record_event_signals(rows):
             if t not in _PREV_SI_HOT: new_si.append(r)
 
     if _PREV_EVENTS_READY and is_leader:
+        specs = []
         def _rec(r, cat, detail):
             try:
                 q = r.get("q") or {}
-                record_signal_event(
+                specs.append(dict(
                     ticker=r["t"], category=cat,
                     score=int(r.get("conviction") or r.get("sc", 0) or 0),
                     score_components=r.get("bd", {}), price=float(q.get("price", 0) or 0),
-                    info=r.get("info"), sent=r.get("sent"), recommendation=detail)
+                    info=r.get("info"), sent=r.get("sent"), recommendation=detail))
             except Exception:
                 pass
         for r in sorted(new_ins, key=lambda x: x.get("conviction", 0) or 0, reverse=True)[:EVENT_ALERT_MAX]:
@@ -5043,6 +5050,9 @@ def _record_event_signals(rows):
         for r in sorted(new_si, key=lambda x: (x.get("info") or {}).get("dtc", 0) or 0, reverse=True)[:EVENT_ALERT_MAX]:
             dtc = float((r.get("info") or {}).get("dtc", 0) or 0)
             _rec(r, EVT_SHORT, f"Days-to-cover at {dtc:.1f} — short-squeeze fuel building")
+        if specs:
+            try: record_signal_events_bulk(specs)   # one history read+write for all event types
+            except Exception: pass
 
     _PREV_INSIDER, _PREV_8K, _PREV_SI_HOT = ins_now, k8_now, si_now
     _PREV_EVENTS_READY = True
