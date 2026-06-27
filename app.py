@@ -797,22 +797,46 @@ def _read_json(path, default=None):
 
 def _write_json(path, data):
     wrote_db = _db_write(path, data)
-    # Always write the file when there's no DB, or when dual-write is on, or if
-    # the DB write failed (so we never silently lose data).
+    # Always write the file when there's no DB, or when dual-write is on, or if the DB
+    # write failed (so we never silently lose data). Write ATOMICALLY (temp file +
+    # os.replace) so a crash or an interleaved writer can't leave a truncated, half-written
+    # file that the next read silently treats as empty.
     if (not wrote_db) or STORAGE_DUAL_WRITE:
+        tmp = f"{path}.tmp.{_os.getpid()}.{_secrets.token_hex(4)}"
         try:
-            with open(path, "w") as f: _json.dump(data, f, indent=2, default=str)
-        except: pass
+            with open(tmp, "w") as f:
+                _json.dump(data, f, indent=2, default=str)
+                f.flush()
+                try: _os.fsync(f.fileno())
+                except Exception: pass
+            _os.replace(tmp, path)   # atomic on the same filesystem
+        except Exception:
+            try: _os.remove(tmp)
+            except Exception: pass
+
+@st.cache_resource(show_spinner=False)
+def _store_lock():
+    """Process-wide lock serializing the read-modify-write of the shared JSON stores
+    (users / alerts / sessions). Without it, concurrent Streamlit sessions (separate
+    threads in ONE process) interleave load+save of the WHOLE file and the slower writer
+    clobbers the other's change — a lost update. cache_resource keeps ONE lock across
+    reruns/sessions/threads (a plain module global resets every rerun)."""
+    import threading as __th
+    return __th.Lock()
+_STORE_LOCK = _store_lock()
 
 def save_alerts_to_file(email, alerts):
-    db = _read_json(ALERTS_DB_PATH, {}); db[email] = alerts
-    _write_json(ALERTS_DB_PATH, db)
+    with _STORE_LOCK:
+        db = _read_json(ALERTS_DB_PATH, {}); db[email] = alerts   # fresh read INSIDE the lock
+        _write_json(ALERTS_DB_PATH, db)
 
 def save_user_to_file(email, user_data):
-    """Save ALL user data to disk — full record so users persist across reboots."""
-    db = _read_json(USERS_DB_PATH, {})
-    db[email] = dict(user_data)  # save EVERYTHING about the user
-    _write_json(USERS_DB_PATH, db)
+    """Save ALL user data to disk — full record so users persist across reboots. Locked +
+    fresh-read so a concurrent save of a DIFFERENT user can't be lost."""
+    with _STORE_LOCK:
+        db = _read_json(USERS_DB_PATH, {})       # fresh read INSIDE the lock
+        db[email] = dict(user_data)              # save EVERYTHING about the user
+        _write_json(USERS_DB_PATH, db)
 
 def load_all_users_from_file() -> dict:
     """Read full users database from disk."""
@@ -874,10 +898,11 @@ def _prune_sessions(sessions: dict) -> dict:
 def new_session_token(email: str, role: str) -> str:
     """Create + persist a new session token for this user. Returns the token."""
     tok = _secrets.token_urlsafe(32)   # ~256-bit CSPRNG bearer token (was non-crypto random)
-    sessions = _prune_sessions(_load_sessions())
-    sessions[tok] = {"email": email, "role": role, "created": time.time(),
-                     "expires": time.time() + SESSION_TTL_SECONDS}
-    _save_sessions(sessions)
+    with _STORE_LOCK:
+        sessions = _prune_sessions(_load_sessions())
+        sessions[tok] = {"email": email, "role": role, "created": time.time(),
+                         "expires": time.time() + SESSION_TTL_SECONDS}
+        _save_sessions(sessions)
     return tok
 
 def lookup_session(tok: str):
@@ -892,10 +917,11 @@ def lookup_session(tok: str):
 def destroy_session_token(tok: str):
     if not tok:
         return
-    sessions = _load_sessions()
-    if tok in sessions:
-        sessions.pop(tok, None)
-        _save_sessions(sessions)
+    with _STORE_LOCK:
+        sessions = _load_sessions()
+        if tok in sessions:
+            sessions.pop(tok, None)
+            _save_sessions(sessions)
 
 # ── Pending upgrades ─────────────────────────────────────────────────────────
 # A buyer can finish Stripe checkout while logged out (the hosted-page round-trip can
@@ -1516,8 +1542,9 @@ def _save_global_db(db: dict):
     """Sync session users_db back to global store AND write to disk for durability."""
     global _GLOBAL_USERS_DB
     _GLOBAL_USERS_DB = db
-    # Persist every user to disk
-    _write_json(USERS_DB_PATH, db)
+    # Persist every user to disk (serialized + atomic via _write_json)
+    with _STORE_LOCK:
+        _write_json(USERS_DB_PATH, db)
 
 def _load_seed_accounts():
     today = datetime.now().strftime("%Y-%m-%d")

@@ -179,10 +179,17 @@ def read_json(key, default=None):
 
 def write_json(key, data):
     wrote_db = _db_write(key, data)
-    # Always also write the file as a local cache/fallback (best-effort).
+    # Always also write the file as a local cache/fallback (best-effort) — ATOMICALLY
+    # (temp file + os.replace) so a crash / interleaved writer can't truncate it.
+    tmp = f"{key}.tmp.{_os.getpid()}.{_threading.get_ident()}"
     try:
-        with open(key, "w") as f:
+        with open(tmp, "w") as f:
             _json.dump(data, f, default=str)
+            f.flush()
+            try: _os.fsync(f.fileno())
+            except Exception: pass
+        _os.replace(tmp, key)
     except Exception:
-        pass
+        try: _os.remove(tmp)
+        except Exception: pass
     return wrote_db
