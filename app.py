@@ -3290,6 +3290,7 @@ def _raw_quote(ticker):
                     vol = int(float(d.get("volume", 0) or 0))
                     _record_health("twelvedata", True, int((time.time()-t0)*1000))
                     return {"price": round(p, 2), "prev": round(pv, 2), "pct": round(pct, 2),
+                            "chg": round(p - pv, 2),   # was missing here (present in the yfinance branch)
                             "name": d.get("name", ticker),
                             "open": float(d.get("open", p) or p), "high": float(d.get("high", p) or p),
                             "low": float(d.get("low", p) or p), "volume": vol}
