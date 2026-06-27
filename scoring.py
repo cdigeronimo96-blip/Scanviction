@@ -66,32 +66,65 @@ def category_dir(cat):
     return COMPOSITE_DIR.get(cat, "bull")
 
 
-def compute_scores(df, info=None, sent=None):
+def precompute_indicators(df):
+    """Compute the indicator SERIES shared by compute_scores AND compute_factors
+    exactly ONCE (RSI-14, MA20, MA50, MACD line+signal, 20-day volume MA). The warm
+    loop scores ~2,500 tickers and called both functions per ticker, so each of these
+    was computed twice. Pass the returned bundle to both as `ind=` to halve that work.
+    Returns None for a too-short / malformed frame (callers then self-compute, so the
+    output is byte-identical to not passing `ind` at all)."""
+    try:
+        if df is None or len(df) < 14:
+            return None
+        close = df["close"].astype(float)
+        n = len(close)
+        mac = ta.trend.MACD(close)
+        vol_ma20 = df["volume"].astype(float).rolling(20).mean() if "volume" in df.columns else None
+        return {
+            "rsi":    ta.momentum.RSIIndicator(close, 14).rsi(),
+            "ma20":   close.rolling(20).mean(),
+            "ma50":   close.rolling(min(50, n)).mean(),
+            "macd":   mac.macd(),
+            "macd_s": mac.macd_signal(),
+            "vol_ma20": vol_ma20,
+        }
+    except Exception:
+        return None
+
+
+def compute_scores(df, info=None, sent=None, ind=None):
     if df is None or len(df) < 14: return 0, {}, "N/A", "Unknown", "Low"
     bd = {}; total = 0
     try:
-        dfc = df.copy()
-        dfc["rsi"] = ta.momentum.RSIIndicator(dfc["close"], 14).rsi()
-        dfc["ma20"] = dfc["close"].rolling(20).mean()
-        dfc["ma50"] = dfc["close"].rolling(min(50, len(dfc))).mean()
-        mac = ta.trend.MACD(dfc["close"]); dfc["macd"] = mac.macd(); dfc["macd_s"] = mac.macd_signal()
-        lat = dfc.iloc[-1]; rsi = lat["rsi"]; price = lat["close"]
+        ind = ind if ind is not None else precompute_indicators(df)
+        if ind is not None:
+            rsi_s, ma20_s, ma50_s = ind["rsi"], ind["ma20"], ind["ma50"]
+            macd_line, macd_sig, vol_ma20 = ind["macd"], ind["macd_s"], ind["vol_ma20"]
+        else:   # too-short / failure: self-compute (original path)
+            close = df["close"]
+            rsi_s = ta.momentum.RSIIndicator(close, 14).rsi()
+            ma20_s = close.rolling(20).mean(); ma50_s = close.rolling(min(50, len(df))).mean()
+            mac = ta.trend.MACD(close); macd_line = mac.macd(); macd_sig = mac.macd_signal()
+            vol_ma20 = df["volume"].rolling(20).mean() if "volume" in df.columns else None
+        price = float(df["close"].iloc[-1])
+        rsi = rsi_s.iloc[-1]; ma20 = ma20_s.iloc[-1]; ma50 = ma50_s.iloc[-1]
+        macd = macd_line.iloc[-1]; macd_sig_v = macd_sig.iloc[-1]
         if pd.notna(rsi):
             rs = 25 if rsi < 30 else 20 if rsi < 40 else 18 if rsi <= 55 else 12 if rsi <= 70 else 4
             total += rs; bd["Momentum"] = rs
-        if pd.notna(lat["ma20"]) and pd.notna(lat["ma50"]):
+        if pd.notna(ma20) and pd.notna(ma50):
             ts = 0
-            if price > lat["ma20"]: ts += 8
-            if price > lat["ma50"]: ts += 8
-            if lat["ma20"] > lat["ma50"]: ts += 4
+            if price > ma20: ts += 8
+            if price > ma50: ts += 8
+            if ma20 > ma50: ts += 4
             total += ts; bd["Trend"] = ts
-        if pd.notna(lat["macd"]) and pd.notna(lat["macd_s"]):
-            ms = 15 if (lat["macd"] > lat["macd_s"] and lat["macd"] > 0) else 9 if lat["macd"] > lat["macd_s"] else 4 if lat["macd"] > 0 else 0
+        if pd.notna(macd) and pd.notna(macd_sig_v):
+            ms = 15 if (macd > macd_sig_v and macd > 0) else 9 if macd > macd_sig_v else 4 if macd > 0 else 0
             total += ms; bd["MACD"] = ms
-        if "volume" in dfc.columns:
-            avg = dfc["volume"].rolling(20).mean().iloc[-1]
+        if vol_ma20 is not None:
+            avg = vol_ma20.iloc[-1]
             if pd.notna(avg) and avg > 0:
-                r = lat["volume"] / avg
+                r = float(df["volume"].iloc[-1]) / avg
                 vs = 15 if r >= 3 else 11 if r >= 2 else 7 if r >= 1.5 else 4 if r >= 1 else 1
                 total += vs; bd["Volume"] = vs
         if sent:
@@ -149,11 +182,13 @@ def _cl(v, lo, hi):
     except Exception: return lo
 
 
-def compute_factors(df):
+def compute_factors(df, ind=None):
     """Flat dict of technical factors from a >=20-row OHLCV frame. Each indicator
     is computed ONCE. Numeric keys default to safe neutral values so callers need
     no None-checks (rel_strength stays None until assign_categories fills it from
-    the universe-wide return distribution)."""
+    the universe-wide return distribution). Pass `ind=` (from precompute_indicators)
+    to reuse the RSI/MA/MACD series already computed by compute_scores in the warm
+    loop instead of recomputing them."""
     f = {"rsi": 50.0, "trend_align": 0, "macd_state": 0, "vol_ratio": 1.0,
          "roc5": 0.0, "roc10": 0.0, "roc20": 0.0, "accel": 0.0,
          "near_high": False, "new_high": False, "pct_from_high": 0.0,
@@ -169,9 +204,13 @@ def compute_factors(df):
         low  = df["low"].astype(float).reset_index(drop=True)  if "low"  in df.columns else close
         vol  = df["volume"].astype(float).reset_index(drop=True) if "volume" in df.columns else None
         n = len(close); price = float(close.iloc[-1])
-        rsi = ta.momentum.RSIIndicator(close, 14).rsi()
+        if ind is not None:   # reuse series already computed by compute_scores this cycle
+            rsi, ma20, ma50, ml, ms = ind["rsi"], ind["ma20"], ind["ma50"], ind["macd"], ind["macd_s"]
+        else:
+            rsi = ta.momentum.RSIIndicator(close, 14).rsi()
+            ma20 = close.rolling(20).mean(); ma50 = close.rolling(min(50, n)).mean()
+            mac = ta.trend.MACD(close); ml = mac.macd(); ms = mac.macd_signal()
         if pd.notna(rsi.iloc[-1]): f["rsi"] = float(rsi.iloc[-1])
-        ma20 = close.rolling(20).mean(); ma50 = close.rolling(min(50, n)).mean()
         m20 = float(ma20.iloc[-1]) if pd.notna(ma20.iloc[-1]) else price
         m50 = float(ma50.iloc[-1]) if pd.notna(ma50.iloc[-1]) else price
         f["above_ma20"] = price > m20; f["above_ma50"] = price > m50
@@ -179,7 +218,6 @@ def compute_factors(df):
         f["dist_ma20"] = (price-m20)/m20*100 if m20 else 0.0
         if n >= 25 and pd.notna(ma20.iloc[-5]) and float(ma20.iloc[-5]):
             f["ma20_slope"] = (m20-float(ma20.iloc[-5]))/float(ma20.iloc[-5])*100
-        mac = ta.trend.MACD(close); ml = mac.macd(); ms = mac.macd_signal()
         if pd.notna(ml.iloc[-1]) and pd.notna(ms.iloc[-1]):
             up = bool(ml.iloc[-1] > ms.iloc[-1])
             cross = up and n>1 and pd.notna(ml.iloc[-2]) and pd.notna(ms.iloc[-2]) and bool(ml.iloc[-2] <= ms.iloc[-2])

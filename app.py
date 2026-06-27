@@ -71,7 +71,7 @@ except Exception:
 # scoring.py and imported by BOTH this app and the alerts worker so Discover and
 # the notifications agree on exactly how stocks are scored and categorized.
 from scoring import (
-    compute_scores, compute_factors, assign_categories, category_for_feat,
+    compute_scores, compute_factors, precompute_indicators, assign_categories, category_for_feat,
     _feat_from_row, _category_why, _cl, conviction_score, COMPOSITE_FIT, COMPOSITE_CATS,
     CATEGORY_MIN_FIT, SENT_MIN_MSGS, SENT_FULL_MSGS,
     COMPOSITE_DIR, category_dir, bear_conviction,
@@ -4864,8 +4864,9 @@ def _build_universe_raw_polygon(key):
                 info["insider_buys"] = int(_ins.get("buys") or 0)
                 info["insider_value"] = float(_ins.get("value") or 0.0)
                 info["insider_last"] = _ins.get("last") or ""
-            sc, bd, op, risk, conf = compute_scores(df, info or None, sent)
-            factors = compute_factors(df)   # rich factors for categories + scorecard
+            ind = precompute_indicators(df)   # RSI/MA/MACD once, shared by both calls below
+            sc, bd, op, risk, conf = compute_scores(df, info or None, sent, ind=ind)
+            factors = compute_factors(df, ind=ind)   # rich factors for categories + scorecard
             factors["svr"] = sv_map.get(t, 0.0) or 0.0   # intraday short-volume ratio
             # ig (plain-English insight badges) stays empty in the bulk warm — cards
             # are intentionally minimal; the detail page computes full insights lazily.
