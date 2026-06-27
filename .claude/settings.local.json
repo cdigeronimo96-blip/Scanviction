@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe _inspect_topbar.py)",
+      "Bash(.venv/Scripts/python.exe _inspect2.py)",
+      "Bash(.venv/Scripts/python.exe _verify.py)",
+      "Bash(.venv/Scripts/python.exe -c \"import ast; ast.parse\\(open\\('app.py',encoding='utf-8'\\).read\\(\\)\\); print\\('syntax OK'\\)\")"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+# MarketSignalPro theme — premium indigo. Drives Streamlit's native widget accents
+# (toggles, sliders, checkboxes, focus rings) so they match the app's custom CSS.
+[theme]
+base = "dark"
+primaryColor = "#6366f1"
+backgroundColor = "#07090f"
+secondaryBackgroundColor = "#0d1525"
+textColor = "#d1d9e6"
+font = "sans serif"

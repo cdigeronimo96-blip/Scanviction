@@ -1,0 +1,24 @@
+streamlit>=1.40
+yfinance
+pandas
+numpy
+plotly
+ta
+extra-streamlit-components
+# Optional: powers the opt-in "Auto-refresh prices" toggle on Discover (a clean
+# full-page refresh on a timer). Guarded import — app works without it.
+streamlit-autorefresh
+scikit-learn
+requests
+# Lightweight rule-based sentiment scorer for news headlines (free social-sentiment
+# hybrid: ApeWisdom buzz + company-news direction). Pure-python, no model download.
+vaderSentiment
+# Postgres driver — REQUIRED for durable account storage via DATABASE_URL.
+# Without this, DATABASE_URL silently falls back to ephemeral file storage,
+# and accounts will NOT survive a Streamlit Cloud reboot/redeploy.
+psycopg[binary]>=3.1
+# Stripe — REQUIRED for in-page checkout / subscriptions. Without it, clicking a
+# paid plan shows "stripe library not installed".
+stripe>=9.0
+# bcrypt — REQUIRED for salted, slow password hashing (replaces legacy sha256).
+bcrypt>=4.0

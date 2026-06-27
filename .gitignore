@@ -1,0 +1,26 @@
+# Secrets — NEVER commit
+.streamlit/secrets.toml
+*.key
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local app state / data caches
+.msp_data/
+support_messages.jsonl
+
+# Snapshots / archives
+*.zip
+
+# Editor / backups
+*.bak
+*.bak-*
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
