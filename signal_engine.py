@@ -347,31 +347,50 @@ def update_signal_outcomes(price_fetch_fn):
             if df is None or df.empty:
                 continue
 
-            closes = list(df["close"].dropna())
+            # Align dates + closes from the SAME rows (so dropna can't misalign indices).
+            clean = df.dropna(subset=["close"]).reset_index(drop=True)
+            closes = list(clean["close"])
             if len(closes) < 2:
                 continue
 
             outs = ev.get("outcomes", {})
 
-            # Current price (latest available)
+            # Current price (latest available) — always correct (latest vs entry).
             current_price = closes[-1]
             outs["current_pct"] = round(((current_price - trigger_price) / trigger_price) * 100, 2)
 
-            # Returns at fixed intervals
-            for n_days, key in [(1, "1d_pct"), (3, "3d_pct"), (5, "5d_pct"),
-                                  (10, "10d_pct"), (20, "20d_pct")]:
-                if outs.get(key) is None and days_since >= n_days:
-                    idx = min(n_days, len(closes) - 1)
-                    future_price = closes[-idx] if idx > 0 else closes[-1]
-                    outs[key] = round(((future_price - trigger_price) / trigger_price) * 100, 2)
+            # Locate the TRIGGER bar by date so every horizon is measured FORWARD from the
+            # signal. (The old code used closes[-n] — the n most-RECENT bars — so 1d_pct was
+            # really the current return and 3d/5d/... were all measured over the wrong window.)
+            dt_col = next((c for c in ("datetime", "date") if c in clean.columns), None)
+            t_idx = None
+            if dt_col is not None:
+                try:
+                    import pandas as _pd
+                    ds = _pd.to_datetime(clean[dt_col], errors="coerce")
+                    try: ds = ds.dt.tz_localize(None)          # strip tz for naive compare
+                    except (TypeError, AttributeError): pass
+                    trig = trigger_dt.replace(tzinfo=None) if getattr(trigger_dt, "tzinfo", None) else trigger_dt
+                    mask = (ds >= _pd.Timestamp(trig)).to_numpy()
+                    if mask.any():
+                        t_idx = int(mask.argmax())             # first bar on/after the trigger
+                except Exception:
+                    t_idx = None
 
-            # Max upside and drawdown since trigger
-            future_closes = closes[-(min(days_since + 1, len(closes))):]
-            if future_closes:
-                highs = max(future_closes)
-                lows  = min(future_closes)
-                outs["max_upside"]   = round(((highs - trigger_price) / trigger_price) * 100, 2)
-                outs["max_drawdown"] = round(((lows  - trigger_price) / trigger_price) * 100, 2)
+            if t_idx is not None:
+                # N-day return = close n trading rows AFTER the trigger bar (only once the
+                # horizon has actually elapsed in the available data).
+                for n_days, key in [(1, "1d_pct"), (3, "3d_pct"), (5, "5d_pct"),
+                                      (10, "10d_pct"), (20, "20d_pct")]:
+                    if outs.get(key) is None:
+                        tgt = t_idx + n_days
+                        if tgt < len(closes):
+                            outs[key] = round(((closes[tgt] - trigger_price) / trigger_price) * 100, 2)
+                # Max upside / drawdown over the bars FROM the trigger forward.
+                window = closes[t_idx:]
+                if window:
+                    outs["max_upside"]   = round(((max(window) - trigger_price) / trigger_price) * 100, 2)
+                    outs["max_drawdown"] = round(((min(window) - trigger_price) / trigger_price) * 100, 2)
 
             # Outcome label
             curr = outs.get("current_pct", 0) or 0
@@ -392,7 +411,7 @@ def update_signal_outcomes(price_fetch_fn):
             elif days_since <= 20:
                 ev["lifecycle_stage"] = "extended"
             else:
-                ev["lifecycle_stage"] = "completed" if outs["label"] == "success" else "failed"
+                ev["lifecycle_stage"] = "completed" if outs.get("label") == "success" else "failed"
 
             ev["outcomes"] = outs
             ev["last_updated"] = datetime.now().isoformat()
