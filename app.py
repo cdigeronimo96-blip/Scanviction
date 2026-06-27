@@ -8325,6 +8325,28 @@ def page_discover():
 # ─────────────────────────────────────────────────────────────
 # PAGE: STOCK DETAIL
 # ─────────────────────────────────────────────────────────────
+def _warm_index():
+    """{ticker: row} over the warm universe, CACHED per-warm in session_state (keyed by
+    the universe build time). Turns repeated per-ticker lookups (every detail open / demo
+    price / stale-quote patch) from an O(2,500) scan into an O(1) dict hit. The values are
+    the live row objects, so in-place quote patches stay reflected."""
+    with _UNIVERSE_LOCK:
+        bid = _UNIVERSE_CACHE.get("built_at", 0)
+    if bid and st.session_state.get("_warm_idx_at") == bid and "_warm_idx" in st.session_state:
+        return st.session_state["_warm_idx"]
+    idx = {}
+    try:
+        for r in build_scored_universe():
+            t = r.get("t")
+            if t and t not in idx:
+                idx[t] = r
+    except Exception:
+        pass
+    if bid:
+        st.session_state["_warm_idx"] = idx
+        st.session_state["_warm_idx_at"] = bid
+    return idx
+
 def _warm_row_for(ticker):
     """The warm-scan row for a ticker (its correct, consistent Polygon quote + daily
     bars + info), or None if it isn't in today's scan. Lets the detail page use scan
@@ -8332,13 +8354,7 @@ def _warm_row_for(ticker):
     re-fetching a per-ticker live quote that can be unreliable for off-scan names."""
     if not ticker:
         return None
-    try:
-        for r in build_scored_universe():
-            if r.get("t") == ticker:
-                return r
-    except Exception:
-        pass
-    return None
+    return _warm_index().get(ticker)
 
 
 def _demo_price(t):
