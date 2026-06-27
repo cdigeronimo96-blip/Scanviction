@@ -344,8 +344,12 @@ def record_signal_events_bulk(specs) -> list:
         key = (s["ticker"], s["category"])
         if key in seen:
             continue
+        try:
+            ev = _build_signal_event(**s)   # skip ONE malformed spec, don't abort the batch
+        except Exception:
+            continue
         seen.add(key)
-        added.append(_build_signal_event(**s))
+        added.append(ev)
     if added:
         events.extend(added)
         events = events[-500:]

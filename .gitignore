@@ -9,6 +9,11 @@ __pycache__/
 .venv/
 venv/
 
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Local app state / data caches
 .msp_data/
 support_messages.jsonl

@@ -5241,6 +5241,8 @@ def _universe_worker():
 
 def ensure_universe_worker():
     """Start the background refresh thread once per PROCESS (survives reruns)."""
+    if _os.environ.get("MSP_DISABLE_WORKER") == "1":
+        return   # tests / tooling import app without spinning up the live scanner
     with _WORKER_LOCK:
         for _th in _threading.enumerate():
             if _th.name == "msp-universe":
