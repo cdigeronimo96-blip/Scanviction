@@ -5460,13 +5460,6 @@ def render_topbar(active=""):
                 if st.button("↪\u2002Log out", key="um_logout", use_container_width=True):
                     logout()
 
-        # Mobile topbar — also OUTSIDE the for loop
-        st.markdown(f"""
-        <div class="sw-mobile-topbar-bar">
-            {MSP_LOGO}
-        </div>
-        """, unsafe_allow_html=True)
-
     else:  # ← now attached to `if is_authed()`, not the for loop
         ratios = [2.5, 0.85, 0.85, 0.85, 0.85, 1.2]
         cols = st.columns(ratios, gap="small")
@@ -5486,12 +5479,6 @@ def render_topbar(active=""):
             if st.button("Sign Up →", key="tb_g_signup"):
                 nav("signup")
             st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown(f"""
-        <div class="sw-mobile-topbar-bar">
-            {MSP_LOGO}
-        </div>
-        """, unsafe_allow_html=True)
 
     st.markdown('<hr class="sw-divider">', unsafe_allow_html=True)
 # ─────────────────────────────────────────────────────────────
@@ -7835,11 +7822,16 @@ def page_detail():
     if _lo52: s_items.append(("52W Low",f"${_lo52:,.2f}",RED))
     s_items += [("P/E",f"{_pe:.1f}×" if _pe else "N/A",None),     # was raw unrounded float
                 ("Short Float",f"{sf:.1f}%",RED if sf>=20 else None)]
-    sc_=st.columns(5)
-    for i,(lbl,val,vc) in enumerate(s_items):
-        with sc_[i%5]:
-            cs_=f"color:{vc};" if vc else ""
-            st.markdown(f'<div class="stat" style="margin-bottom:8px;"><div class="stat-l">{lbl}</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:14px;font-weight:700;{cs_}color:#e2e8f0;">{val}</div></div>',unsafe_allow_html=True)
+    # One flex-wrap grid (NOT st.columns) so the stats keep their READING ORDER when they
+    # wrap on mobile — st.columns stacks in column order, which scrambled them to
+    # Open, Mkt Cap, High, 52W High, Low, 52W Low, ...
+    _stat_cells = "".join(
+        f'<div class="stat"><div class="stat-l">{lbl}</div>'
+        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:14px;font-weight:700;color:#e2e8f0;">{val}</div>'
+        f'</div>'
+        for lbl, val, _vc in s_items)
+    st.markdown(f'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));'
+                f'gap:8px;margin-bottom:8px;">{_stat_cells}</div>', unsafe_allow_html=True)
 
     st.markdown("<br>",unsafe_allow_html=True)
 
