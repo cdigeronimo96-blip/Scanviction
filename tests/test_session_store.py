@@ -11,10 +11,13 @@ import pytest
 
 @pytest.fixture
 def store(app, tmp_path, monkeypatch):
-    """app with every persistence path redirected to this test's temp dir."""
-    monkeypatch.setattr(app, "USERS_DB_PATH", str(tmp_path / "users.json"))
-    monkeypatch.setattr(app, "ALERTS_DB_PATH", str(tmp_path / "alerts.json"))
-    monkeypatch.setattr(app, "SESS_DB_PATH", str(tmp_path / "sessions.json"))
+    """app with every persistence path redirected to this test's temp dir. The session/
+    user functions live in auth_store and resolve THAT module's path globals, so patch
+    there (app re-exports the same callables)."""
+    import auth_store
+    monkeypatch.setattr(auth_store, "USERS_DB_PATH", str(tmp_path / "users.json"))
+    monkeypatch.setattr(auth_store, "ALERTS_DB_PATH", str(tmp_path / "alerts.json"))
+    monkeypatch.setattr(auth_store, "SESS_DB_PATH", str(tmp_path / "sessions.json"))
     monkeypatch.setenv("PENDING_UPGRADES_PATH", str(tmp_path / "pending.json"))
     return app
 

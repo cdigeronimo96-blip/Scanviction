@@ -600,9 +600,6 @@ button:active, [role="button"]:active, .stButton button:active {{
 # security.py and are imported at the top of this file: _hp, hp, _is_bcrypt_hash,
 # verify_pw, _esc, HAS_BCRYPT. Covered by tests/test_security.py + test_app_security.py.
 
-# ── Module-level DB: persists within the server process across reruns ──
-_GLOBAL_USERS_DB: dict = {}
-
 # ─────────────────────────────────────────────────────────────
 # FILE-BASED PERSISTENCE (alerts + users readable by worker)
 # ─────────────────────────────────────────────────────────────
@@ -627,14 +624,9 @@ except Exception:
 def _data_path(name, env_var):
     return _os.environ.get(env_var, _os.path.join(_DEFAULT_DATA_DIR, name))
 
-ALERTS_DB_PATH = _data_path("msp_alerts.json", "ALERTS_DB_PATH")
-USERS_DB_PATH  = _data_path("msp_users.json",  "USERS_DB_PATH")
-SESS_DB_PATH   = _data_path("msp_sessions.json", "SESS_DB_PATH")
-
-# Session token lifetime (30 days). Tokens are random, stored server-side, and
-# mirrored into the browser's localStorage so a hard refresh / direct URL / new
-# tab can re-establish the logged-in session instead of bouncing to login.
-SESSION_TTL_SECONDS = 30 * 24 * 3600
+# ALERTS_DB_PATH / USERS_DB_PATH / SESS_DB_PATH and SESSION_TTL_SECONDS now come from
+# auth_store (imported below); it sources the paths from msp_store so the app and the
+# alerts worker share the exact same files/rows.
 
 # ─────────────────────────────────────────────────────────────
 # STORAGE BACKEND  (Phase A migration: JSON files → Postgres)
@@ -660,33 +652,18 @@ from kvstore import (
     _db_read, _db_write, _read_json, _write_json,
 )
 
-@st.cache_resource(show_spinner=False)
-def _store_lock():
-    """Process-wide lock serializing the read-modify-write of the shared JSON stores
-    (users / alerts / sessions). Without it, concurrent Streamlit sessions (separate
-    threads in ONE process) interleave load+save of the WHOLE file and the slower writer
-    clobbers the other's change — a lost update. cache_resource keeps ONE lock across
-    reruns/sessions/threads (a plain module global resets every rerun)."""
-    import threading as __th
-    return __th.Lock()
-_STORE_LOCK = _store_lock()
-
-def save_alerts_to_file(email, alerts):
-    with _STORE_LOCK:
-        db = _read_json(ALERTS_DB_PATH, {}); db[email] = alerts   # fresh read INSIDE the lock
-        _write_json(ALERTS_DB_PATH, db)
-
-def save_user_to_file(email, user_data):
-    """Save ALL user data to disk — full record so users persist across reboots. Locked +
-    fresh-read so a concurrent save of a DIFFERENT user can't be lost."""
-    with _STORE_LOCK:
-        db = _read_json(USERS_DB_PATH, {})       # fresh read INSIDE the lock
-        db[email] = dict(user_data)              # save EVERYTHING about the user
-        _write_json(USERS_DB_PATH, db)
-
-def load_all_users_from_file() -> dict:
-    """Read full users database from disk."""
-    return _read_json(USERS_DB_PATH, {})
+# Account & session persistence — users/alerts/sessions/pending-upgrades, the shared
+# users DB + seed accounts, and the process-wide _STORE_LOCK — lives in auth_store.py.
+# app.py keeps the SAME names via this import; the st.session_state-coupled callers
+# (_toggle_watchlist, login/signup/settings UI) stay here and use these.
+from auth_store import (
+    SESSION_TTL_SECONDS, USERS_DB_PATH, ALERTS_DB_PATH, SESS_DB_PATH, _STORE_LOCK,
+    save_alerts_to_file, save_user_to_file, load_all_users_from_file,
+    _load_sessions, _save_sessions, _prune_sessions,
+    new_session_token, lookup_session, destroy_session_token,
+    _pending_upgrades_path, remember_pending_upgrade, apply_pending_upgrade,
+    _get_global_db, _save_global_db, _load_seed_accounts,
+)
 
 def _toggle_watchlist(ticker):
     """Add/remove a ticker from the current user's watchlist — robustly.
@@ -720,89 +697,11 @@ def _toggle_watchlist(ticker):
         # Even if persistence fails, the in-session watchlist still updated.
         pass
 
-# ─────────────────────────────────────────────────────────────
-# SERVER-SIDE SESSION STORE (persistent auth across reloads)
-# ─────────────────────────────────────────────────────────────
-# Problem this solves: st.session_state lives only inside one in-memory
-# Streamlit session. A hard refresh, a directly-typed URL, or opening the app
-# in a new tab starts a fresh session with user=None — so the user appeared to
-# get logged out whenever they navigated by anything other than an in-app
-# button. We fix this with a random session token stored server-side (on disk,
-# with expiry) and mirrored into the browser localStorage. On load we rehydrate
-# the session from that token. See _restore_session().
-
-def _load_sessions() -> dict:
-    return _read_json(SESS_DB_PATH, {})
-
-def _save_sessions(d: dict):
-    _write_json(SESS_DB_PATH, d)
-
-def _prune_sessions(sessions: dict) -> dict:
-    now = time.time()
-    return {k: v for k, v in sessions.items() if v.get("expires", 0) > now}
-
-def new_session_token(email: str, role: str) -> str:
-    """Create + persist a new session token for this user. Returns the token."""
-    tok = _secrets.token_urlsafe(32)   # ~256-bit CSPRNG bearer token (was non-crypto random)
-    with _STORE_LOCK:
-        sessions = _prune_sessions(_load_sessions())
-        sessions[tok] = {"email": email, "role": role, "created": time.time(),
-                         "expires": time.time() + SESSION_TTL_SECONDS}
-        _save_sessions(sessions)
-    return tok
-
-def lookup_session(tok: str):
-    """Return the session dict for a token if valid + unexpired, else None."""
-    if not tok:
-        return None
-    sess = _load_sessions().get(tok)
-    if sess and sess.get("expires", 0) > time.time():
-        return sess
-    return None
-
-def destroy_session_token(tok: str):
-    if not tok:
-        return
-    with _STORE_LOCK:
-        sessions = _load_sessions()
-        if tok in sessions:
-            sessions.pop(tok, None)
-            _save_sessions(sessions)
-
-# ── Pending upgrades ─────────────────────────────────────────────────────────
-# A buyer can finish Stripe checkout while logged out (the hosted-page round-trip can
-# drop the session). We record the VERIFIED-paid email here and grant premium when that
-# account next logs in or signs up — so a paying customer is never left without access.
-def _pending_upgrades_path():
-    return _data_path("msp_pending_upgrades.json", "PENDING_UPGRADES_PATH")
-
-def remember_pending_upgrade(email, plan):
-    if not email:
-        return
-    try:
-        p = _pending_upgrades_path(); d = _read_json(p, {})
-        d[email.strip().lower()] = {"plan": plan, "ts": time.time()}
-        _write_json(p, d)
-    except Exception:
-        pass
-
-def apply_pending_upgrade(email, db):
-    """If `email` has a paid-but-unclaimed upgrade, grant premium on its db record (in
-    place) and clear the pending entry. Returns True if applied."""
-    if not email:
-        return False
-    try:
-        p = _pending_upgrades_path(); d = _read_json(p, {})
-        key = email.strip().lower()
-        rec = d.get(key)
-        if rec and email in db:
-            db[email]["role"] = "premium"
-            db[email]["plan"] = rec.get("plan", "Monthly")
-            d.pop(key, None); _write_json(p, d)
-            return True
-    except Exception:
-        pass
-    return False
+# SERVER-SIDE SESSION STORE + pending upgrades moved to auth_store.py (imported above):
+# _load_sessions/_save_sessions/_prune_sessions, new_session_token/lookup_session/
+# destroy_session_token, and _pending_upgrades_path/remember_pending_upgrade/
+# apply_pending_upgrade. They persist a random bearer token (server-side, with expiry,
+# mirrored into localStorage) so a hard refresh / new tab re-establishes login.
 
 # ─────────────────────────────────────────────────────────────
 # RECOMMENDATION SNAPSHOT STORE  (performance + "$1000 since signal")
@@ -1268,57 +1167,9 @@ def predict_success_probability(snap, model=None, horizon=5):
             "note": "Score-based estimate; predictive model trains once enough "
                     "resolved outcomes accumulate."}
 
-def _get_global_db() -> dict:
-    """Returns the shared user database — ALWAYS merges disk + seed accounts.
-    This ensures users persist across reboots and across browser tabs."""
-    global _GLOBAL_USERS_DB
-    # Start with the seed accounts (always present)
-    seed = _load_seed_accounts()
-    # Merge with disk (disk wins for conflicts — that's the live data)
-    disk = load_all_users_from_file()
-    # Merge: seed first, then overlay disk
-    merged = dict(seed)
-    for email, user_data in disk.items():
-        if email in merged:
-            # Merge per-user dicts so we don't lose seed fields
-            merged[email] = {**merged[email], **user_data}
-        else:
-            merged[email] = user_data
-    _GLOBAL_USERS_DB = merged
-    return _GLOBAL_USERS_DB
-
-def _save_global_db(db: dict):
-    """Sync session users_db back to global store AND write to disk for durability."""
-    global _GLOBAL_USERS_DB
-    _GLOBAL_USERS_DB = db
-    # Persist every user to disk (serialized + atomic via _write_json)
-    with _STORE_LOCK:
-        _write_json(USERS_DB_PATH, db)
-
-def _load_seed_accounts():
-    today = datetime.now().strftime("%Y-%m-%d")
-    seed = {}
-    # Owner/Admin come ONLY from secrets — NEVER ship default privileged credentials.
-    # (The old code shipped admin@/owner@ with hardcoded "admin_change_me"/"owner_change_me"
-    #  passwords, an account-takeover risk on any default deploy.) Fail closed if unset.
-    try:
-        try:    accts = st.secrets["accounts"]
-        except: accts = st.secrets
-        oe = accts.get("owner_email",""); oh = accts.get("owner_pw_hash","")
-        ae = accts.get("admin_email",""); ah = accts.get("admin_pw_hash","")
-        if oe and oh:
-            seed[oe] = {"pw":oh,"name":"Owner","role":"owner","verified":True,"joined":today,"plan":"Annual"}
-        if ae and ah:
-            seed[ae] = {"pw":ah,"name":"Admin","role":"admin","verified":True,"joined":today,"plan":"Annual"}
-    except Exception:
-        pass
-    # Demo/premium SHOWCASE accounts (known passwords → premium for free) are seeded ONLY
-    # when explicitly enabled, so they never exist in production. Set SEED_DEMO_ACCOUNTS=1
-    # for local demos/testing.
-    if _os.environ.get("SEED_DEMO_ACCOUNTS", "0").strip().lower() in ("1", "true", "yes"):
-        seed["demo@marketsignalpro.com"]    = {"pw":_hp("demo123"), "name":"Demo User",  "role":"free",   "verified":True,"joined":today,"plan":"Free"}
-        seed["premium@marketsignalpro.com"] = {"pw":_hp("premium1"),"name":"Alex Rivera","role":"premium","verified":True,"joined":today,"plan":"Monthly"}
-    return seed
+# _get_global_db / _save_global_db / _load_seed_accounts moved to auth_store.py
+# (imported above): the shared users DB = seed accounts (owner/admin from st.secrets;
+# demo/premium only when SEED_DEMO_ACCOUNTS=1) merged over the on-disk users (disk wins).
 
 def get_td_key():
     try:
