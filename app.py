@@ -2,6 +2,11 @@
 # MarketSignalPro v7.0 — Premium Fintech SaaS
 # "I trust this. I understand this. I want more."
 # ═══════════════════════════════════════════════════════════════
+# This file is the Streamlit UI + routing + warm-universe worker. Most logic now
+# lives in focused modules imported below (and kept under the SAME names here):
+#   scoring · signal_engine · kvstore · msp_store · recs_store · auth_store
+#   perf_eval · advice · security · theme · market_utils · {polygon,edgar,fred}_adapter
+# See ARCHITECTURE.md for the module map, data flow, storage model, and how to test.
 
 import streamlit as st
 import streamlit.components.v1 as components
