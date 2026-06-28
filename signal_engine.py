@@ -830,5 +830,10 @@ def seed_demo_signal_history(price_fn=None):
     # If plenty of category demos already exist, only top up the filing/data examples.
     if len(events) >= 10:
         demo_events = [e for e in demo_events if e["category"] in _EVT_CATS]
+    # Idempotent per (ticker, category): never append a demo event for a pair already in the
+    # store. Without this guard a re-run (or a real warm signal for the same name) appended a
+    # SECOND identical event, which rendered as duplicate alert chips.
+    _have = {(e.get("ticker"), e.get("category")) for e in events}
+    demo_events = [e for e in demo_events if (e.get("ticker"), e.get("category")) not in _have]
     events.extend(demo_events)
     _write_json(SIGNAL_HISTORY_PATH, events)

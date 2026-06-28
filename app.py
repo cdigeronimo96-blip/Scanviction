@@ -7841,6 +7841,15 @@ def page_detail():
         try: _alerts = get_ticker_signal_history(ticker, limit=8)
         except Exception: _alerts = []
         if _alerts:
+            # Dedup the strip: the signal history can carry the same (ticker, category) more
+            # than once, which rendered as identical duplicate chips. _alerts is newest-first,
+            # so keep only the most recent event per category for this compact glance.
+            _seen_cat = set(); _dedup = []
+            for _s in _alerts:
+                _c = _s.get("category", "Signal")
+                if _c not in _seen_cat:
+                    _seen_cat.add(_c); _dedup.append(_s)
+            _alerts = _dedup
             # Live conviction NOW (the same blended metric the Conviction Breakdown shows),
             # so each chip can contrast its FROZEN 'at signal' value with the current one —
             # making it obvious the chip is a 3-day-old snapshot, not a live contradiction.
