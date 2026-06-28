@@ -8,7 +8,7 @@ Used by BOTH the warm worker (get_recommendation) and the detail UI (get_insight
 import pandas as pd
 import ta
 
-from theme import GOLD, GREEN, RED
+from theme import GOLD, GREEN, RED, GREEN_TEXT, AMBER, ORANGE
 
 
 def get_recommendation(sc, bd, info=None):
@@ -23,10 +23,10 @@ def get_recommendation(sc, bd, info=None):
             return ("🟢 BUY",GREEN,"RSI, trend, and MACD aligned. Multi-factor confirmation.")
     elif sc>=50:
         if mom>=18:
-            return ("🟡 WATCH — BOUNCE","#fbbf24","Oversold with improving signals. Watch for volume confirmation.")
-        return ("🟡 WATCH","#fbbf24","Mixed signals — wait for confirmation before entry.")
+            return ("🟡 WATCH — BOUNCE",AMBER,"Oversold with improving signals. Watch for volume confirmation.")
+        return ("🟡 WATCH",AMBER,"Mixed signals — wait for confirmation before entry.")
     elif sc>=30:
-        return ("🟠 HOLD / WAIT","#fb923c","Weak signals. Better setup likely forming — patience.")
+        return ("🟠 HOLD / WAIT",ORANGE,"Weak signals. Better setup likely forming — patience.")
     else:
         return ("🔴 AVOID",RED,"Most indicators negative. Capital better deployed elsewhere.")
 
@@ -87,4 +87,5 @@ def get_insights(df,info=None,ind=None):
     return out
 
 def risk_color(r):
-    return {"Low":"#22c55e","Low-Medium":"#4ade80","Medium":"#fbbf24","Medium-High":"#fb923c","High":"#ef4444","Very High":"#dc2626"}.get(r,"#64748b")
+    return {"Low":GREEN,"Low-Medium":GREEN_TEXT,"Medium":AMBER,"Medium-High":ORANGE,
+            "High":RED,"Very High":"#dc2626"}.get(r,"#64748b")

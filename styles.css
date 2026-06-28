@@ -192,7 +192,7 @@ button:active, [role="button"]:active, .stButton button:active {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Courier New', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 32px;
     font-weight: 900;
     color: #fff;
