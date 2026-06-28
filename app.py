@@ -7753,6 +7753,7 @@ def page_detail():
     # fall back to a per-ticker live fetch (less reliable for off-scan tickers) when the
     # name genuinely isn't in the scan.
     q=data.get("q"); df=data.get("df"); info=data.get("info"); sent=data.get("sent")
+    _wr = None
     if not q or df is None or not info:
         _wr=_warm_row_for(ticker)
         if _wr:
@@ -7760,15 +7761,20 @@ def page_detail():
             if df is None: df=_wr.get("df")
             info = info or _wr.get("info")
             sent = sent or _wr.get("sent")
-    q=q or get_quote(ticker)
-    if df is None: df=yf_ohlcv(ticker,90)
-    # A NON-warm ticker (no warm row) has no short-interest data, which the squeeze score needs
-    # — so it must come from the full yf_fund(.info) here (fast_info lacks it, and dropping it
-    # would change the score/recommendation away from the signal that led here). Warm tickers
-    # (the real-alert case) skip this — they already carry short interest from the warm row and
-    # only top up mktcap/52W from FAST fast_info in the merge below.
-    info=info or yf_fund(ticker)
-    sent=sent or st_sent(ticker)
+    # Anything still missing needs a slow per-ticker network fetch (cold OHLCV / .info /
+    # sentiment). Show a spinner so a cold open feels responsive instead of a frozen stale
+    # page. A WARM open fills everything above, so this block is a no-op and the spinner never
+    # visibly renders (the `with` exits in ~0ms).
+    with st.spinner(f"Loading {ticker}…"):
+        q=q or get_quote(ticker)
+        if df is None: df=yf_ohlcv(ticker,90)
+        # A NON-warm ticker (no warm row) has no short-interest data, which the squeeze score
+        # needs — so it must come from the full yf_fund(.info) here (fast_info lacks it, and
+        # dropping it would change the score/recommendation away from the signal that led here).
+        # Warm tickers (the real-alert case) skip this — they already carry short interest from
+        # the warm row and only top up mktcap/52W from FAST fast_info in the merge below.
+        info=info or yf_fund(ticker)
+        sent=sent or st_sent(ticker)
     # The warm 'info' is a PARTIAL dict (Polygon price/technicals + EPS-derived P/E) missing
     # market cap + 52-week range. Fill those from yfinance's FAST fast_info endpoint (not the
     # slow full .info scrape, which made opening a stock take 1-3s) so market cap is correct
@@ -7780,17 +7786,21 @@ def page_detail():
         for _k in ("mktcap", "hi52", "lo52"):
             if not info.get(_k) and _ff.get(_k):
                 info[_k] = _ff[_k]
-    if isinstance(sent, dict) and sent.get("src") == "bulk":
-        sent = st_sent(ticker)
-    # Score the ticker here (previously sc/bd/op/risk/conf were used below without
-    # being computed — a latent NameError on every detail open). compute_scores
-    # tolerates df=None. Compute the indicator series + factor engine ONCE and share them
-    # across compute_scores / get_insights / the scorecard / the chip + chart blocks below
-    # (this page previously recomputed the full indicator stack 4-5x per open).
+    # Compute the indicator series ONCE and share it (this page used to recompute the full
+    # indicator stack 4-5x per open). For a WARM ticker (the real-alert case) reuse the row's
+    # ALREADY-computed score + factors and its sentiment — the detail then opens FAST (no slow
+    # real-sentiment re-fetch, no re-score) AND matches the feed/Discover score exactly. Only a
+    # NON-warm ticker pays the real-sentiment fetch + full compute (it has no warm score to reuse).
     _ind = precompute_indicators(df)
-    _factors = compute_factors(df, ind=_ind)
-    sc,bd,op,risk,conf=compute_scores(df,info,sent, ind=_ind)
-    ig=get_insights(df,info, ind=_ind)
+    if _wr and _wr.get("bd") and _wr.get("factors") is not None:
+        _factors = _wr["factors"]
+        sc, bd, op, risk, conf = _wr["sc"], _wr["bd"], _wr["op"], _wr["risk"], _wr["conf"]
+    else:
+        if isinstance(sent, dict) and sent.get("src") == "bulk":
+            sent = st_sent(ticker)   # non-warm: upgrade bulk -> real sentiment for the score
+        _factors = compute_factors(df, ind=_ind)
+        sc, bd, op, risk, conf = compute_scores(df, info, sent, ind=_ind)
+    ig = get_insights(df, info, ind=_ind)
     rec_lbl,rec_clr,rec_txt=get_recommendation(sc,bd,info)
     hot=ticker in st_hot()
     if not q: st.error(f"Could not load {ticker}."); return
