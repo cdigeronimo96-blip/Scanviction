@@ -3016,12 +3016,14 @@ def _sccard(title, rows_html):
             f'<div style="font-size:12px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;">{title}</div>'
             f'{rows_html}</div>')
 
-def render_scorecard(t, df, info, sent, sc, bd):
+def render_scorecard(t, df, info, sent, sc, bd, factors=None):
     """Full multi-factor recommendation scorecard for the detail page. Combines the
     rich factor engine with the lazily-loaded fundamentals + sentiment. Each factor
     shows its value, a strength bar, and a plain-English 'why'; the header carries
-    the overall rating with the top contributing reasons and the key risks."""
-    f = compute_factors(df); info = info or {}; sent = sent or {}
+    the overall rating with the top contributing reasons and the key risks.
+    `factors` (from compute_factors) is reused if passed, else computed here."""
+    f = factors if factors is not None else compute_factors(df)
+    info = info or {}; sent = sent or {}
     reasons = []   # (label, score) bullish contributors
     risks = []     # (label, note) risk contributors
 
@@ -7762,9 +7764,13 @@ def page_detail():
         sent = st_sent(ticker)
     # Score the ticker here (previously sc/bd/op/risk/conf were used below without
     # being computed — a latent NameError on every detail open). compute_scores
-    # tolerates df=None.
-    sc,bd,op,risk,conf=compute_scores(df,info,sent)
-    ig=get_insights(df,info)
+    # tolerates df=None. Compute the indicator series + factor engine ONCE and share them
+    # across compute_scores / get_insights / the scorecard / the chip + chart blocks below
+    # (this page previously recomputed the full indicator stack 4-5x per open).
+    _ind = precompute_indicators(df)
+    _factors = compute_factors(df, ind=_ind)
+    sc,bd,op,risk,conf=compute_scores(df,info,sent, ind=_ind)
+    ig=get_insights(df,info, ind=_ind)
     rec_lbl,rec_clr,rec_txt=get_recommendation(sc,bd,info)
     hot=ticker in st_hot()
     if not q: st.error(f"Could not load {ticker}."); return
@@ -7854,7 +7860,7 @@ def page_detail():
             # so each chip can contrast its FROZEN 'at signal' value with the current one —
             # making it obvious the chip is a 3-day-old snapshot, not a live contradiction.
             try:
-                _lf = compute_factors(df); _lf["sc"] = sc
+                _lf = dict(_factors); _lf["sc"] = sc   # reuse the factors computed once above
                 _lf["dtc"] = info.get("dtc") or 0; _lf["pe"] = info.get("pe")
                 _lf["insider_buys"] = int(info.get("insider_buys", 0) or 0)
                 _lf["insider_value"] = float(info.get("insider_value", 0.0) or 0.0)
@@ -7885,10 +7891,7 @@ def page_detail():
 
     # ── Signal on the chart (the detected pattern drawn ON the price action) ──
     _sig_cat = data.get("primary_cat") or ""
-    _sig_fac = data.get("factors")
-    if not _sig_fac and df is not None:
-        try: _sig_fac = compute_factors(df)
-        except Exception: _sig_fac = {}
+    _sig_fac = data.get("factors") or _factors   # reuse the factors computed once above
     if not _sig_cat and _sig_fac:
         try: _sig_cat = category_for_feat(_sig_fac)[0] or ""
         except Exception: _sig_cat = ""
@@ -7971,7 +7974,7 @@ def page_detail():
         </div>""",unsafe_allow_html=True)
 
     # ── Multi-factor recommendation scorecard (the rich, click-through detail) ──
-    render_scorecard(ticker, df, info, sent, sc, bd)
+    render_scorecard(ticker, df, info, sent, sc, bd, factors=_factors)
 
     # ── SIGNAL TRACK RECORD for this ticker ──
     st.markdown('<div class="div-line"></div>', unsafe_allow_html=True)

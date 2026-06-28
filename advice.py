@@ -30,15 +30,20 @@ def get_recommendation(sc, bd, info=None):
     else:
         return ("🔴 AVOID",RED,"Most indicators negative. Capital better deployed elsewhere.")
 
-def get_insights(df,info=None):
+def get_insights(df,info=None,ind=None):
     out=[]
     if df is None or len(df)<14: return out
     try:
         dfc=df.copy()
-        dfc["rsi"]=ta.momentum.RSIIndicator(dfc["close"],14).rsi()
-        dfc["ma20"]=dfc["close"].rolling(20).mean()
-        dfc["ma50"]=dfc["close"].rolling(min(50,len(dfc))).mean()
-        mac=ta.trend.MACD(dfc["close"]); dfc["macd"]=mac.macd(); dfc["macd_s"]=mac.macd_signal()
+        if ind is not None:   # reuse RSI/MA/MACD already computed this render (perf); BB isn't in ind
+            dfc["rsi"]=ind["rsi"].values; dfc["ma20"]=ind["ma20"].values
+            dfc["ma50"]=ind["ma50"].values
+            dfc["macd"]=ind["macd"].values; dfc["macd_s"]=ind["macd_s"].values
+        else:
+            dfc["rsi"]=ta.momentum.RSIIndicator(dfc["close"],14).rsi()
+            dfc["ma20"]=dfc["close"].rolling(20).mean()
+            dfc["ma50"]=dfc["close"].rolling(min(50,len(dfc))).mean()
+            mac=ta.trend.MACD(dfc["close"]); dfc["macd"]=mac.macd(); dfc["macd_s"]=mac.macd_signal()
         bb=ta.volatility.BollingerBands(dfc["close"]); dfc["bb"]=bb.bollinger_pband()
         lat=dfc.iloc[-1]; prev=dfc.iloc[-2]; rsi=lat["rsi"]; price=lat["close"]
         if pd.notna(rsi):

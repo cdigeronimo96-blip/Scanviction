@@ -52,3 +52,14 @@ def test_get_insights_shape(make_ohlcv):
 def test_get_insights_guards():
     assert advice.get_insights(None) == []
     assert advice.get_insights(pd.DataFrame({"close": [1, 2, 3]})) == []   # < 14 rows -> []
+
+
+def test_get_insights_ind_reuse_is_equivalent(make_ohlcv):
+    """Passing a precomputed `ind` must give byte-identical insights to self-computing
+    (the detail-page perf optimization shares one indicator pass)."""
+    import scoring
+    for seed in range(8):
+        df = make_ohlcv(seed, 60)
+        ind = scoring.precompute_indicators(df)
+        info = {"sf": 0.25, "dtc": 6}
+        assert advice.get_insights(df, info) == advice.get_insights(df, info, ind=ind)
