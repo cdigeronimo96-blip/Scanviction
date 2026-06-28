@@ -741,6 +741,21 @@ from perf_eval import (
 # (the UI banner, below) and the warm worker's market-aware sleep both use market_status.
 from market_utils import market_status, _fmt_countdown
 
+def _html_iframe(html: str, height: int):
+    """Render an HTML string in an ISOLATED, fixed-height iframe via the non-deprecated
+    st.iframe (data: URL), replacing st.components.v1.html (deprecated, removed after
+    2026-06-01). Used for self-contained visual blocks whose CSS sets html/body or uses
+    generic class names — page-CSS isolation that inline st.html can't give. For blocks
+    that only run a script side-effect, use st.html(unsafe_allow_javascript=True) instead.
+
+    The leading <meta charset> + data-URL charset are REQUIRED: a data: URL carries no
+    charset (the old srcdoc inherited the page's UTF-8), so without them multibyte glyphs
+    (arrows, x-mark, middot) mojibake."""
+    import base64
+    doc = '<meta charset="utf-8">' + html
+    b64 = base64.b64encode(doc.encode("utf-8")).decode("ascii")
+    st.iframe(f"data:text/html;charset=utf-8;base64,{b64}", height=height)
+
 def render_market_timer():
     """Centered market-status banner rendered as PURE HTML via st.markdown — NOT
     components.html. The old iframe version triggered a Streamlit rerun when it
@@ -6039,7 +6054,7 @@ def page_landing():
           <div class="pfoot">Scored from live market data, SEC filings &amp; short interest</div>
         </div>
         """
-        components.html(hero_comp, height=466, scrolling=False)
+        _html_iframe(hero_comp, 466)   # isolated iframe (sets html/body + generic classes)
 
     st.markdown('</div>', unsafe_allow_html=True)  # close hero-wrap
 
@@ -7374,7 +7389,9 @@ def _scroll_to_top():
     drill-in (the drill-in is an in-place fragment rerun, so the browser otherwise keeps
     the old scroll offset and leaves you mid-page). Tries the main scroll container(s) and
     the window, with a couple of delayed retries so it lands after the content settles."""
-    components.html("""
+    # st.html renders inline (not in an iframe), so window.parent IS the app window;
+    # the same-document selectors below still resolve to the main scroll containers.
+    st.html("""
     <script>
     const go = () => { try {
         const d = window.parent.document;
@@ -7384,7 +7401,7 @@ def _scroll_to_top():
     } catch(_) {} };
     go(); setTimeout(go, 60); setTimeout(go, 200);
     </script>
-    """, height=0)
+    """, unsafe_allow_javascript=True)
 
 
 def _render_discover_category(sel):
@@ -9542,6 +9559,11 @@ def page_pricing():
             <div style="font-size:13px;color:#374f6e;">{plan_name} · Powered by Stripe · SSL Encrypted</div>
         </div>
         """, unsafe_allow_html=True)
+        # KEPT on components.html (deprecated) deliberately: the Stripe checkout loads
+        # external js.stripe.com and mounts Elements — it needs a real same-origin iframe
+        # (srcdoc inherits the page origin; a data: URL's opaque origin breaks Stripe.js),
+        # and this is the PAYMENT path, which can't be end-to-end verified headlessly.
+        # Migrating it for a soft deprecation isn't worth the revenue risk.
         components.html(f"""
         <script src="https://js.stripe.com/v3/"></script>
         <style>
@@ -10019,6 +10041,12 @@ def page_settings():
             </script>
             """
             try:
+                # KEPT on components.html (deprecated) deliberately: this loads the external
+                # OneSignal SDK, which needs a real same-origin context. components.html uses
+                # a srcdoc iframe (inherits the page origin); a data: URL would give it an
+                # opaque origin (SDK breaks) and inline st.html can't be verified here (no
+                # ONESIGNAL_APP_ID in test). Not worth risking a working feature for a soft
+                # deprecation. See _html_iframe for the migrated visual blocks.
                 components.html(push_html, height=240)
             except Exception:
                 st.markdown(push_html, unsafe_allow_html=True)
@@ -10415,7 +10443,7 @@ def page_settings():
                 if st.button("🔗 Open Billing Portal →", key="set_portal", type="primary", use_container_width=False):
                     url, err = create_portal_session(st.session_state.user["email"])
                     if url:
-                        components.html(f'<script>window.top.open("{url}","_blank");</script>',height=0)
+                        st.html(f'<script>window.top.open("{url}","_blank");</script>', unsafe_allow_javascript=True)
                         st.info("Billing portal opened in a new tab.")
                     else:
                         st.error(err)
