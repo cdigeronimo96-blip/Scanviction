@@ -40,14 +40,19 @@ def compute_performance(entry_price: float, current_price: float,
         return None
 
 def _humanize_age(triggered_at: float) -> str:
-    """'3d ago' / '5h ago' / 'just now' from an epoch timestamp."""
+    """Relative age from an epoch timestamp: 'just now' / '5m ago' / '5h ago' / '3d ago' /
+    '2w ago' / '5mo ago' / '1y ago' (so an old signal no longer reads '200d ago')."""
     try:
         secs = max(0, time.time() - float(triggered_at))
     except Exception:
         return ""
-    if secs < 3600:  return f"{max(1,int(secs//60))}m ago"
-    if secs < 86400: return f"{int(secs//3600)}h ago"
-    return f"{int(secs//86400)}d ago"
+    if secs < 60:         return "just now"
+    if secs < 3600:       return f"{int(secs//60)}m ago"
+    if secs < 86400:      return f"{int(secs//3600)}h ago"
+    if secs < 7*86400:    return f"{int(secs//86400)}d ago"
+    if secs < 30*86400:   return f"{int(secs//(7*86400))}w ago"
+    if secs < 365*86400:  return f"{int(secs//(30*86400))}mo ago"
+    return f"{int(secs//(365*86400))}y ago"
 
 
 # ── Historical recommendation labeling framework ─────────────────────────────

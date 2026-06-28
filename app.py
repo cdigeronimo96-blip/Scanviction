@@ -534,7 +534,7 @@ from perf_eval import (
 # market_status (US market-hours state + countdown) and _fmt_countdown are pure and
 # live in market_utils.py. app.py keeps the names via this import; render_market_timer
 # (the UI banner, below) and the warm worker's market-aware sleep both use market_status.
-from market_utils import market_status, _fmt_countdown
+from market_utils import market_status, _fmt_countdown, fmt_mktcap, fmt_money, fmt_pct
 
 def _html_iframe(html: str, height: int):
     """Render an HTML string in an ISOLATED, fixed-height iframe via the non-deprecated
@@ -3070,7 +3070,7 @@ def render_scorecard(t, df, info, sent, sc, bd, factors=None):
     pe_str = f"{pe:.1f}×" if pe else "N/A"
     pe_score = (85 if pe and 0 < pe < 15 else 65 if pe and pe < 25 else 45 if pe and pe < 40 else 40)
     bull = sent.get("bull", 50) or 50; msgs = sent.get("msgs", 0) or 0
-    mc_str = (f"${mc/1e12:.2f}T" if mc >= 1e12 else f"${mc/1e9:.1f}B" if mc >= 1e9 else f"${mc/1e6:.0f}M" if mc else "N/A")
+    mc_str = fmt_mktcap(mc)
     vs_rows = (_scrow("Valuation (P/E)", pe_str, pe_score, "Reasonable earnings multiple" if pe and pe < 25 else ("Rich / unprofitable — paying for growth" if pe else "Loads when you open the stock")) +
                _scrow("Market Cap", mc_str, _cl((mc/2e10)*100, 20, 100) if mc else 40, "Larger = steadier; smaller = higher risk & reward") +
                _scrow("Bullish Sentiment", f"{bull:.0f}%", bull, "Share of recent chatter leaning bullish" if msgs >= 10 else "Too little chatter yet to read direction") +
@@ -3081,7 +3081,7 @@ def render_scorecard(t, df, info, sent, sc, bd, factors=None):
     # ── Catalysts & Insider Activity (SEC EDGAR) ──
     ins_n = int(info.get("insider_buys", 0) or 0); ins_val = float(info.get("insider_value", 0.0) or 0.0)
     if ins_n > 0:
-        _vs = f"~${ins_val/1e6:.1f}M" if ins_val >= 1e6 else f"~${ins_val/1e3:.0f}K"
+        _vs = fmt_money(ins_val)
         reasons.append((f"{ins_n} insider open-market buy{'s' if ins_n>1 else ''} ({_vs})", 92 if ins_n >= 2 else 74))
     if info.get("has_8k"):
         reasons.append(("Fresh SEC 8-K (material event)", 60))
@@ -4183,7 +4183,7 @@ def _record_event_signals(rows):
         for r in sorted(new_ins, key=lambda x: x.get("conviction", 0) or 0, reverse=True)[:EVENT_ALERT_MAX]:
             info = r.get("info") or {}
             n = int(info.get("insider_buys", 0) or 0); val = float(info.get("insider_value", 0.0) or 0.0)
-            vs = f"~${val/1e6:.1f}M" if val >= 1e6 else f"~${val/1e3:.0f}K"
+            vs = fmt_money(val)
             _rec(r, EVT_INSIDER, f"{n} open-market insider buy{'s' if n>1 else ''} ({vs}, SEC Form 4)")
         for r in sorted(new_8k, key=lambda x: x.get("conviction", 0) or 0, reverse=True)[:EVENT_ALERT_MAX]:
             _rec(r, EVT_8K, "Fresh SEC 8-K filing — possible material catalyst")
@@ -4542,7 +4542,7 @@ def _composite_filter(cat_name, row, hot):
         mc = info.get("mktcap",0) or 0; vs = bd.get("Volume",0)
         comp = vs*2 + bd.get("Momentum",0) + (20 if mc < 500e6 else 10 if mc < 2e9 else 0)
         include = mc < 2e9 and vs >= 4 and bd.get("Momentum",0) >= 8
-        mc_s = f"${mc/1e9:.1f}B" if mc >= 1e9 else f"${mc/1e6:.0f}M"
+        mc_s = fmt_mktcap(mc)
         why = f"Micro/small-cap ({mc_s}) + volume surge = early move potential"
     elif cat_name == "💎 Value Momentum":
         pe = info.get("pe",None); tr_s = bd.get("Trend",0)
@@ -4701,7 +4701,7 @@ def _get_composite_stocks_LEGACY(cat_name,limit=10):
                 mc=info.get("mktcap",0) or 0; vs=bd.get("Volume",0)
                 comp=vs*2+bd.get("Momentum",0)+(20 if mc<500e6 else 10 if mc<2e9 else 0)
                 include=mc<2e9 and vs>=4 and bd.get("Momentum",0)>=8
-                mc_s=f"${mc/1e9:.1f}B" if mc>=1e9 else f"${mc/1e6:.0f}M"
+                mc_s=fmt_mktcap(mc)
                 why=f"Micro/small-cap ({mc_s}) + volume surge = early move potential"
             elif cat_name=="💎 Value Momentum":
                 pe=info.get("pe",None); tr_s=bd.get("Trend",0)
@@ -4769,7 +4769,7 @@ def render_sr(s, cat_key="", show_why=False, cat_name="", snap=None):
     bd=s.get("bd",{}); op=s.get("op",""); risk=s.get("risk",""); why_str=s.get("why","")
     if not q: return
     pct=q.get("pct",0); price=q.get("price",0)
-    cc=GREEN if pct>=0 else RED; ar="▲" if pct>=0 else "▼"
+    cc=GREEN if pct>0 else RED if pct<0 else "#6b7fa0"; ar="▲" if pct>0 else "▼" if pct<0 else "•"
     rc=risk_color(risk)
     hot_b='<span class="b b-hot">🔥 HOT</span>' if hot else ""
     sigs="".join([f'<span class="b b-{"bull" if sv=="bull" else "bear" if sv=="bear" else "neu"}">{lv[:16]}</span>' for lv,_,sv,_ in ig[:2]])
@@ -6959,7 +6959,7 @@ def _conviction_card_html(r, locked=False, snap=None):
     conv = int(r.get("conviction") or r.get("sc") or 0)
     why = (r.get("why") or "").strip()
     is_bear = category_dir(cat) == "bear"
-    cc = GREEN if pct >= 0 else RED
+    cc = GREEN if pct > 0 else RED if pct < 0 else "#6b7fa0"
     ar = "▲" if pct >= 0 else "▼"
     # Short setups score with bear_conviction (higher = stronger short), so colour them
     # on a bearish rose/amber ramp rather than the bullish green ramp.
@@ -7776,10 +7776,10 @@ def page_detail():
     if not q: st.error(f"Could not load {ticker}."); return
 
     pct=q.get("pct",0); price=q.get("price",0); prev=q.get("prev",0); chg=q.get("chg",0)
-    cc=GREEN if pct>=0 else RED; ar="▲" if pct>=0 else "▼"
+    cc=GREEN if pct>0 else RED if pct<0 else "#6b7fa0"; ar="▲" if pct>0 else "▼" if pct<0 else "•"
     rc=risk_color(risk); sf=(info.get("sf",0) or 0)*100
     mc_v=info.get("mktcap",0)
-    mc_s=f"${mc_v/1e12:.2f}T" if mc_v>=1e12 else f"${mc_v/1e9:.2f}B" if mc_v>=1e9 else f"${mc_v/1e6:.0f}M" if mc_v else "N/A"
+    mc_s=fmt_mktcap(mc_v)
 
     st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
 
@@ -7824,13 +7824,16 @@ def page_detail():
             if not _hi52 and "high" in df.columns: _hi52 = float(df["high"].max())
             if not _lo52 and "low"  in df.columns: _lo52 = float(df["low"].min())
         except Exception: pass
-    s_items=[("Open",f"${q.get('open',0):,.2f}",None),("High",f"${q.get('high',0):,.2f}",GREEN),
-             ("Low",f"${q.get('low',0):,.2f}",RED),("Volume",f"{q.get('volume',0)/1e6:.2f}M",None),
-             ("vs Avg",f"{q.get('volume',1)/(info.get('avgvol',1) or 1):.1f}×",None),
+    _px = lambda v: (f"${float(v):,.2f}" if v else "—")       # hide a misleading $0.00
+    _pe = info.get("pe"); _avgvol = info.get("avgvol") or 0; _vol = q.get("volume", 0) or 0
+    s_items=[("Open",_px(q.get('open')),None),("High",_px(q.get('high')),GREEN),
+             ("Low",_px(q.get('low')),RED),
+             ("Volume",f"{_vol/1e6:.2f}M" if _vol else "—",None),
+             ("vs Avg",f"{_vol/_avgvol:.1f}×" if (_vol and _avgvol) else "—",None),   # no /1 ratio
              ("Mkt Cap",mc_s,None)]
     if _hi52: s_items.append(("52W High",f"${_hi52:,.2f}",GREEN))
     if _lo52: s_items.append(("52W Low",f"${_lo52:,.2f}",RED))
-    s_items += [("P/E",f"{info.get('pe','N/A')}",None),
+    s_items += [("P/E",f"{_pe:.1f}×" if _pe else "N/A",None),     # was raw unrounded float
                 ("Short Float",f"{sf:.1f}%",RED if sf>=20 else None)]
     sc_=st.columns(5)
     for i,(lbl,val,vc) in enumerate(s_items):
@@ -7856,17 +7859,6 @@ def page_detail():
                 if _c not in _seen_cat:
                     _seen_cat.add(_c); _dedup.append(_s)
             _alerts = _dedup
-            # Live conviction NOW (the same blended metric the Conviction Breakdown shows),
-            # so each chip can contrast its FROZEN 'at signal' value with the current one —
-            # making it obvious the chip is a 3-day-old snapshot, not a live contradiction.
-            try:
-                _lf = dict(_factors); _lf["sc"] = sc   # reuse the factors computed once above
-                _lf["dtc"] = info.get("dtc") or 0; _lf["pe"] = info.get("pe")
-                _lf["insider_buys"] = int(info.get("insider_buys", 0) or 0)
-                _lf["insider_value"] = float(info.get("insider_value", 0.0) or 0.0)
-                _live_conv = int(conviction_score(_lf)[0])
-            except Exception:
-                _live_conv = None
             _chips = ""
             for sig in _alerts[:6]:
                 _cat = sig.get("category", "Signal")
@@ -7876,9 +7868,11 @@ def page_detail():
                 if _cat in EVENT_ALERT_TYPES:
                     _sub = _rec or "Filing / data event"
                 else:
-                    _sub = f"Conviction {int(sig.get('score_at_trigger', 0) or 0)} at signal"
-                    if _live_conv is not None:
-                        _sub += f" → {_live_conv} now"   # 71 at signal -> 25 now
+                    # score_at_trigger is the composite MarketSignalPro Score (sc) for a category
+                    # entry — label it "Score" (matching the header) and contrast it with the LIVE
+                    # sc, the SAME metric (NOT the differently-scaled conviction_score). Makes the
+                    # "at signal → now" an apples-to-apples decay and the chip read as historical.
+                    _sub = f"Score {int(sig.get('score_at_trigger', 0) or 0)} at signal → {int(sc)} now"
                     if _rec:
                         _sub += f" · {_rec}"
                 _chips += (f'<div class="ra-chip"><div class="ra-h">{cat_icon(_cat,14)}'
@@ -8313,7 +8307,7 @@ def page_signals():
         sc_c = GREEN if sc >= 65 else GOLD if sc >= 40 else RED
         # Event types lead with the filing detail; category entries lead with conviction.
         detail_html = f'<span style="color:#a5b4fc;font-weight:600;">{rec}</span>' if rec else ""
-        score_html = "" if is_evt else f'<span style="color:{sc_c};font-weight:700;">Conviction {sc}</span>'
+        score_html = "" if is_evt else f'<span style="color:{sc_c};font-weight:700;">Score {sc}</span>'
         sec_html = f'<span style="color:#374f6e;">{sec}</span>' if (sec and not is_evt) else ""
         cm, cb = st.columns([6, 1.2], gap="small")
         with cm:
@@ -10677,9 +10671,7 @@ APP_URL = "https://your-app.streamlit.app"</pre>
                 label = outs.get("label", "pending")
                 lc = "#4ade80" if label=="success" else "#f87171" if label=="failure" else "#fbbf24" if label=="pending" else "#94a3b8"
                 trigger_dt = datetime.fromisoformat(ev.get("triggered_at", datetime.now().isoformat()))
-                days_ago = (datetime.now() - trigger_dt).days
-                hours_ago = int((datetime.now() - trigger_dt).total_seconds() / 3600)
-                time_str = f"{days_ago}d ago" if days_ago >= 1 else f"{hours_ago}h ago"
+                time_str = _humanize_age(trigger_dt.timestamp())   # unified age (was a bespoke reimpl)
                 st.markdown(f"""<div style="background:#080b14;border:1px solid {BORDER};border-radius:6px;padding:8px 12px;margin-bottom:3px;font-size:11px;display:flex;justify-content:space-between;">
                     <div>
                         <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;">{ev.get("ticker","?")}</span>

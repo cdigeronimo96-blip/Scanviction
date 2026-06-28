@@ -28,9 +28,13 @@ def test_compute_performance_loss_and_guard():
 # ── _humanize_age ────────────────────────────────────────────────────────────
 def test_humanize_age():
     now = time.time()
+    assert pe._humanize_age(now - 30) == "just now"
     assert pe._humanize_age(now - 90) == "1m ago"
     assert pe._humanize_age(now - 3700) == "1h ago"
     assert pe._humanize_age(now - 90000) == "1d ago"
+    assert pe._humanize_age(now - 10 * 86400) == "1w ago"
+    assert pe._humanize_age(now - 60 * 86400) == "2mo ago"
+    assert pe._humanize_age(now - 400 * 86400) == "1y ago"
     assert pe._humanize_age("bad") == ""
 
 

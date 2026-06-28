@@ -57,3 +57,40 @@ def _fmt_countdown(t):
     if t < 0: t = 0
     d = t // 86400; h = (t % 86400) // 3600; m = (t % 3600) // 60; sec = t % 60
     return (f"{d}d " if d > 0 else "") + f"{h:02d}:{m:02d}:{sec:02d}"
+
+
+# ── Canonical value formatters (one rule each — replaces many inline variants) ──
+def fmt_mktcap(v):
+    """Compact market-cap / large-$ string with consistent tiers: $X.XXT / $X.XB / $XM /
+    $XK. Returns 'N/A' for missing/zero. Use everywhere a market cap is shown so a name
+    reads the same on a list card and on its detail page."""
+    try:
+        v = float(v or 0)
+    except (TypeError, ValueError):
+        return "N/A"
+    if v <= 0:        return "N/A"
+    if v >= 1e12:     return f"${v/1e12:.2f}T"
+    if v >= 1e9:      return f"${v/1e9:.1f}B"
+    if v >= 1e6:      return f"${v/1e6:.0f}M"
+    return f"${v/1e3:.0f}K"
+
+def fmt_money(v):
+    """Compact dollar amount for smaller sums (e.g. insider buy value): ~$X.XB / ~$X.XM /
+    ~$XK / ~$X. Returns 'N/A' for non-numeric."""
+    try:
+        v = float(v or 0)
+    except (TypeError, ValueError):
+        return "N/A"
+    if v >= 1e9:      return f"~${v/1e9:.1f}B"
+    if v >= 1e6:      return f"~${v/1e6:.1f}M"
+    if v >= 1e3:      return f"~${v/1e3:.0f}K"
+    return f"~${v:.0f}"
+
+def fmt_pct(v, dp=2, signed=True):
+    """Percent string with fixed decimals; signed=True always shows the sign (+1.20% /
+    -3.40%) so a negative 'top mover' never renders as '+-1.2%'. Returns '—' for non-numeric."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{v:+.{dp}f}%" if signed else f"{v:.{dp}f}%"
