@@ -2877,6 +2877,23 @@ def yf_ohlcv(ticker,n=60):
 def yf_fund(ticker):
     return _raw_fund(ticker)
 
+@st.cache_data(ttl=900,show_spinner=False)
+def yf_fast_fund(ticker):
+    """FAST fundamentals via yfinance fast_info: market cap + 52-week range ONLY. fast_info
+    is a lightweight endpoint, unlike the slow full .info scrape in yf_fund (1-3s) — so
+    opening a stock detail doesn't block on .info just to show market cap / 52W."""
+    try:
+        fi = yf.Ticker(ticker).fast_info
+        def _g(k):
+            try: return fi[k]
+            except Exception:
+                try: return getattr(fi, k, None)
+                except Exception: return None
+        return {"mktcap": _g("market_cap") or 0, "hi52": _g("year_high") or 0,
+                "lo52": _g("year_low") or 0}
+    except Exception:
+        return {}
+
 @st.cache_data(ttl=300,show_spinner=False)
 def td_quote(ticker,key):
     if not key: return None
@@ -6872,6 +6889,20 @@ def _cat_is_locked(cat):
     return bool(meta) and meta[1] == "premium" and not is_premium()
 
 
+def _signal_is_locked(cat):
+    """Tier-gate a feed / alert signal the SAME way Discover gates categories, so the
+    Signals feed and Discover are consistent for a given account. Premium = the premium
+    composite categories AND the filing/data event alerts (insider buys, fresh 8-K, short
+    interest) — those are the 'Insider Cluster & Short Squeeze' / advanced-data Premium
+    features. Free composite categories stay open."""
+    if is_premium():
+        return False
+    if cat in EVENT_ALERT_TYPES:
+        return True
+    meta = COMPOSITE_CATS.get(cat)
+    return bool(meta) and meta[1] == "premium"
+
+
 def _discover_grouped():
     """{primary_cat: [rows sorted by fit desc]} over the warm universe. CACHED per-warm
     in session_state (keyed by the universe build time) so a Discover body rerun — e.g.
@@ -7731,22 +7762,24 @@ def page_detail():
             sent = sent or _wr.get("sent")
     q=q or get_quote(ticker)
     if df is None: df=yf_ohlcv(ticker,90)
+    # A NON-warm ticker (no warm row) has no short-interest data, which the squeeze score needs
+    # — so it must come from the full yf_fund(.info) here (fast_info lacks it, and dropping it
+    # would change the score/recommendation away from the signal that led here). Warm tickers
+    # (the real-alert case) skip this — they already carry short interest from the warm row and
+    # only top up mktcap/52W from FAST fast_info in the merge below.
     info=info or yf_fund(ticker)
     sent=sent or st_sent(ticker)
-    # On the detail page we want REAL fundamentals + sentiment (the market-wide warm
-    # carries only neutral 'bulk' sentiment + empty fundamentals to stay fast), so
-    # upgrade them lazily here on click. The warm 'info' is a PARTIAL dict (Polygon
-    # price/technicals + EPS-derived P/E) missing the yfinance-only fundamentals (52-week
-    # high/low, market cap, beta) — so `info or yf_fund` alone never fills them (the warm
-    # dict is truthy). Merge yf_fund in: the warm dict's real values win, yf_fund fills gaps.
-    if isinstance(info, dict) and not (info.get("hi52") and info.get("mktcap")):
-        _yf = yf_fund(ticker) or {}
-        if _yf:
-            _merged = dict(_yf)
-            for _k, _v in info.items():
-                if _v not in (None, 0, 0.0, "", "N/A"):
-                    _merged[_k] = _v
-            info = _merged
+    # The warm 'info' is a PARTIAL dict (Polygon price/technicals + EPS-derived P/E) missing
+    # market cap + 52-week range. Fill those from yfinance's FAST fast_info endpoint (not the
+    # slow full .info scrape, which made opening a stock take 1-3s) so market cap is correct
+    # for the risk calc + display without blocking the page. (sector/beta would need the slow
+    # .info; they stay absent here — not worth a multi-second wait per click.)
+    if isinstance(info, dict) and not (info.get("mktcap") and info.get("hi52")):
+        _ff = yf_fast_fund(ticker)
+        info = dict(info)
+        for _k in ("mktcap", "hi52", "lo52"):
+            if not info.get(_k) and _ff.get(_k):
+                info[_k] = _ff[_k]
     if isinstance(sent, dict) and sent.get("src") == "bulk":
         sent = st_sent(ticker)
     # Score the ticker here (previously sc/bd/op/risk/conf were used below without
@@ -7775,13 +7808,17 @@ def page_detail():
     h1,h2,h3=st.columns([3,2,2],gap="small")
     with h1:
         hot_b='<span class="b b-hot">🔥 HOT</span>' if hot else ""
+        _sec = (info.get('sector') or '').strip(); _ind = (info.get('industry') or '').strip()
+        _sec_line = (f'<div style="font-size:12px;color:#2a3a52;">{_sec}'
+                     f'{" · " + _ind if (_ind and _ind != "N/A") else ""}</div>'
+                     if (_sec and _sec != "N/A") else "")   # hide a bare "N/A · N/A"
         st.markdown(f"""<div style="padding:4px 0;">
 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
 <span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:800;color:#818cf8;">{ticker}</span>{hot_b}
 <span style="display:inline-block;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:800;background:{rec_clr}22;color:{rec_clr};border:1px solid {rec_clr}44;">{rec_lbl}</span>
 </div>
 <div style="font-size:15px;color:#4a5e7a;margin-bottom:2px;">{q.get('name','')}</div>
-<div style="font-size:12px;color:#2a3a52;">{info.get('sector','N/A')} · {info.get('industry','N/A')}</div>
+{_sec_line}
 <div style="margin-top:8px;font-size:13px;color:#374f6e;font-style:italic;">→ {rec_txt}</div>
 <div style="margin-top:6px;font-size:11px;color:{rc};">⚡ {risk} Risk · {conf} confidence</div>
 </div>""", unsafe_allow_html=True)
@@ -7845,6 +7882,9 @@ def page_detail():
             # Dedup the strip: the signal history can carry the same (ticker, category) more
             # than once, which rendered as identical duplicate chips. _alerts is newest-first,
             # so keep only the most recent event per category for this compact glance.
+            # Gate premium signals for free users (same tiering as the feed/Discover) so the
+            # strip never surfaces a premium alert a free account couldn't access elsewhere.
+            _alerts = [_s for _s in _alerts if not _signal_is_locked(_s.get("category", "Signal"))]
             _seen_cat = set(); _dedup = []
             for _s in _alerts:
                 _c = _s.get("category", "Signal")
@@ -8296,25 +8336,40 @@ def page_signals():
         try: age = _humanize_age(datetime.fromisoformat(e.get("triggered_at", "")).timestamp())
         except Exception: age = ""
         is_evt = cat in EVENT_ALERT_TYPES
+        locked = _signal_is_locked(cat)   # gate premium signals for free users (like Discover)
         sc_c = GREEN if sc >= 65 else GOLD if sc >= 40 else RED
-        # Event types lead with the filing detail; category entries lead with conviction.
-        detail_html = f'<span style="color:#a5b4fc;font-weight:600;">{rec}</span>' if rec else ""
-        score_html = "" if is_evt else f'<span style="color:{sc_c};font-weight:700;">Score {sc}</span>'
-        sec_html = f'<span style="color:#374f6e;">{sec}</span>' if (sec and not is_evt) else ""
         cm, cb = st.columns([6, 1.2], gap="small")
         with cm:
-            st.markdown(f'<div class="sr" style="padding:11px 14px;">'
-                        f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-                        f'<span class="sr-tick">{t}</span>'
-                        f'<span class="sig-pill">{cat_icon(cat,13)}<span>{_clean_name(cat)}</span></span>'
-                        f'<span style="font-size:10px;color:#4a5e7a;">{age}</span></div>'
-                        f'<div style="display:flex;gap:16px;margin-top:5px;font-size:12px;flex-wrap:wrap;align-items:center;">'
-                        f'<span style="font-family:JetBrains Mono,monospace;color:#e2e8f0;font-weight:700;">${price:,.2f}</span>'
-                        f'{score_html}{detail_html}{sec_html}</div>'
-                        f'</div>', unsafe_allow_html=True)
+            if locked:
+                # Premium signal: reveal the TYPE (a conversion teaser) but blur the stock and
+                # lock the details + View — consistent with Discover's "Unlock to reveal" gating.
+                st.markdown(f'<div class="sr" style="padding:11px 14px;">'
+                            f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+                            f'<span class="sr-tick" style="filter:blur(6px);user-select:none;">{t}</span>'
+                            f'<span class="sig-pill">{cat_icon(cat,13)}<span>{_clean_name(cat)}</span></span>'
+                            f'<span style="font-size:10px;color:#4a5e7a;">{age}</span></div>'
+                            f'<div style="margin-top:5px;font-size:12px;color:{GOLD};">🔒 Premium signal — upgrade to reveal the stock</div>'
+                            f'</div>', unsafe_allow_html=True)
+            else:
+                # Event types lead with the filing detail; category entries lead with the score.
+                detail_html = f'<span style="color:#a5b4fc;font-weight:600;">{rec}</span>' if rec else ""
+                score_html = "" if is_evt else f'<span style="color:{sc_c};font-weight:700;">Score {sc}</span>'
+                sec_html = f'<span style="color:#374f6e;">{sec}</span>' if (sec and not is_evt) else ""
+                st.markdown(f'<div class="sr" style="padding:11px 14px;">'
+                            f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+                            f'<span class="sr-tick">{t}</span>'
+                            f'<span class="sig-pill">{cat_icon(cat,13)}<span>{_clean_name(cat)}</span></span>'
+                            f'<span style="font-size:10px;color:#4a5e7a;">{age}</span></div>'
+                            f'<div style="display:flex;gap:16px;margin-top:5px;font-size:12px;flex-wrap:wrap;align-items:center;">'
+                            f'<span style="font-family:JetBrains Mono,monospace;color:#e2e8f0;font-weight:700;">${price:,.2f}</span>'
+                            f'{score_html}{detail_html}{sec_html}</div>'
+                            f'</div>', unsafe_allow_html=True)
         with cb:
             st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
-            if st.button("View", key=f"sig_view_{e.get('id', t)}", use_container_width=True):
+            if locked:
+                if st.button("🔒 Unlock", key=f"sig_lock_{e.get('id', t)}", use_container_width=True):
+                    nav("pricing")
+            elif st.button("View", key=f"sig_view_{e.get('id', t)}", use_container_width=True):
                 st.session_state.detail_ticker = t
                 st.session_state.detail_data = {}
                 nav("stock_detail")
