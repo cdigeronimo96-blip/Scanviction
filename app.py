@@ -7746,7 +7746,18 @@ def page_detail():
     sent=sent or st_sent(ticker)
     # On the detail page we want REAL fundamentals + sentiment (the market-wide warm
     # carries only neutral 'bulk' sentiment + empty fundamentals to stay fast), so
-    # upgrade them lazily here on click.
+    # upgrade them lazily here on click. The warm 'info' is a PARTIAL dict (Polygon
+    # price/technicals + EPS-derived P/E) missing the yfinance-only fundamentals (52-week
+    # high/low, market cap, beta) — so `info or yf_fund` alone never fills them (the warm
+    # dict is truthy). Merge yf_fund in: the warm dict's real values win, yf_fund fills gaps.
+    if isinstance(info, dict) and not (info.get("hi52") and info.get("mktcap")):
+        _yf = yf_fund(ticker) or {}
+        if _yf:
+            _merged = dict(_yf)
+            for _k, _v in info.items():
+                if _v not in (None, 0, 0.0, "", "N/A"):
+                    _merged[_k] = _v
+            info = _merged
     if isinstance(sent, dict) and sent.get("src") == "bulk":
         sent = st_sent(ticker)
     # Score the ticker here (previously sc/bd/op/risk/conf were used below without
@@ -7798,13 +7809,23 @@ def page_detail():
 
     st.divider()
 
-    # Session stats
+    # Session stats. 52-week high/low: prefer the real fundamental; else fall back to the
+    # high/low of the daily bars we already have (a recent-window proxy); else HIDE the cell
+    # rather than show a misleading $0.00 (e.g. a mega-cap reading "52W High $0.00").
+    _hi52 = info.get("hi52") or 0; _lo52 = info.get("lo52") or 0
+    if (not _hi52 or not _lo52) and df is not None and len(df):
+        try:
+            if not _hi52 and "high" in df.columns: _hi52 = float(df["high"].max())
+            if not _lo52 and "low"  in df.columns: _lo52 = float(df["low"].min())
+        except Exception: pass
     s_items=[("Open",f"${q.get('open',0):,.2f}",None),("High",f"${q.get('high',0):,.2f}",GREEN),
              ("Low",f"${q.get('low',0):,.2f}",RED),("Volume",f"{q.get('volume',0)/1e6:.2f}M",None),
              ("vs Avg",f"{q.get('volume',1)/(info.get('avgvol',1) or 1):.1f}×",None),
-             ("Mkt Cap",mc_s,None),("52W High",f"${info.get('hi52',0):,.2f}",GREEN),
-             ("52W Low",f"${info.get('lo52',0):,.2f}",RED),("P/E",f"{info.get('pe','N/A')}",None),
-             ("Short Float",f"{sf:.1f}%",RED if sf>=20 else None)]
+             ("Mkt Cap",mc_s,None)]
+    if _hi52: s_items.append(("52W High",f"${_hi52:,.2f}",GREEN))
+    if _lo52: s_items.append(("52W Low",f"${_lo52:,.2f}",RED))
+    s_items += [("P/E",f"{info.get('pe','N/A')}",None),
+                ("Short Float",f"{sf:.1f}%",RED if sf>=20 else None)]
     sc_=st.columns(5)
     for i,(lbl,val,vc) in enumerate(s_items):
         with sc_[i%5]:
@@ -7820,6 +7841,17 @@ def page_detail():
         try: _alerts = get_ticker_signal_history(ticker, limit=8)
         except Exception: _alerts = []
         if _alerts:
+            # Live conviction NOW (the same blended metric the Conviction Breakdown shows),
+            # so each chip can contrast its FROZEN 'at signal' value with the current one —
+            # making it obvious the chip is a 3-day-old snapshot, not a live contradiction.
+            try:
+                _lf = compute_factors(df); _lf["sc"] = sc
+                _lf["dtc"] = info.get("dtc") or 0; _lf["pe"] = info.get("pe")
+                _lf["insider_buys"] = int(info.get("insider_buys", 0) or 0)
+                _lf["insider_value"] = float(info.get("insider_value", 0.0) or 0.0)
+                _live_conv = int(conviction_score(_lf)[0])
+            except Exception:
+                _live_conv = None
             _chips = ""
             for sig in _alerts[:6]:
                 _cat = sig.get("category", "Signal")
@@ -7829,7 +7861,11 @@ def page_detail():
                 if _cat in EVENT_ALERT_TYPES:
                     _sub = _rec or "Filing / data event"
                 else:
-                    _sub = f"Conviction {int(sig.get('score_at_trigger', 0) or 0)}" + (f" · {_rec}" if _rec else "")
+                    _sub = f"Conviction {int(sig.get('score_at_trigger', 0) or 0)} at signal"
+                    if _live_conv is not None:
+                        _sub += f" → {_live_conv} now"   # 71 at signal -> 25 now
+                    if _rec:
+                        _sub += f" · {_rec}"
                 _chips += (f'<div class="ra-chip"><div class="ra-h">{cat_icon(_cat,14)}'
                            f'<span class="ra-cat">{_clean_name(_cat)}</span>'
                            f'<span class="ra-age">{_age}</span></div>'
