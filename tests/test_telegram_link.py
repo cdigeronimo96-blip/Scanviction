@@ -99,6 +99,14 @@ def test_completed_link_pickup(store, fake_api):
     assert tg.pop_completed_link("u@x.com") is None        # one-time
 
 
+def test_token_as_plain_message_links(store, fake_api):
+    # already-started bots don't re-fire /start payloads, so a pasted bare code must link too
+    tok, _ = tg.make_link_token("p@x.com", "Bot")
+    fake_api["updates"] = [_start(40, 7777, tok)]   # text == the code, no "/start" prefix
+    assert tg.poll_links("T") == [("p@x.com", "7777")]
+    assert tg.pop_completed_link("p@x.com") == "7777"
+
+
 def test_pop_completed_link_absent(store, fake_api):
     assert tg.pop_completed_link("nobody@x.com") is None
     assert tg.pop_completed_link("") is None

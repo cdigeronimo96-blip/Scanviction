@@ -154,11 +154,13 @@ def _process_updates(token, updates):
             msg = upd.get("message") or upd.get("edited_message") or {}
             text = (msg.get("text") or "").strip()
             chat = (msg.get("chat") or {}).get("id")
-            if not chat or not text.startswith("/start"):
+            if not chat or not text:
                 continue
-            parts = text.split(maxsplit=1)
-            tok = parts[1].strip() if len(parts) > 1 else ""
-            if tok and tok in s["tokens"]:
+            # Accept the connect token either via "/start <token>" OR as a plain pasted code:
+            # an already-started bot does NOT re-fire the /start deep-link payload, so a user who
+            # has used the bot before can simply send the code to connect.
+            tok = next((w for w in text.split() if w in s["tokens"]), "")
+            if tok:
                 email = s["tokens"].pop(tok, {}).get("email")
                 changed = True
                 if email:
@@ -167,11 +169,12 @@ def _process_updates(token, updates):
                     replies.append((chat,
                         "✅ <b>MarketSignalPro connected!</b>\n\nYou'll get your signal alerts "
                         "right here. Manage which ones in Settings → Notifications."))
-            else:
+            elif text.startswith("/start"):
                 replies.append((chat,
                     "👋 Welcome to <b>MarketSignalPro</b>.\n\nTo connect, tap <b>Connect "
-                    "Telegram</b> in the app (Settings → Profile). To link manually, your chat "
-                    f"ID is <code>{chat}</code>."))
+                    "Telegram</b> in the app (Settings → Profile) and send the connect code it "
+                    f"shows. To link manually instead, your chat ID is <code>{chat}</code>."))
+            # else: an ordinary message with no pending code — ignore (offset already advanced)
         if max_id > offset:
             s["offset"] = max_id
             changed = True

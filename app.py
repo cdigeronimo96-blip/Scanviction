@@ -9995,12 +9995,14 @@ def page_settings():
             _bot = _tglink.bot_username(_tg_token) or "StockWinsAlertsBot"
             if not st.session_state.get("tg_link_deep"):
                 try: _tok, _deep = _tglink.make_link_token(email, _bot)
-                except Exception: _deep = f"https://t.me/{_bot}"
+                except Exception: _tok, _deep = "", f"https://t.me/{_bot}"
                 st.session_state["tg_link_deep"] = _deep
-            _deep = st.session_state["tg_link_deep"]
+                st.session_state["tg_link_code"] = _tok
+            _deep = st.session_state["tg_link_deep"]; _code = st.session_state.get("tg_link_code", "")
             st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:10px;font-size:12px;color:#374f6e;line-height:1.95;">
-                <strong style="color:#a5b4fc;">1.</strong> Tap <a href="{_deep}" target="_blank" style="color:#818cf8;font-weight:700;text-decoration:none;">Open @{_bot} →</a> then press <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">Start</code> — the bot replies instantly.<br>
-                <strong style="color:#a5b4fc;">2.</strong> Come back and tap <strong style="color:#e2e8f0;">Check connection</strong> to finish.
+                <strong style="color:#a5b4fc;">1.</strong> Tap <a href="{_deep}" target="_blank" style="color:#818cf8;font-weight:700;text-decoration:none;">Open @{_bot} →</a> and press <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">Start</code> — the bot replies instantly.<br>
+                <strong style="color:#a5b4fc;">2.</strong> Already use the bot? Send it this code instead → <code style="background:#1a1f2e;color:#fbbf24;padding:2px 8px;border-radius:3px;font-weight:700;">{_code}</code><br>
+                <strong style="color:#a5b4fc;">3.</strong> Then tap <strong style="color:#e2e8f0;">Check connection</strong>.
             </div>''', unsafe_allow_html=True)
             if st.button("🔗 Check connection", key="tg_check", type="primary", use_container_width=True):
                 _cid = _tglink.pop_completed_link(email)
