@@ -9960,11 +9960,45 @@ def page_settings():
                         border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;">{tg_status_text}</div>
         </div>''', unsafe_allow_html=True)
 
-        if not current_tg_id:
-            st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:2;">
-                <strong style="color:#a5b4fc;">1.</strong> Open <a href="https://t.me/StockWinsAlertsBot" target="_blank" style="color:#818cf8;text-decoration:none;">@StockWinsAlertsBot</a> in Telegram
-                · <strong style="color:#a5b4fc;">2.</strong> Tap <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">/start</code>
-                · <strong style="color:#a5b4fc;">3.</strong> Paste the Chat ID it replies with below
+        # One-tap connect (primary): generate a deep link the user taps; we then poll
+        # getUpdates to capture their chat_id automatically — no copy-pasting an ID. The
+        # manual Chat-ID form below stays as a fallback and for Disconnect. Needs a token.
+        import telegram_link as _tglink
+        try: _tg_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "") or ""
+        except Exception: _tg_token = ""
+        if not current_tg_id and _tg_token:
+            _bot = _tglink.bot_username(_tg_token) or "StockWinsAlertsBot"
+            if not st.session_state.get("tg_link_deep"):
+                try: _tok, _deep = _tglink.make_link_token(email, _bot)
+                except Exception: _deep = f"https://t.me/{_bot}"
+                st.session_state["tg_link_deep"] = _deep
+            _deep = st.session_state["tg_link_deep"]
+            st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:10px;font-size:12px;color:#374f6e;line-height:1.95;">
+                <strong style="color:#a5b4fc;">1.</strong> Tap <a href="{_deep}" target="_blank" style="color:#818cf8;font-weight:700;text-decoration:none;">Open @{_bot} →</a> then press <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">Start</code> in Telegram<br>
+                <strong style="color:#a5b4fc;">2.</strong> Come back here and tap <strong style="color:#e2e8f0;">Check connection</strong>.
+            </div>''', unsafe_allow_html=True)
+            if st.button("🔗 Check connection", key="tg_check", type="primary", use_container_width=True):
+                try: _linked = _tglink.poll_links(_tg_token)
+                except Exception: _linked = []
+                _mine = None
+                for _em, _cid in _linked:
+                    if _em in st.session_state.users_db:
+                        st.session_state.users_db[_em]["telegram_chat_id"] = _cid
+                        save_user_to_file(_em, st.session_state.users_db[_em])
+                    if _em == email: _mine = _cid
+                if _linked:
+                    _save_global_db(st.session_state.users_db)
+                if _mine:
+                    st.session_state.pop("tg_link_deep", None)
+                    st.toast("✈️ Telegram connected!", icon="✅")
+                    st.success("✅ Connected — your alerts will come through Telegram.")
+                    time.sleep(0.8); st.rerun()
+                else:
+                    st.warning("Not linked yet — make sure you tapped **Start** in the bot, then check again.")
+            st.caption("Or paste a Chat ID manually below.")
+        elif not current_tg_id and not _tg_token:
+            st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:1.8;">
+                Telegram isn't configured on this deployment yet (<code style="background:#1a1f2e;color:#94a3b8;padding:1px 6px;border-radius:3px;">TELEGRAM_BOT_TOKEN</code> missing in secrets).
             </div>''', unsafe_allow_html=True)
         else:
             st.markdown(f'<div style="font-size:11px;color:#4a5e7a;margin-bottom:8px;">Linked Chat ID: <code style="background:#080b14;color:#4ade80;padding:2px 8px;border-radius:4px;">{current_tg_id}</code></div>', unsafe_allow_html=True)
