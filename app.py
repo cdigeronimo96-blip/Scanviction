@@ -10018,18 +10018,22 @@ def page_settings():
             if tg_save:
                 clean = "".join(c for c in tg_id if c.isdigit() or c == "-")
                 if not clean:
-                    st.error("Chat ID must be a number. Get it from @StockWinsAlertsBot.")
+                    st.error("Chat ID must be a number (the ID @StockWinsAlertsBot replies with) — not the bot token.")
                 else:
-                    st.session_state.users_db[email]["telegram_chat_id"] = clean
-                    _save_global_db(st.session_state.users_db)
-                    save_user_to_file(email, st.session_state.users_db[email])
+                    # VALIDATE before saving. A chat_id only works if it's real AND the user
+                    # has tapped Start (Telegram refuses the send otherwise), so a successful
+                    # test message is proof of a genuine connection. Only persist + show
+                    # "connected" when it actually delivers — never save an unverified ID.
                     ok, info = _send_telegram(clean, "✅ <b>MarketSignalPro Telegram alerts connected!</b>\n\nYou'll get instant alerts here.")
                     if ok:
+                        st.session_state.users_db[email]["telegram_chat_id"] = clean
+                        _save_global_db(st.session_state.users_db)
+                        save_user_to_file(email, st.session_state.users_db[email])
                         st.toast("✈️ Telegram connected — check your phone!", icon="✅")
-                        st.success("✅ Test message just sent to your Telegram.")
+                        st.success("✅ Connected — a test message just hit your Telegram.")
+                        time.sleep(1); st.rerun()
                     else:
-                        st.warning(f"Saved, but test failed: {info}. Make sure you started the bot.")
-                    time.sleep(1); st.rerun()
+                        st.error(f"That Chat ID didn't work, so it was NOT saved. Tap **Start** in @StockWinsAlertsBot, then paste the number it replies with (not the bot token). [{info}]")
             if tg_remove:
                 st.session_state.users_db[email]["telegram_chat_id"] = ""
                 _save_global_db(st.session_state.users_db)
@@ -10219,12 +10223,22 @@ def page_settings():
                 else:
                     st.markdown(f'<div style="font-size:12px;color:#374f6e;line-height:1.8;margin-bottom:8px;">1. Open Telegram → search <strong style="color:#e2e8f0;">@StockWinsAlertsBot</strong><br>2. Send /start to get your Chat ID<br>3. Paste it below</div>',unsafe_allow_html=True)
                 with st.form("tg_form"):
-                    tg_id=st.text_input("Your Telegram Chat ID",value=current_tg,placeholder="1234567890",label_visibility="visible")
+                    tg_id=st.text_input("Your Telegram Chat ID",value=current_tg,placeholder="1234567890",label_visibility="visible",help="Your numeric Chat ID — NOT the bot token. Easiest: use the one-tap connect in Settings → Profile.")
                     if st.form_submit_button("Save Telegram Connection",type="primary"):
                         uemail=st.session_state.user["email"]
-                        st.session_state.users_db[uemail]["telegram_chat_id"]=tg_id.strip()
-                        save_user_to_file(uemail, st.session_state.users_db[uemail])
-                        st.success("✅ Telegram connected!")
+                        _clean=("".join(c for c in tg_id if c.isdigit() or c=="-")).strip()
+                        if not _clean:
+                            st.error("Chat ID must be a number (not the bot token).")
+                        else:
+                            # Validate via a real test send — only mark connected if it delivers.
+                            _ok,_info=_send_telegram(_clean,"✅ <b>MarketSignalPro Telegram alerts connected!</b>\n\nYou'll get your signal alerts here.")
+                            if _ok:
+                                st.session_state.users_db[uemail]["telegram_chat_id"]=_clean
+                                save_user_to_file(uemail, st.session_state.users_db[uemail])
+                                _save_global_db(st.session_state.users_db)
+                                st.success("✅ Telegram connected — test message sent!"); st.rerun()
+                            else:
+                                st.error(f"That Chat ID didn't work, so it was NOT saved. Tap Start in @StockWinsAlertsBot and paste the number it replies with. [{_info}]")
 
         if not is_premium():
             st.markdown(f'<div class="card card-gold" style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:{GOLD};margin-bottom:4px;">👑 Premium Alert Channels</div><div style="font-size:12px;color:#374f6e;">Upgrade to Premium for instant Telegram alerts and real-time browser push notifications on composite category signals.</div></div>',unsafe_allow_html=True)
