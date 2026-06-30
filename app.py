@@ -5358,15 +5358,19 @@ def render_topbar(active=""):
                 + '</span>')
 
     if is_authed():
-        _unseen = _signals_unseen()
-        # "New alerts" toast — fires when the unseen count GROWS between reruns. First
-        # load only records the baseline (no toast on the backlog); the count resets
-        # when the user opens the feed, so it tracks genuinely new arrivals.
+        _unseen_list = _unseen_signals()
+        _unseen = min(len(_unseen_list), 99)
+        # "New signals" toast — fires on LOGIN (first render of the session) if you have unseen
+        # entitled signals, and again whenever new ones arrive mid-session. Names a couple
+        # tickers so it's actionable; suppressed while you're actually on the feed.
         try:
-            _prev_unseen = st.session_state.get("_unseen_shown", _unseen)
-            if _unseen > _prev_unseen and active != "signals":
-                _d = _unseen - _prev_unseen
-                st.toast(f"{_d} new signal{'s' if _d != 1 else ''} in your feed", icon="🔔")
+            _prev_unseen = st.session_state.get("_unseen_shown")   # None on the first render
+            _base = 0 if _prev_unseen is None else _prev_unseen
+            if _unseen > _base and active != "signals":
+                _names = ", ".join(e.get("ticker", "") for e in _unseen_list[:3] if e.get("ticker"))
+                _more = f" +{_unseen - 3} more" if _unseen > 3 else ""
+                st.toast(f"🔔 {_unseen} new signal{'s' if _unseen != 1 else ''}"
+                         + (f": {_names}{_more}" if _names else " in your feed"), icon="🔔")
             st.session_state["_unseen_shown"] = _unseen
         except Exception:
             pass
@@ -5484,6 +5488,46 @@ def render_topbar(active=""):
                     nav("settings")
                 if st.button("↪\u2002Log out", key="um_logout", use_container_width=True):
                     logout()
+
+        # ── High-conviction "new signal" banner (loudest in-app surface) ──
+        # A strong UNSEEN setup gets a one-line banner with a direct View, at the top of every
+        # page except the feed itself. Only entitled signals at/above the bar, only until the
+        # user dismisses it (per signal id) or opens the feed (which clears the watermark).
+        try:
+            if active != "signals":
+                _dismissed = st.session_state.setdefault("_dismissed_banners", set())
+                _hot = next((e for e in _unseen_list
+                             if (e.get("score_at_trigger", 0) or 0) >= SIGNAL_BANNER_MIN
+                             and e.get("id") not in _dismissed), None)
+                if _hot:
+                    _bt = _hot.get("ticker", ""); _bc = _hot.get("category", "")
+                    _bs = int(_hot.get("score_at_trigger", 0) or 0)
+                    _br = _hot.get("recommendation", "") or ""
+                    _bid = _hot.get("id", "")
+                    _bverb = "·" if _bc in EVENT_ALERT_TYPES else "just entered"   # 8-K/insider aren't "entered"
+                    bn1, bn2, bn3 = st.columns([8, 1.15, 0.7], gap="small")
+                    with bn1:
+                        st.markdown(
+                            f'<div style="background:linear-gradient(90deg,{GOLD}1f,transparent);'
+                            f'border:1px solid {GOLD}55;border-left:3px solid {GOLD};border-radius:10px;'
+                            f'padding:9px 16px;margin:4px 0 2px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;">'
+                            f'<span style="font-size:15px;">🔔</span>'
+                            f'<span style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#e2e8f0;">{_esc(_bt)}</span>'
+                            f'<span style="font-size:12px;color:#94a3b8;">{_bverb}</span>'
+                            f'<span style="font-size:12px;font-weight:700;color:{GOLD};">{_esc(_bc)}</span>'
+                            f'<span style="font-size:11px;color:#6b7fa0;">· Score {_bs}{(" · " + _esc(_br)) if _br else ""}</span>'
+                            f'</div>', unsafe_allow_html=True)
+                    with bn2:
+                        if st.button("View →", key=f"sigban_view_{_bid}", use_container_width=True):
+                            st.session_state.detail_ticker = _bt
+                            st.session_state.detail_data = {}
+                            _dismissed.add(_bid)
+                            nav("stock_detail")
+                    with bn3:
+                        if st.button("✕", key=f"sigban_x_{_bid}", use_container_width=True, help="Dismiss"):
+                            _dismissed.add(_bid); st.rerun()
+        except Exception:
+            pass
 
     else:  # ← now attached to `if is_authed()`, not the for loop
         ratios = [2.5, 0.85, 0.85, 0.85, 0.85, 1.2]
@@ -8273,21 +8317,47 @@ def page_detail():
 # ─────────────────────────────────────────────────────────────
 # PAGE: SIGNAL TRACK RECORD
 # ─────────────────────────────────────────────────────────────
-def _signals_unseen():
-    """Count signal events newer than the user's last visit to the Signals feed —
-    drives the topbar 🔔 badge. Cheap; capped at 99."""
+SIGNAL_BANNER_MIN = int(_os.environ.get("SIGNAL_BANNER_MIN", "75"))   # score for a signal to earn a banner
+
+def _resolve_signals_last_seen():
+    """The user's 'seen up to' watermark (epoch secs). Session first, then the PERSISTED user
+    record, else a short welcome window so a first/returning user still sees recent activity
+    (not a huge backlog, and not nothing). Cached back into the session."""
+    last = st.session_state.get("signals_last_seen")
+    if last is None:
+        email = st.session_state.user.get("email", "") if is_authed() else ""
+        rec = st.session_state.get("users_db", {}).get(email, {}) if email else {}
+        last = rec.get("signals_last_seen")
+        if last is None:
+            # First login: clean slate ("you're caught up"). Only signals from now on notify —
+            # no overwhelming backlog. Returning users use their persisted (feed-visit) watermark.
+            last = time.time()
+        st.session_state["signals_last_seen"] = float(last)
+    return float(last or 0)
+
+def _unseen_signals():
+    """Tier-filtered signal events the user hasn't seen yet (newest first). Drives the bell
+    badge, the login/new-arrival toast, and the high-conviction banner. Premium-gated signals
+    are excluded for free users (consistent with Discover and the feed)."""
     if not HAS_SIGNAL_ENGINE or not is_authed():
-        return 0
+        return []
     try:
-        last = float(st.session_state.get("signals_last_seen", 0) or 0)
-        n = 0
+        last = _resolve_signals_last_seen()
+        out = []
         for e in get_recent_signal_events(limit=100):
+            if _signal_is_locked(e.get("category", "")):
+                continue
             try: ts = datetime.fromisoformat(e.get("triggered_at", "")).timestamp()
             except Exception: ts = 0
-            if ts > last: n += 1
-        return min(n, 99)
+            if ts > last:
+                out.append(e)
+        return out
     except Exception:
-        return 0
+        return []
+
+def _signals_unseen():
+    """Unseen count for the topbar 🔔 badge (capped at 99)."""
+    return min(len(_unseen_signals()), 99)
 
 def page_signals():
     """Live in-app feed of stocks that just ENTERED a composite category — the
@@ -8296,8 +8366,14 @@ def page_signals():
     render_topbar("signals")
     st.markdown('<div class="page-wrap pw-narrow">', unsafe_allow_html=True)
     back_button("signals_back")
-    # Visiting the feed marks everything currently logged as "seen" → bell clears.
+    # Visiting the feed marks everything currently logged as "seen" → bell + banner clear.
     st.session_state["signals_last_seen"] = time.time()
+    try:  # persist the watermark so the bell stays cleared across sessions, not just this one
+        _em = st.session_state.user.get("email", "")
+        if _em and _em in st.session_state.get("users_db", {}):
+            st.session_state.users_db[_em]["signals_last_seen"] = st.session_state["signals_last_seen"]
+            save_user_to_file(_em, st.session_state.users_db[_em])
+    except Exception: pass
 
     st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:2px;">Signals Feed</div>'
                 '<div style="font-size:13px;color:#374f6e;margin-bottom:16px;">A live log of everything worth knowing — stocks entering a signal category, open-market insider buys, fresh SEC 8-K catalysts and short-interest surges — newest first, no scanning required. '
