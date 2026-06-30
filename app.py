@@ -4375,6 +4375,14 @@ def ensure_universe_worker():
     """Start the background refresh thread once per PROCESS (survives reruns)."""
     if _os.environ.get("MSP_DISABLE_WORKER") == "1":
         return   # tests / tooling import app without spinning up the live scanner
+    # Telegram getUpdates listener: ONE background consumer that answers /start instantly
+    # (auto-links deep-link taps, replies with the chat id otherwise). Idempotent; no-op
+    # without a bot token. Started here so it shares the worker's once-per-process lifecycle.
+    try:
+        import telegram_link as _tgl
+        _tgl.start_listener(st.secrets.get("TELEGRAM_BOT_TOKEN", "") or "")
+    except Exception:
+        pass
     with _WORKER_LOCK:
         for _th in _threading.enumerate():
             if _th.name == "msp-universe":
@@ -9960,13 +9968,30 @@ def page_settings():
                         border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;">{tg_status_text}</div>
         </div>''', unsafe_allow_html=True)
 
-        # One-tap connect (primary): generate a deep link the user taps; we then poll
-        # getUpdates to capture their chat_id automatically — no copy-pasting an ID. The
-        # manual Chat-ID form below stays as a fallback and for Disconnect. Needs a token.
+        # One-tap connect (primary): the user taps a deep link + presses Start; the background
+        # listener (msp-tg-listener) INSTANTLY auto-links their chat_id and replies in Telegram.
+        # The UI finishes by picking up that completed link — it does NOT poll getUpdates itself
+        # (the listener is the single consumer). Manual Chat-ID form below = fallback + Disconnect.
         import telegram_link as _tglink
         try: _tg_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "") or ""
         except Exception: _tg_token = ""
+        if _tg_token:
+            _tglink.start_listener(_tg_token)   # idempotent — ensure the bot answers Start
+
+        def _tg_apply(cid):
+            """Persist a freshly linked chat_id to this user and flip to Connected."""
+            st.session_state.users_db[email]["telegram_chat_id"] = cid
+            _save_global_db(st.session_state.users_db)
+            save_user_to_file(email, st.session_state.users_db[email])
+            st.session_state.pop("tg_link_deep", None)
+            st.toast("✈️ Telegram connected!", icon="✅")
+            st.success("✅ Connected — your alerts will come through Telegram.")
+            time.sleep(0.8); st.rerun()
+
         if not current_tg_id and _tg_token:
+            _auto = _tglink.pop_completed_link(email)   # listener already linked it? finish silently
+            if _auto:
+                _tg_apply(_auto)
             _bot = _tglink.bot_username(_tg_token) or "StockWinsAlertsBot"
             if not st.session_state.get("tg_link_deep"):
                 try: _tok, _deep = _tglink.make_link_token(email, _bot)
@@ -9974,27 +9999,23 @@ def page_settings():
                 st.session_state["tg_link_deep"] = _deep
             _deep = st.session_state["tg_link_deep"]
             st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:10px;font-size:12px;color:#374f6e;line-height:1.95;">
-                <strong style="color:#a5b4fc;">1.</strong> Tap <a href="{_deep}" target="_blank" style="color:#818cf8;font-weight:700;text-decoration:none;">Open @{_bot} →</a> then press <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">Start</code> in Telegram<br>
-                <strong style="color:#a5b4fc;">2.</strong> Come back here and tap <strong style="color:#e2e8f0;">Check connection</strong>.
+                <strong style="color:#a5b4fc;">1.</strong> Tap <a href="{_deep}" target="_blank" style="color:#818cf8;font-weight:700;text-decoration:none;">Open @{_bot} →</a> then press <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">Start</code> — the bot replies instantly.<br>
+                <strong style="color:#a5b4fc;">2.</strong> Come back and tap <strong style="color:#e2e8f0;">Check connection</strong> to finish.
             </div>''', unsafe_allow_html=True)
             if st.button("🔗 Check connection", key="tg_check", type="primary", use_container_width=True):
-                try: _linked = _tglink.poll_links(_tg_token)
-                except Exception: _linked = []
-                _mine = None
-                for _em, _cid in _linked:
-                    if _em in st.session_state.users_db:
-                        st.session_state.users_db[_em]["telegram_chat_id"] = _cid
-                        save_user_to_file(_em, st.session_state.users_db[_em])
-                    if _em == email: _mine = _cid
-                if _linked:
-                    _save_global_db(st.session_state.users_db)
-                if _mine:
-                    st.session_state.pop("tg_link_deep", None)
-                    st.toast("✈️ Telegram connected!", icon="✅")
-                    st.success("✅ Connected — your alerts will come through Telegram.")
-                    time.sleep(0.8); st.rerun()
+                _cid = _tglink.pop_completed_link(email)
+                if not _cid and not _tglink.is_listening():
+                    # No background listener (rare) — fall back to a one-shot poll from the UI.
+                    for _em, _c in _tglink.poll_links(_tg_token):
+                        if _em in st.session_state.users_db:
+                            st.session_state.users_db[_em]["telegram_chat_id"] = _c
+                            save_user_to_file(_em, st.session_state.users_db[_em])
+                        if _em == email: _cid = _c
+                    if _cid: _save_global_db(st.session_state.users_db)
+                if _cid:
+                    _tg_apply(_cid)
                 else:
-                    st.warning("Not linked yet — make sure you tapped **Start** in the bot, then check again.")
+                    st.warning("Not linked yet — open the bot via the link above, tap **Start**, then check again.")
             st.caption("Or paste a Chat ID manually below.")
         elif not current_tg_id and not _tg_token:
             st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:1.8;">

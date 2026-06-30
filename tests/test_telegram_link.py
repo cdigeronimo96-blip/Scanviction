@@ -89,3 +89,21 @@ def test_offset_prevents_reprocessing(store, fake_api):
 
 def test_bot_username_cached(store, fake_api):
     assert tg.bot_username("T") == "StockWinsAlertsBot"
+
+
+def test_completed_link_pickup(store, fake_api):
+    tok, _ = tg.make_link_token("u@x.com", "Bot")
+    fake_api["updates"] = [_start(30, 42424, f"/start {tok}")]
+    assert tg.poll_links("T") == [("u@x.com", "42424")]   # processing stashes a completed link
+    assert tg.pop_completed_link("u@x.com") == "42424"     # app picks it up
+    assert tg.pop_completed_link("u@x.com") is None        # one-time
+
+
+def test_pop_completed_link_absent(store, fake_api):
+    assert tg.pop_completed_link("nobody@x.com") is None
+    assert tg.pop_completed_link("") is None
+
+
+def test_start_listener_noop_without_token(store, fake_api):
+    assert tg.start_listener("") is False
+    assert tg.is_listening() is False
