@@ -3588,6 +3588,12 @@ POLY_SI_TTL       = int(_os.environ.get("POLY_SI_TTL", "21600"))      # refresh 
 POLY_SV_TTL       = int(_os.environ.get("POLY_SV_TTL", "21600"))      # refresh short VOLUME every 6h (daily data)
 POLY_PE_TTL       = int(_os.environ.get("POLY_PE_TTL", "604800"))     # EPS cached 7d (fundamentals are quarterly)
 POLY_PE_BACKFILL  = int(_os.environ.get("POLY_PE_BACKFILL", "200"))   # EPS fetches per warm (per-ticker; coverage builds over cycles)
+# Bulk DIRECTIONAL sentiment: background-fill bull/bear for the buzzed subset so the scan's
+# Sentiment component fires in-bulk (else direction stays neutral 50 — resolved lazily on detail).
+BULK_SENT_ENABLED  = _os.environ.get("BULK_SENT_ENABLED", "1").strip().lower() not in ("0", "false", "no", "")
+BULK_SENT_BACKFILL = int(_os.environ.get("BULK_SENT_BACKFILL", "120"))  # directional fetches per warm (buzz subset)
+BULK_SENT_TTL      = int(_os.environ.get("BULK_SENT_TTL", "21600"))     # cached ~6h
+BULK_SENT_MIN_MSGS = int(_os.environ.get("BULK_SENT_MIN_MSGS", str(SENT_MIN_MSGS)))  # buzz floor to bother resolving
 
 # ── SEC EDGAR (free, keyless) config ──
 # SEC requires a descriptive User-Agent with a contact. We resolve it from the
@@ -3633,6 +3639,7 @@ _POLY_STATE = {"frames": {}, "universe": [], "last_date": "", "built_at": 0.0,
                "si_map": None, "si_built_at": 0.0,
                "sv_map": None, "sv_built_at": 0.0,
                "eps_map": {},
+               "sent_map": {},
                "k8_set": None, "k8_built_at": 0.0,
                "ins_map": None, "ins_built_at": 0.0,
                "regime": None, "regime_built_at": 0.0}
@@ -3778,6 +3785,52 @@ def _poly_eps_map(key, universe):
             _POLY_STATE["eps_map"] = eps_map
     return {t: v.get("eps") for t, v in eps_map.items() if v.get("eps")}
 
+
+def _bulk_sent_map(buzz):
+    """Background-fill DIRECTIONAL sentiment (bull/bear %) for the top BUZZED tickers so the scan's
+    Sentiment component fires in-bulk. Direction otherwise stays neutral 50 in `_poly_bulk_sent` to
+    avoid a per-ticker fetch (resolved lazily on the detail page) — but only the ApeWisdom buzz
+    subset (mentions >= BULK_SENT_MIN_MSGS) can score sentiment at all, so a small, cached backfill
+    covers exactly the names that matter. Mirrors _poly_eps_map: reuse the EXISTING per-ticker
+    resolver (_news_direction / Finnhub → _yf_news_direction / Yahoo+VADER, both keyless-capable),
+    ~BULK_SENT_BACKFILL/warm, cached ~6h, threaded + deadline-bounded so it never stalls the warm.
+    Returns {TICKER: {"bull","bear"}} for the resolved names (neutral names omitted)."""
+    if not (BULK_SENT_ENABLED and buzz):
+        return {}
+    now = time.time()
+    with _POLY_LOCK:
+        sent_map = dict(_POLY_STATE.get("sent_map") or {})
+    # strongest buzz first; only (re)fetch stale/missing entries — coverage builds over warms
+    cand = sorted(((t, (a.get("mentions", 0) or 0)) for t, a in buzz.items()
+                   if (a.get("mentions", 0) or 0) >= BULK_SENT_MIN_MSGS),
+                  key=lambda x: x[1], reverse=True)
+    todo = [t for t, _ in cand
+            if (sent_map.get(t, {}).get("at", 0) or 0) < now - BULK_SENT_TTL][:BULK_SENT_BACKFILL]
+    if todo:
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as _FTimeout
+        def _dir(t):
+            return _news_direction(t) or _yf_news_direction(t)   # (bull, bear, n) or None
+        ex = ThreadPoolExecutor(max_workers=8)
+        try:
+            futs = {ex.submit(_dir, t): t for t in todo}
+            try:
+                for fu in as_completed(futs, timeout=25):
+                    t = futs[fu]
+                    try: r = fu.result()
+                    except Exception: r = None
+                    if r and r[2]:      # at least one scored article → a real direction
+                        sent_map[t] = {"bull": int(r[0]), "bear": int(r[1]), "arts": int(r[2]), "at": now}
+                    else:               # mark attempted so we don't re-hammer a no-news name until TTL
+                        sent_map[t] = {"at": now}
+            except _FTimeout:
+                pass
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
+        with _POLY_LOCK:
+            _POLY_STATE["sent_map"] = sent_map
+    return {t: {"bull": v["bull"], "bear": v["bear"]}
+            for t, v in sent_map.items() if v.get("bull") is not None}
+
 def _poly_short_interest(key):
     """Whole-market LATEST FINRA short interest (days-to-cover), cached ~6h (FINRA
     reports bi-weekly, so that's plenty fresh). Returns {} gracefully if the endpoint
@@ -3827,18 +3880,21 @@ def _poly_common_stock_set(key):
         return symbols
     return cs
 
-def _poly_bulk_sent(ticker, buzz):
-    """Bulk sentiment contract for a ticker from the keyless ApeWisdom buzz map.
-    Direction (bull/bear) stays neutral in the scan — that costs a per-ticker news
-    fetch and is resolved LAZILY on the detail page. We DO surface social VOLUME
-    (msgs) + 24h buzz trend, which is what the volume/catalyst categories key on."""
+def _poly_bulk_sent(ticker, buzz, sent_dir=None):
+    """Bulk sentiment contract for a ticker from the keyless ApeWisdom buzz map. Social VOLUME
+    (msgs) + 24h buzz trend come from ApeWisdom. DIRECTION (bull/bear) is filled from the background
+    `_bulk_sent_map` (sent_dir) for buzzed names when resolved, else stays neutral 50 (resolved
+    lazily on the detail page)."""
     a = buzz.get(ticker.upper()) if buzz else None
+    _d = (sent_dir or {}).get(ticker.upper())
+    _bull = int(_d["bull"]) if _d else 50
+    _bear = int(_d["bear"]) if _d else 50
     if not a:
-        return {"bull": 50, "bear": 50, "msgs": 0, "wl": 0, "buzz_trend": 0, "src": "bulk"}
+        return {"bull": _bull, "bear": _bear, "msgs": 0, "wl": 0, "buzz_trend": 0, "src": "bulk"}
     mentions = a.get("mentions", 0) or 0
     prev = a.get("mentions_24h_ago", 0) or 0
     bt = round(((mentions - prev) / prev) * 100) if prev else 0
-    return {"bull": 50, "bear": 50, "msgs": mentions, "wl": 0,
+    return {"bull": _bull, "bear": _bear, "msgs": mentions, "wl": 0,
             "buzz_trend": bt, "upvotes": a.get("upvotes", 0), "src": "bulk"}
 
 def _poly_quote(ticker, snap, df):
@@ -3949,6 +4005,12 @@ def _build_universe_raw_polygon(key):
         buzz = _apewisdom_map()
     except Exception:
         buzz = {}
+    # 4a. Background-fill DIRECTIONAL sentiment for the buzzed subset (cached ~6h) so the Sentiment
+    #     component fires in-bulk; {} if disabled/unavailable → direction just stays neutral.
+    try:
+        sent_dir = _bulk_sent_map(buzz)
+    except Exception:
+        sent_dir = {}
     hot = _tiered_get("__hot__", "hot", MOD_TTL, lambda _: _raw_hot()) or []
     hotset = set(hot)
     # 4b. Whole-market FINRA short interest / days-to-cover (cached ~6h) — powers the
@@ -3976,7 +4038,7 @@ def _build_universe_raw_polygon(key):
         try:
             df = pd.DataFrame(recs)
             q = _poly_quote(t, snap, df)
-            sent = _poly_bulk_sent(t, buzz)
+            sent = _poly_bulk_sent(t, buzz, sent_dir)
             # Real fundamentals on the bulk row: days-to-cover (FINRA short interest)
             # and P/E (price / TTM diluted EPS). Ignore the DTC≈1000 junk illiquid OTC
             # names report (not in our liquid universe anyway, but cap defensively).
