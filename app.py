@@ -5869,6 +5869,14 @@ def _signal_track_summary():
             pct = ((cur - tp) / tp * 100.0) if cur else (e.get("outcomes") or {}).get("current_pct")
             if pct is None:
                 continue
+            # Direction-aware: a SHORT/bear signal is CORRECT when price FALLS, so its return is
+            # the INVERSE of the raw price move (a −8% drop = +8% for the short); bull signals use
+            # the raw move. Without this, correctly-called shorts would count as losses.
+            try:
+                if category_dir(e.get("category", "")) == "bear":
+                    pct = -pct
+            except Exception:
+                pass
             pcts.append(float(pct))
         if len(pcts) < 3:
             return None
@@ -5898,7 +5906,7 @@ def render_signal_proof(context="overview"):
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_ac};">{avg_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Avg move since signal</div></div>
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{GREEN};">{best_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Best signal</div></div>
         </div>
-        <div style="font-size:10px;color:#2a3a52;margin-top:10px;">Live, equal-weight average of every tracked signal's move since it triggered. Educational only · not financial advice · past performance ≠ future results.</div>
+        <div style="font-size:10px;color:#2a3a52;margin-top:10px;">Live, equal-weight average of each signal's move in its called direction (a short counts a decline as a gain). Educational only · not financial advice · past performance ≠ future results.</div>
     </div>''', unsafe_allow_html=True)
 
 def page_landing():
