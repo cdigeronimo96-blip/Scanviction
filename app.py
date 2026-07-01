@@ -5839,45 +5839,30 @@ SIGNAL_PROOF_MIN_AVG = float(_os.environ.get("SIGNAL_PROOF_MIN_AVG", "0"))  # hi
 
 @st.cache_data(ttl=120, show_spinner=False)
 def _signal_track_summary():
-    """Aggregate '% since signalled' across tracked signal events for the landing / Market
-    Overview proof strip. Uses the LIVE warm price when available (so it stays current even
-    without the outcome-updater), else the stored outcome. Cached 2 min. None if too little data.
+    """Aggregate the MEASURED move since signal across tracked signals for the landing / Market
+    Overview proof strip. Uses each signal's resolved outcome (outcomes.current_pct, filled by the
+    outcome-updater as horizons elapse) — NOT a live mark on minutes-old signals, which is noisy
+    and makes the stat flicker in/out. Stable + a truer track record. None if <3 resolved.
 
-    The average IS the honest headline: equal $ in every signal → your return is the mean of the
-    per-signal moves (a raw sum of %s would overstate it). Win rate = share currently in the green.
+    Direction-aware: a SHORT/bear signal is right when price FALLS, so its return is the INVERSE of
+    the price move (a −8% drop = +8% for the short). The average is the honest headline — equal $ in
+    every signal → your return is the mean of the per-signal moves (a raw sum of %s would overstate).
     """
     if not HAS_SIGNAL_ENGINE:
         return None
     try:
-        events = get_recent_signal_events(limit=500)
-        if not events:
-            return None
-        price = {}
-        try:
-            for r in build_scored_universe():   # live warm prices (cheap; O(universe) once)
-                t = r.get("t"); q = r.get("q") or {}
-                if t and q.get("price"):
-                    price[t] = float(q["price"])
-        except Exception:
-            pass
         pcts = []
-        for e in events:
-            tp = float(e.get("trigger_price", 0) or 0)
-            if tp <= 0:
+        for e in get_recent_signal_events(limit=500):
+            cp = (e.get("outcomes") or {}).get("current_pct")
+            if cp is None:          # only count signals that have actually been measured
                 continue
-            cur = price.get(e.get("ticker"))
-            pct = ((cur - tp) / tp * 100.0) if cur else (e.get("outcomes") or {}).get("current_pct")
-            if pct is None:
-                continue
-            # Direction-aware: a SHORT/bear signal is CORRECT when price FALLS, so its return is
-            # the INVERSE of the raw price move (a −8% drop = +8% for the short); bull signals use
-            # the raw move. Without this, correctly-called shorts would count as losses.
+            pct = float(cp)
             try:
                 if category_dir(e.get("category", "")) == "bear":
-                    pct = -pct
+                    pct = -pct       # a correctly-called short (price down) is a positive return
             except Exception:
                 pass
-            pcts.append(float(pct))
+            pcts.append(pct)
         if len(pcts) < 3:
             return None
         wins = sum(1 for p in pcts if p > 0)
@@ -5899,14 +5884,14 @@ def render_signal_proof(context="overview"):
     _ac = GREEN if avg >= 0 else RED
     _wc = GREEN if wr >= 50 else GOLD
     st.markdown(f'''<div style="background:linear-gradient(135deg,{GOLD}12,transparent);border:1px solid {GOLD}33;border-radius:14px;padding:16px 20px;margin:8px 0 6px;">
-        <div style="font-size:10px;font-weight:800;color:{GOLD};letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">📈 Signal Track Record · live</div>
+        <div style="font-size:10px;font-weight:800;color:{GOLD};letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">📈 Signal Track Record · to date</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:14px;">
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:#e2e8f0;">{n:,}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Signals tracked</div></div>
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_wc};">{wr}%</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Green since signal</div></div>
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_ac};">{avg_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Avg move since signal</div></div>
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{GREEN};">{best_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Best signal</div></div>
         </div>
-        <div style="font-size:10px;color:#2a3a52;margin-top:10px;">Live, equal-weight average of each signal's move in its called direction (a short counts a decline as a gain). Educational only · not financial advice · past performance ≠ future results.</div>
+        <div style="font-size:10px;color:#2a3a52;margin-top:10px;">Equal-weight average of each tracked signal's measured move in its called direction (a short counts a decline as a gain). Educational only · not financial advice · past performance ≠ future results.</div>
     </div>''', unsafe_allow_html=True)
 
 def page_landing():
