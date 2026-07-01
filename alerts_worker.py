@@ -350,6 +350,12 @@ def process_all_alerts():
 
     if not subscribers:
         log.info("  No composite subscribers yet")
+    elif os.environ.get("WORKER_DELIVERS_SIGNALS", "0").lower() not in ("1", "true", "yes"):
+        # The Streamlit app now delivers composite signals INLINE the moment it records them
+        # (app._deliver_new_signals), which is instant and avoids this cron double-sending the
+        # same signals. Set WORKER_DELIVERS_SIGNALS=1 to move delivery back to the cron instead.
+        log.info("  Composite-signal delivery handled inline by the app; worker skipping "
+                 "(set WORKER_DELIVERS_SIGNALS=1 to deliver from the cron)")
     else:
         delivered = 0
         for ev in recent_events:

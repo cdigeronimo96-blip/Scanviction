@@ -3541,6 +3541,9 @@ _FMP_KEY_CAPTURED = ""
 # Same pattern for the Polygon key: captured on the main thread so the universe
 # worker (which can't read st.secrets) can build the whole-market scan.
 _POLYGON_KEY_CAPTURED = ""
+# Telegram bot token captured on the main thread too, so the worker thread can DELIVER
+# freshly-recorded signals to subscribers inline (see _deliver_new_signals).
+_TG_TOKEN_CAPTURED = ""
 
 def _effective_universe_tickers():
     """Tickers to pre-score. With an FMP key, this is the market-wide candidate
@@ -4099,6 +4102,78 @@ _PREV_CATS_READY = False   # the first full re-score only establishes the baseli
 CATEGORY_ENTRY_FIT = float(_os.environ.get("CATEGORY_ENTRY_FIT", "18"))  # min fit to count as a real entry
 CATEGORY_ENTRY_MAX = int(_os.environ.get("CATEGORY_ENTRY_MAX", "40"))    # cap events/cycle — keeps it non-spammy
 
+# ── Instant Telegram delivery of freshly-recorded signals ──────────────────────
+# The app RECORDS signals; historically only a separate alerts_worker cron DELIVERED them, so
+# with no cron running (e.g. local dev) nothing ever reached Telegram. Deliver inline instead:
+# the moment the universe worker records NEW composite signals, push them to entitled Telegram
+# subscribers, once each. Runs in the worker THREAD (no Streamlit session) → reads users from
+# the shared store and uses the token captured on the main thread. A dedup store makes each
+# (user, signal) send exactly once. The cron's own composite delivery is gated OFF by default
+# (alerts_worker: WORKER_DELIVERS_SIGNALS) so the two never double-send.
+def _tg_send_raw(token, chat_id, text):
+    """Thread-safe Telegram send (no st.secrets / session needed). True on HTTP 200."""
+    try:
+        import requests as _rq
+        r = _rq.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                     json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                           "disable_web_page_preview": True}, timeout=10)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+def _deliver_new_signals(added):
+    """Push newly-recorded composite signals to entitled Telegram subscribers, once each.
+    Telegram is a premium channel: a user opts in by connecting a chat id (+ telegram_enabled),
+    and may narrow to specific category_alerts. No-op without a captured token or new signals."""
+    token = _TG_TOKEN_CAPTURED
+    if not token or not added:
+        return
+    try:
+        import msp_store as _ms
+        _dkey = _ms._data_path("msp_tg_delivered.json", "TG_DELIVERED_PATH")
+        users = _ms.read_json(_ms.USERS_DB_PATH, {}) or {}
+        delivered = _ms.read_json(_dkey, {}) or {}
+        changed = False
+        for ev in added:
+            cat = ev.get("category", ""); tkr = ev.get("ticker", "")
+            if not tkr:
+                continue
+            eid = ev.get("id") or f"{tkr}_{cat}"
+            score = ev.get("score_at_trigger", "?")
+            price = float(ev.get("trigger_price", 0) or 0)
+            rec = ev.get("recommendation", "") or ""
+            is_event = cat in EVENT_ALERT_TYPES
+            for email, u in users.items():
+                cid = u.get("telegram_chat_id", "")
+                if not cid:
+                    continue
+                if u.get("role", "free") not in ("premium", "admin", "owner"):
+                    continue   # Telegram alerts are a premium channel
+                prefs = u.get("notif_prefs") or {}
+                if not prefs.get("telegram_enabled", True):
+                    continue
+                wanted = u.get("category_alerts") or []
+                if wanted and cat not in wanted:
+                    continue   # user narrowed to specific categories
+                dk = f"{email}:{eid}"
+                if dk in delivered:
+                    continue
+                if is_event:
+                    msg = (f"📊 <b>{tkr}</b> — <b>{cat}</b>\n\n{rec}\n"
+                           f"Price: <b>${price:,.2f}</b>\nOpen MarketSignalPro for the full breakdown.")
+                else:
+                    msg = (f"📊 <b>{tkr}</b> just entered <b>{cat}</b>\n\n"
+                           f"Price: <b>${price:,.2f}</b> · Score: <b>{score}/100</b> · {rec}\n"
+                           f"Open MarketSignalPro for the multi-factor breakdown.")
+                if _tg_send_raw(token, cid, msg):
+                    delivered[dk] = time.time(); changed = True
+        if changed:
+            cutoff = time.time() - 7 * 86400   # bound the dedup store to ~7 days
+            delivered = {k: v for k, v in delivered.items() if (v or 0) > cutoff}
+            _ms.write_json(_dkey, delivered)
+    except Exception:
+        pass
+
 def _record_category_entries(rows):
     """Detect stocks that NEWLY entered a composite category since the last FULL
     re-score and log a signal event for the strongest ones (deduped 20h by
@@ -4136,7 +4211,9 @@ def _record_category_entries(rows):
             except Exception:
                 pass
         if specs:
-            try: record_signal_events_bulk(specs)   # one history read+write, not one per event
+            try:
+                _added = record_signal_events_bulk(specs)   # one history read+write, not one per event
+                _deliver_new_signals(_added)                # instant Telegram push for the NEW ones
             except Exception: pass
     _PREV_CATS = new_map
     _PREV_CATS_READY = True
@@ -4208,7 +4285,9 @@ def _record_event_signals(rows):
             dtc = float((r.get("info") or {}).get("dtc", 0) or 0)
             _rec(r, EVT_SHORT, f"Days-to-cover at {dtc:.1f} — short-squeeze fuel building")
         if specs:
-            try: record_signal_events_bulk(specs)   # one history read+write for all event types
+            try:
+                _added = record_signal_events_bulk(specs)   # one history read+write for all event types
+                _deliver_new_signals(_added)                # instant Telegram push for the NEW ones
             except Exception: pass
 
     _PREV_INSIDER, _PREV_8K, _PREV_SI_HOT = ins_now, k8_now, si_now
@@ -11196,6 +11275,8 @@ try:
     # Same for Polygon: when set, the universe worker builds the whole-market
     # scan (thousands of tickers) instead of the curated yfinance/FMP set.
     _POLYGON_KEY_CAPTURED = get_polygon_key()
+    try: _TG_TOKEN_CAPTURED = st.secrets.get("TELEGRAM_BOT_TOKEN", "") or ""
+    except Exception: _TG_TOKEN_CAPTURED = ""
     ensure_universe_worker()
 except Exception:
     pass
