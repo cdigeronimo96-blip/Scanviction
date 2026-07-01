@@ -5834,6 +5834,73 @@ DEMO_BI = """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.0
 # ─────────────────────────────────────────────────────────────
 # PAGE: LANDING
 # ─────────────────────────────────────────────────────────────
+# ── "Proof" track-record stat (landing + Market Overview) ─────────────────────
+SIGNAL_PROOF_MIN_AVG = float(_os.environ.get("SIGNAL_PROOF_MIN_AVG", "0"))  # hide the band below this avg %
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _signal_track_summary():
+    """Aggregate '% since signalled' across tracked signal events for the landing / Market
+    Overview proof strip. Uses the LIVE warm price when available (so it stays current even
+    without the outcome-updater), else the stored outcome. Cached 2 min. None if too little data.
+
+    The average IS the honest headline: equal $ in every signal → your return is the mean of the
+    per-signal moves (a raw sum of %s would overstate it). Win rate = share currently in the green.
+    """
+    if not HAS_SIGNAL_ENGINE:
+        return None
+    try:
+        events = get_recent_signal_events(limit=500)
+        if not events:
+            return None
+        price = {}
+        try:
+            for r in build_scored_universe():   # live warm prices (cheap; O(universe) once)
+                t = r.get("t"); q = r.get("q") or {}
+                if t and q.get("price"):
+                    price[t] = float(q["price"])
+        except Exception:
+            pass
+        pcts = []
+        for e in events:
+            tp = float(e.get("trigger_price", 0) or 0)
+            if tp <= 0:
+                continue
+            cur = price.get(e.get("ticker"))
+            pct = ((cur - tp) / tp * 100.0) if cur else (e.get("outcomes") or {}).get("current_pct")
+            if pct is None:
+                continue
+            pcts.append(float(pct))
+        if len(pcts) < 3:
+            return None
+        wins = sum(1 for p in pcts if p > 0)
+        return {"count": len(pcts), "avg": sum(pcts) / len(pcts),
+                "win_rate": round(wins / len(pcts) * 100), "best": max(pcts), "total": sum(pcts)}
+    except Exception:
+        return None
+
+def render_signal_proof(context="overview"):
+    """Live 'track record' proof strip (tracked · win rate · avg move since signal · best).
+    Social proof for the landing page + Market Overview. Hidden when there's too little data OR
+    the aggregate isn't favorable (SIGNAL_PROOF_MIN_AVG) — we never advertise a losing number."""
+    s = _signal_track_summary()
+    if not s or s["avg"] < SIGNAL_PROOF_MIN_AVG:
+        return
+    avg = s["avg"]; wr = s["win_rate"]; n = s["count"]; best = s["best"]
+    avg_s = f"+{avg:.1f}%" if avg >= 0 else f"{avg:.1f}%"
+    best_s = f"+{best:.1f}%" if best >= 0 else f"{best:.1f}%"
+    _ac = GREEN if avg >= 0 else RED
+    _wc = GREEN if wr >= 50 else GOLD
+    st.markdown(f'''<div style="background:linear-gradient(135deg,{GOLD}12,transparent);border:1px solid {GOLD}33;border-radius:14px;padding:16px 20px;margin:8px 0 6px;">
+        <div style="font-size:10px;font-weight:800;color:{GOLD};letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">📈 Signal Track Record · live</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:14px;">
+            <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:#e2e8f0;">{n:,}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Signals tracked</div></div>
+            <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_wc};">{wr}%</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Green since signal</div></div>
+            <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_ac};">{avg_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Avg move since signal</div></div>
+            <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{GREEN};">{best_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Best signal</div></div>
+        </div>
+        <div style="font-size:10px;color:#2a3a52;margin-top:10px;">Live, equal-weight average of every tracked signal's move since it triggered. Educational only · not financial advice · past performance ≠ future results.</div>
+    </div>''', unsafe_allow_html=True)
+
 def page_landing():
     st.markdown(NAV_CSS, unsafe_allow_html=True)
 
@@ -6077,6 +6144,9 @@ def page_landing():
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>",unsafe_allow_html=True)
+
+    # ── Live signal track-record proof, right under the trust bar (social proof) ──
+    render_signal_proof("landing")
 
     # ── Auto-scrolling feature ticker (continuous CSS marquee; advertises the edges) ──
     _tk = [
@@ -6746,6 +6816,9 @@ def page_dashboard():
     # Discover, which is the product's core experience. Keeping Dashboard
     # focused on market context avoids duplicating Discover and reduces clutter.
     st.markdown(f'<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">📊 MARKET OVERVIEW</div>',unsafe_allow_html=True)
+
+    # Live track-record proof band (how the signals have actually performed since firing).
+    render_signal_proof("overview")
 
     with st.spinner("Loading market data…"):
         idx=get_indexes(); secs=get_sectors(); movers=get_bi_movers()
