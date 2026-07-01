@@ -25,12 +25,17 @@ def test_recommendation_squeeze_via_short_float():
     label, color, _ = _rec(70, {"Trend": 15, "Momentum": 15, "Squeeze": 0}, {"sf": 0.20})
     assert label == "💥 SQUEEZE BUY" and color == GOLD       # sf 20% >= 18
 
-def test_recommendation_watch_bounce_and_watch():
-    assert _rec(55, {"Momentum": 20})[0] == "🟡 WATCH — BOUNCE"
-    assert _rec(55, {"Momentum": 5})[0] == "🟡 WATCH"
+def test_recommendation_buy_and_accumulate():
+    # recalibrated (2026-06 backtest): sc>=65 (+confirmation) = BUY; the whole 40–64 technical band
+    # is ONE actionable ACCUMULATE tier; a high score with no trend/momentum is NOT actionable.
+    assert _rec(70, {"Trend": 15, "Momentum": 15})[0] == "🟢 BUY"
+    assert _rec(55, {"Trend": 12, "Momentum": 14})[0] == "🟩 ACCUMULATE"
+    assert _rec(45, {"Trend": 10})[0] == "🟩 ACCUMULATE"
+    assert _rec(55, {"Momentum": 20})[0] == "🟩 ACCUMULATE"        # strong momentum, weak trend
+    assert _rec(45, {"Volume": 4})[0] == "🟡 WATCH"                # 40+ but no trend/momentum
 
-def test_recommendation_hold_and_avoid():
-    assert _rec(35, {})[0] == "🟠 HOLD / WAIT"
+def test_recommendation_watch_and_avoid():
+    assert _rec(35, {})[0] == "🟡 WATCH"                            # 30–39 band
     avoid = _rec(10, {})
     assert avoid[0] == "🔴 AVOID" and avoid[1] == RED
 

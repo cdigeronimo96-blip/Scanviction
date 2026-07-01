@@ -14,19 +14,26 @@ from theme import GOLD, GREEN, RED, GREEN_TEXT, AMBER, ORANGE
 def get_recommendation(sc, bd, info=None):
     sf=(info.get("sf",0) or 0)*100 if info else 0
     sq=bd.get("Squeeze",0); mom=bd.get("Momentum",0); tr=bd.get("Trend",0); vol=bd.get("Volume",0); mac=bd.get("MACD",0)
+    # Thresholds recalibrated from a 6-month forward-return backtest (2026-06):
+    #  • The score's edge lives in the sc 40–64 band — it beat the market by ~+6% vs +1.4%/20d at a
+    #    ~61% win rate — while the TECHNICAL core tops out ~64, so the old sc>=65 "BUY" gate almost
+    #    never fired on bulk (technical-only) scores and the real winners sat in a passive "WATCH".
+    #  • Counter-intuitively the TOP of that band (52–64) slightly UNDERperformed 40–51 (momentum
+    #    exhaustion), so 40–64 is ONE actionable ACCUMULATE tier (not a misleading BUY-is-stronger
+    #    split); the real quality differentiator is the CATEGORY (Relative Strength / Momentum), not
+    #    the last few score points. sc>=65 (reached once sentiment / short-interest CONFIRM on top of
+    #    the technicals) stays the premium BUY tier.
     if sc>=65 and tr>=12 and mom>=12:
         if sq>=6 or sf>=18:
             return ("💥 SQUEEZE BUY",GOLD,f"Short float {sf:.0f}% + social momentum. High risk/reward.")
         elif vol>=11 and mac>=9:
             return ("🟢 STRONG BUY",GREEN,"Volume surge + MACD + uptrend = institutional-backed move.")
         else:
-            return ("🟢 BUY",GREEN,"RSI, trend, and MACD aligned. Multi-factor confirmation.")
-    elif sc>=50:
-        if mom>=18:
-            return ("🟡 WATCH — BOUNCE",AMBER,"Oversold with improving signals. Watch for volume confirmation.")
-        return ("🟡 WATCH",AMBER,"Mixed signals — wait for confirmation before entry.")
+            return ("🟢 BUY",GREEN,"RSI, trend, and MACD aligned + confirmation. Multi-factor conviction.")
+    elif sc>=40 and (tr>=8 or mom>=18):
+        return ("🟩 ACCUMULATE",GREEN_TEXT,"Constructive setup in the score's sweet spot — the band that has historically led the market. Scale in, confirm on strength.")
     elif sc>=30:
-        return ("🟠 HOLD / WAIT",ORANGE,"Weak signals. Better setup likely forming — patience.")
+        return ("🟡 WATCH",AMBER,"Mixed signals — wait for confirmation before entry.")
     else:
         return ("🔴 AVOID",RED,"Most indicators negative. Capital better deployed elsewhere.")
 

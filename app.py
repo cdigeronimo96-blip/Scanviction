@@ -4206,6 +4206,33 @@ def _deliver_new_signals(added):
     except Exception:
         pass
 
+# ── Market-regime gate on signal generation ────────────────────────────────────
+# Backtest finding: the signal is strong in trending tape and goes quiet in chop / stress. So in a
+# RISK-OFF regime demand a stronger category fit for LONG setups (fewer, higher-quality longs) and
+# relax it for SHORTs; RISK-ON is the mirror. Tunable / disable-able via REGIME_GATE.
+REGIME_GATE = _os.environ.get("REGIME_GATE", "1").lower() in ("1", "true", "yes")
+
+def _regime_bias():
+    """Current macro risk regime ('risk_on' / 'risk_off' / 'neutral') from the cached FRED read."""
+    try:
+        r = (_market_regime() or {}).get("regime")
+        return r if r in ("risk_on", "risk_off") else "neutral"
+    except Exception:
+        return "neutral"
+
+def _regime_entry_fit(direction):
+    """Regime-aware minimum category-fit to RECORD an entry. Neutral/unknown or REGIME_GATE off →
+    the base CATEGORY_ENTRY_FIT."""
+    base = CATEGORY_ENTRY_FIT
+    if not REGIME_GATE:
+        return base
+    reg = _regime_bias(); is_bear = (direction == "bear")
+    if reg == "risk_off":
+        return base * (0.8 if is_bear else 1.4)
+    if reg == "risk_on":
+        return base * (1.4 if is_bear else 0.85)
+    return base
+
 def _record_category_entries(rows):
     """Detect stocks that NEWLY entered a composite category since the last FULL
     re-score and log a signal event for the strongest ones (deduped 20h by
@@ -4225,7 +4252,7 @@ def _record_category_entries(rows):
             continue
         if cat:
             new_map[t] = cat
-        if cat and cat != _PREV_CATS.get(t) and (r.get("comp", 0) or 0) >= CATEGORY_ENTRY_FIT:
+        if cat and cat != _PREV_CATS.get(t) and (r.get("comp", 0) or 0) >= _regime_entry_fit(category_dir(cat)):
             fresh.append(r)
     if _PREV_CATS_READY and is_leader and fresh:
         fresh.sort(key=lambda r: r.get("comp", 0), reverse=True)   # strongest first
