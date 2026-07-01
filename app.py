@@ -4102,6 +4102,27 @@ _PREV_CATS_READY = False   # the first full re-score only establishes the baseli
 CATEGORY_ENTRY_FIT = float(_os.environ.get("CATEGORY_ENTRY_FIT", "18"))  # min fit to count as a real entry
 CATEGORY_ENTRY_MAX = int(_os.environ.get("CATEGORY_ENTRY_MAX", "40"))    # cap events/cycle — keeps it non-spammy
 
+# ── Volatility-based suggested stop-loss ───────────────────────────────────────
+STOP_ATR_MULT = float(_os.environ.get("STOP_ATR_MULT", "2.5"))  # stop distance = mult × daily ATR%
+
+def recommended_stop(price, atr_pct, direction="long"):
+    """A suggested stop sized by VOLATILITY: distance = STOP_ATR_MULT × the stock's daily ATR%, so a
+    more volatile name gets a WIDER stop (more breathing room) and a calm one a tighter stop. Clamped
+    to a practical 3–25% band. Long → stop BELOW price; short → stop ABOVE. Returns {price, pct,
+    atr_pct} or None. (No take-profit — that's intentionally left to the user.)"""
+    try:
+        price = float(price or 0); atr = float(atr_pct or 0)
+        if price <= 0:
+            return None
+        pct = atr * STOP_ATR_MULT
+        if pct <= 0:
+            pct = 6.0   # no ATR (thin / short history) → a neutral default
+        pct = max(3.0, min(25.0, pct))
+        stop = price * (1 - pct / 100.0) if direction != "short" else price * (1 + pct / 100.0)
+        return {"price": round(stop, 2), "pct": round(pct, 1), "atr_pct": round(atr, 1)}
+    except Exception:
+        return None
+
 # ── Instant Telegram delivery of freshly-recorded signals ──────────────────────
 # The app RECORDS signals; historically only a separate alerts_worker cron DELIVERED them, so
 # with no cron running (e.g. local dev) nothing ever reached Telegram. Deliver inline instead:
@@ -4143,6 +4164,17 @@ def _deliver_new_signals(added):
             price = float(ev.get("trigger_price", 0) or 0)
             rec = ev.get("recommendation", "") or ""
             is_event = cat in EVENT_ALERT_TYPES
+            # Volatility-based suggested stop (sized by the stock's ATR + the signal's direction).
+            _sdir = "short" if category_dir(cat) == "bear" else "long"
+            _stop = None
+            try:
+                _wrow = _warm_row_for(tkr)
+                _atr = ((_wrow or {}).get("factors") or {}).get("atr_pct", 0) if _wrow else 0
+                _stop = recommended_stop(price, _atr, _sdir)
+            except Exception:
+                _stop = None
+            _stopln = (f"\n🛑 Suggested stop: <b>${_stop['price']:,.2f}</b> ({_stop['pct']:.1f}% "
+                       f"{'above' if _sdir == 'short' else 'below'})") if _stop else ""
             for email, u in users.items():
                 cid = u.get("telegram_chat_id", "")
                 if not cid:
@@ -4160,10 +4192,10 @@ def _deliver_new_signals(added):
                     continue
                 if is_event:
                     msg = (f"📊 <b>{tkr}</b> — <b>{cat}</b>\n\n{rec}\n"
-                           f"Price: <b>${price:,.2f}</b>\nOpen MarketSignalPro for the full breakdown.")
+                           f"Price: <b>${price:,.2f}</b>{_stopln}\nOpen MarketSignalPro for the full breakdown.")
                 else:
                     msg = (f"📊 <b>{tkr}</b> just entered <b>{cat}</b>\n\n"
-                           f"Price: <b>${price:,.2f}</b> · Score: <b>{score}/100</b> · {rec}\n"
+                           f"Price: <b>${price:,.2f}</b> · Score: <b>{score}/100</b> · {rec}{_stopln}\n"
                            f"Open MarketSignalPro for the multi-factor breakdown.")
                 if _tg_send_raw(token, cid, msg):
                     delivered[dk] = time.time(); changed = True
@@ -5887,7 +5919,7 @@ def render_signal_proof(context="overview"):
         <div style="font-size:10px;font-weight:800;color:{GOLD};letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">📈 Signal Track Record · to date</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:14px;">
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:#e2e8f0;">{n:,}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Signals tracked</div></div>
-            <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_wc};">{wr}%</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Green since signal</div></div>
+            <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_wc};">{wr}%</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Correct direction</div></div>
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{_ac};">{avg_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Avg move since signal</div></div>
             <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:{GREEN};">{best_s}</div><div style="font-size:11px;color:#4a5e7a;margin-top:2px;">Best signal</div></div>
         </div>
@@ -8007,6 +8039,13 @@ def page_detail():
     rc=risk_color(risk); sf=(info.get("sf",0) or 0)*100
     mc_v=info.get("mktcap",0)
     mc_s=fmt_mktcap(mc_v)
+    # Volatility-based suggested stop (ATR-sized; direction from the warm row's long/short call).
+    _stop_dir = "short" if (_wr or {}).get("direction") == "bear" else "long"
+    _stop = recommended_stop(price, (_factors or {}).get("atr_pct", 0), _stop_dir)
+    _stop_line = (f'<div style="margin-top:4px;font-size:11px;color:#94a3b8;">🛑 Suggested stop '
+                  f'<b style="color:#e2e8f0;">${_stop["price"]:,.2f}</b> · {_stop["pct"]:.1f}% '
+                  f'{"above" if _stop_dir == "short" else "below"} '
+                  f'<span style="color:#2a3a52;">({STOP_ATR_MULT:g}× ATR)</span></div>') if _stop else ""
 
     st.markdown('<div class="page-wrap">' ,unsafe_allow_html=True)
 
@@ -8028,6 +8067,7 @@ def page_detail():
 {_sec_line}
 <div style="margin-top:8px;font-size:13px;color:#374f6e;font-style:italic;">→ {rec_txt}</div>
 <div style="margin-top:6px;font-size:11px;color:{rc};">⚡ {risk} Risk · {conf} confidence</div>
+{_stop_line}
 </div>""", unsafe_allow_html=True)
     with h2:
         st.markdown(f"""<div style="text-align:right;padding:4px 0;">
