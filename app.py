@@ -10111,112 +10111,128 @@ def page_settings():
 
         # ── ✈️ TELEGRAM Setup ──
         st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
-        tg_status_color = GREEN if current_tg_id else GOLD
-        tg_status_text  = "✅ Connected" if current_tg_id else "⚠️ Not Connected"
-        st.markdown(f'''<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
-            <div>
-                <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">✈️ Telegram — Backup Channel</div>
-                <div style="font-size:12px;color:#374f6e;line-height:1.7;">Prefer Telegram? Use it instead of (or alongside) push notifications.</div>
-            </div>
-            <div style="background:rgba({"34,197,94" if current_tg_id else "245,158,11"},0.1);color:{tg_status_color};
-                        border:1px solid rgba({"34,197,94" if current_tg_id else "245,158,11"},0.3);
-                        border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;">{tg_status_text}</div>
-        </div>''', unsafe_allow_html=True)
-
-        # One-tap connect (primary): the user taps a deep link + presses Start; the background
-        # listener (msp-tg-listener) INSTANTLY auto-links their chat_id and replies in Telegram.
-        # The UI finishes by picking up that completed link — it does NOT poll getUpdates itself
-        # (the listener is the single consumer). Manual Chat-ID form below = fallback + Disconnect.
-        import telegram_link as _tglink
-        try: _tg_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "") or ""
-        except Exception: _tg_token = ""
-        if _tg_token:
-            _tglink.start_listener(_tg_token)   # idempotent — ensure the bot answers Start
-
-        def _tg_apply(cid):
-            """Persist a freshly linked chat_id to this user and flip to Connected."""
-            st.session_state.users_db[email]["telegram_chat_id"] = cid
-            _save_global_db(st.session_state.users_db)
-            save_user_to_file(email, st.session_state.users_db[email])
-            st.session_state.pop("tg_link_deep", None)
-            st.toast("✈️ Telegram connected!", icon="✅")
-            st.success("✅ Connected — your alerts will come through Telegram.")
-            time.sleep(0.8); st.rerun()
-
-        if not current_tg_id and _tg_token:
-            _auto = _tglink.pop_completed_link(email)   # listener already linked it? finish silently
-            if _auto:
-                _tg_apply(_auto)
-            _bot = _tglink.bot_username(_tg_token) or "StockWinsAlertsBot"
-            if not st.session_state.get("tg_link_deep"):
-                try: _tok, _deep = _tglink.make_link_token(email, _bot)
-                except Exception: _tok, _deep = "", f"https://t.me/{_bot}"
-                st.session_state["tg_link_deep"] = _deep
-                st.session_state["tg_link_code"] = _tok
-            _deep = st.session_state["tg_link_deep"]; _code = st.session_state.get("tg_link_code", "")
-            st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:10px;font-size:12px;color:#374f6e;line-height:1.95;">
-                <strong style="color:#a5b4fc;">1.</strong> Tap <a href="{_deep}" target="_blank" style="color:#818cf8;font-weight:700;text-decoration:none;">Open @{_bot} →</a> and press <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">Start</code> — the bot replies instantly.<br>
-                <strong style="color:#a5b4fc;">2.</strong> Already use the bot? Send it this code instead → <code style="background:#1a1f2e;color:#fbbf24;padding:2px 8px;border-radius:3px;font-weight:700;">{_code}</code><br>
-                <strong style="color:#a5b4fc;">3.</strong> Then tap <strong style="color:#e2e8f0;">Check connection</strong>.
+        if not is_premium():
+            # Telegram is a PREMIUM channel (pricing markets "Real-Time Telegram Alerts") and
+            # delivery is premium-gated (_deliver_new_signals). So free users get an upgrade
+            # prompt here instead of a dead-end connect flow that would never deliver. In-app
+            # badge/toast/banner still work for them (tier-filtered).
+            st.markdown(f'''<div style="background:linear-gradient(135deg,{GOLD}14,transparent);border:1px solid {GOLD}44;border-radius:12px;padding:16px 18px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                    <span style="font-size:15px;">✈️</span>
+                    <span style="font-size:14px;font-weight:800;color:#e2e8f0;">Telegram Alerts</span>
+                    <span style="font-size:10px;font-weight:800;color:{GOLD};background:{GOLD}1f;border:1px solid {GOLD}55;border-radius:5px;padding:2px 8px;">🔒 PREMIUM</span>
+                </div>
+                <div style="font-size:12px;color:#374f6e;line-height:1.7;">Get every new signal pushed to Telegram in real time. Upgrade to Premium to connect your account.</div>
             </div>''', unsafe_allow_html=True)
-            if st.button("🔗 Check connection", key="tg_check", type="primary", use_container_width=True):
-                _cid = _tglink.pop_completed_link(email)
-                if not _cid and not _tglink.is_listening():
-                    # No background listener (rare) — fall back to a one-shot poll from the UI.
-                    for _em, _c in _tglink.poll_links(_tg_token):
-                        if _em in st.session_state.users_db:
-                            st.session_state.users_db[_em]["telegram_chat_id"] = _c
-                            save_user_to_file(_em, st.session_state.users_db[_em])
-                        if _em == email: _cid = _c
-                    if _cid: _save_global_db(st.session_state.users_db)
-                if _cid:
-                    _tg_apply(_cid)
-                else:
-                    st.warning("Not linked yet — open the bot via the link above, tap **Start**, then check again.")
-            st.caption("Or paste a Chat ID manually below.")
-        elif not current_tg_id and not _tg_token:
-            st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:1.8;">
-                Telegram isn't configured on this deployment yet (<code style="background:#1a1f2e;color:#94a3b8;padding:1px 6px;border-radius:3px;">TELEGRAM_BOT_TOKEN</code> missing in secrets).
-            </div>''', unsafe_allow_html=True)
+            if st.button("⭐ Upgrade to unlock Telegram alerts →", key="tg_upsell", use_container_width=True):
+                nav("pricing")
         else:
-            st.markdown(f'<div style="font-size:11px;color:#4a5e7a;margin-bottom:8px;">Linked Chat ID: <code style="background:#080b14;color:#4ade80;padding:2px 8px;border-radius:4px;">{current_tg_id}</code></div>', unsafe_allow_html=True)
+            tg_status_color = GREEN if current_tg_id else GOLD
+            tg_status_text  = "✅ Connected" if current_tg_id else "⚠️ Not Connected"
+            st.markdown(f'''<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+                <div>
+                    <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">✈️ Telegram — Backup Channel</div>
+                    <div style="font-size:12px;color:#374f6e;line-height:1.7;">Prefer Telegram? Use it instead of (or alongside) push notifications.</div>
+                </div>
+                <div style="background:rgba({"34,197,94" if current_tg_id else "245,158,11"},0.1);color:{tg_status_color};
+                            border:1px solid rgba({"34,197,94" if current_tg_id else "245,158,11"},0.3);
+                            border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;">{tg_status_text}</div>
+            </div>''', unsafe_allow_html=True)
 
-        with st.form("tg_setup"):
-            tg_id = st.text_input("Telegram Chat ID", value=current_tg_id,
-                                    placeholder="e.g. 1234567890",
-                                    help="The number @StockWinsAlertsBot replied with")
-            tg_c1, tg_c2 = st.columns(2)
-            with tg_c1:
-                tg_save = st.form_submit_button(
-                    "✅ Save & Test" if not current_tg_id else "💾 Update",
-                    type="primary", use_container_width=True)
-            with tg_c2:
-                tg_remove = st.form_submit_button("🗑 Disconnect", use_container_width=True,
-                                                    disabled=not current_tg_id)
-            if tg_save:
-                clean = "".join(c for c in tg_id if c.isdigit() or c == "-")
-                if not clean:
-                    st.error("Chat ID must be a number (the ID @StockWinsAlertsBot replies with) — not the bot token.")
-                else:
-                    # VALIDATE before saving. A chat_id only works if it's real AND the user
-                    # has tapped Start (Telegram refuses the send otherwise), so a successful
-                    # test message is proof of a genuine connection. Only persist + show
-                    # "connected" when it actually delivers — never save an unverified ID.
-                    ok, info = _send_telegram(clean, "✅ <b>MarketSignalPro Telegram alerts connected!</b>\n\nYou'll get instant alerts here.")
-                    if ok:
-                        st.session_state.users_db[email]["telegram_chat_id"] = clean
-                        _save_global_db(st.session_state.users_db)
-                        save_user_to_file(email, st.session_state.users_db[email])
-                        st.toast("✈️ Telegram connected — check your phone!", icon="✅")
-                        st.success("✅ Connected — a test message just hit your Telegram.")
-                        time.sleep(1); st.rerun()
-                    else:
-                        st.error(f"That Chat ID didn't work, so it was NOT saved. Tap **Start** in @StockWinsAlertsBot, then paste the number it replies with (not the bot token). [{info}]")
-            if tg_remove:
-                st.session_state.users_db[email]["telegram_chat_id"] = ""
+            # One-tap connect (primary): the user taps a deep link + presses Start; the background
+            # listener (msp-tg-listener) INSTANTLY auto-links their chat_id and replies in Telegram.
+            # The UI finishes by picking up that completed link — it does NOT poll getUpdates itself
+            # (the listener is the single consumer). Manual Chat-ID form below = fallback + Disconnect.
+            import telegram_link as _tglink
+            try: _tg_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "") or ""
+            except Exception: _tg_token = ""
+            if _tg_token:
+                _tglink.start_listener(_tg_token)   # idempotent — ensure the bot answers Start
+
+            def _tg_apply(cid):
+                """Persist a freshly linked chat_id to this user and flip to Connected."""
+                st.session_state.users_db[email]["telegram_chat_id"] = cid
                 _save_global_db(st.session_state.users_db)
                 save_user_to_file(email, st.session_state.users_db[email])
-                st.toast("✈️ Telegram disconnected", icon="✅"); st.rerun()
+                st.session_state.pop("tg_link_deep", None)
+                st.toast("✈️ Telegram connected!", icon="✅")
+                st.success("✅ Connected — your alerts will come through Telegram.")
+                time.sleep(0.8); st.rerun()
+
+            if not current_tg_id and _tg_token:
+                _auto = _tglink.pop_completed_link(email)   # listener already linked it? finish silently
+                if _auto:
+                    _tg_apply(_auto)
+                _bot = _tglink.bot_username(_tg_token) or "StockWinsAlertsBot"
+                if not st.session_state.get("tg_link_deep"):
+                    try: _tok, _deep = _tglink.make_link_token(email, _bot)
+                    except Exception: _tok, _deep = "", f"https://t.me/{_bot}"
+                    st.session_state["tg_link_deep"] = _deep
+                    st.session_state["tg_link_code"] = _tok
+                _deep = st.session_state["tg_link_deep"]; _code = st.session_state.get("tg_link_code", "")
+                st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:14px 18px;margin-bottom:10px;font-size:12px;color:#374f6e;line-height:1.95;">
+                    <strong style="color:#a5b4fc;">1.</strong> Tap <a href="{_deep}" target="_blank" style="color:#818cf8;font-weight:700;text-decoration:none;">Open @{_bot} →</a> and press <code style="background:#1a1f2e;color:#4ade80;padding:1px 6px;border-radius:3px;">Start</code> — the bot replies instantly.<br>
+                    <strong style="color:#a5b4fc;">2.</strong> Already use the bot? Send it this code instead → <code style="background:#1a1f2e;color:#fbbf24;padding:2px 8px;border-radius:3px;font-weight:700;">{_code}</code><br>
+                    <strong style="color:#a5b4fc;">3.</strong> Then tap <strong style="color:#e2e8f0;">Check connection</strong>.
+                </div>''', unsafe_allow_html=True)
+                if st.button("🔗 Check connection", key="tg_check", type="primary", use_container_width=True):
+                    _cid = _tglink.pop_completed_link(email)
+                    if not _cid and not _tglink.is_listening():
+                        # No background listener (rare) — fall back to a one-shot poll from the UI.
+                        for _em, _c in _tglink.poll_links(_tg_token):
+                            if _em in st.session_state.users_db:
+                                st.session_state.users_db[_em]["telegram_chat_id"] = _c
+                                save_user_to_file(_em, st.session_state.users_db[_em])
+                            if _em == email: _cid = _c
+                        if _cid: _save_global_db(st.session_state.users_db)
+                    if _cid:
+                        _tg_apply(_cid)
+                    else:
+                        st.warning("Not linked yet — open the bot via the link above, tap **Start**, then check again.")
+                st.caption("Or paste a Chat ID manually below.")
+            elif not current_tg_id and not _tg_token:
+                st.markdown(f'''<div style="background:#080b14;border:1px solid {BORDER};border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:12px;color:#374f6e;line-height:1.8;">
+                    Telegram isn't configured on this deployment yet (<code style="background:#1a1f2e;color:#94a3b8;padding:1px 6px;border-radius:3px;">TELEGRAM_BOT_TOKEN</code> missing in secrets).
+                </div>''', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div style="font-size:11px;color:#4a5e7a;margin-bottom:8px;">Linked Chat ID: <code style="background:#080b14;color:#4ade80;padding:2px 8px;border-radius:4px;">{current_tg_id}</code></div>', unsafe_allow_html=True)
+
+            with st.form("tg_setup"):
+                tg_id = st.text_input("Telegram Chat ID", value=current_tg_id,
+                                        placeholder="e.g. 1234567890",
+                                        help="The number @StockWinsAlertsBot replied with")
+                tg_c1, tg_c2 = st.columns(2)
+                with tg_c1:
+                    tg_save = st.form_submit_button(
+                        "✅ Save & Test" if not current_tg_id else "💾 Update",
+                        type="primary", use_container_width=True)
+                with tg_c2:
+                    tg_remove = st.form_submit_button("🗑 Disconnect", use_container_width=True,
+                                                        disabled=not current_tg_id)
+                if tg_save:
+                    clean = "".join(c for c in tg_id if c.isdigit() or c == "-")
+                    if not clean:
+                        st.error("Chat ID must be a number (the ID @StockWinsAlertsBot replies with) — not the bot token.")
+                    else:
+                        # VALIDATE before saving. A chat_id only works if it's real AND the user
+                        # has tapped Start (Telegram refuses the send otherwise), so a successful
+                        # test message is proof of a genuine connection. Only persist + show
+                        # "connected" when it actually delivers — never save an unverified ID.
+                        ok, info = _send_telegram(clean, "✅ <b>MarketSignalPro Telegram alerts connected!</b>\n\nYou'll get instant alerts here.")
+                        if ok:
+                            st.session_state.users_db[email]["telegram_chat_id"] = clean
+                            _save_global_db(st.session_state.users_db)
+                            save_user_to_file(email, st.session_state.users_db[email])
+                            st.toast("✈️ Telegram connected — check your phone!", icon="✅")
+                            st.success("✅ Connected — a test message just hit your Telegram.")
+                            time.sleep(1); st.rerun()
+                        else:
+                            st.error(f"That Chat ID didn't work, so it was NOT saved. Tap **Start** in @StockWinsAlertsBot, then paste the number it replies with (not the bot token). [{info}]")
+                if tg_remove:
+                    st.session_state.users_db[email]["telegram_chat_id"] = ""
+                    _save_global_db(st.session_state.users_db)
+                    save_user_to_file(email, st.session_state.users_db[email])
+                    st.toast("✈️ Telegram disconnected", icon="✅"); st.rerun()
 
         # ── Email verification ──
         if not verified_email:
