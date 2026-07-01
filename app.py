@@ -72,7 +72,7 @@ from scoring import (
     compute_scores, compute_factors, precompute_indicators, assign_categories, category_for_feat,
     _feat_from_row, _category_why, _cl, conviction_score, COMPOSITE_FIT, COMPOSITE_CATS,
     CATEGORY_MIN_FIT, SENT_MIN_MSGS, SENT_FULL_MSGS,
-    COMPOSITE_DIR, category_dir, bear_conviction,
+    COMPOSITE_DIR, category_dir, bear_conviction, category_edge,
 )
 
 # Optional full-page auto-refresh (opt-in toggle on Discover). A FULL rerun
@@ -4255,7 +4255,9 @@ def _record_category_entries(rows):
         if cat and cat != _PREV_CATS.get(t) and (r.get("comp", 0) or 0) >= _regime_entry_fit(category_dir(cat)):
             fresh.append(r)
     if _PREV_CATS_READY and is_leader and fresh:
-        fresh.sort(key=lambda r: r.get("comp", 0), reverse=True)   # strongest first
+        # strongest first, weighted by the category's backtested edge → the highest-edge setups win
+        # the per-cycle alert slots (lean into what works).
+        fresh.sort(key=lambda r: (r.get("comp", 0) or 0) * category_edge(r.get("primary_cat", "")), reverse=True)
         specs = []
         for r in fresh[:CATEGORY_ENTRY_MAX]:
             try:
@@ -7184,7 +7186,10 @@ def _discover_grouped():
 def _top_signals(grouped, n=6):
     """Highest-conviction picks ACROSS every category (the cross-category feed)."""
     rows = [r for rs in grouped.values() for r in rs]
-    rows.sort(key=lambda r: (r.get("conviction") or r.get("sc") or 0), reverse=True)
+    # Rank by conviction WEIGHTED by the category's backtested edge, so the categories that have
+    # historically led the market (Relative Strength / Momentum) surface first and the coin-flip /
+    # regime-fragile ones sink — without changing any score the user sees.
+    rows.sort(key=lambda r: (r.get("conviction") or r.get("sc") or 0) * category_edge(r.get("primary_cat", "")), reverse=True)
     # one card per ticker (rows are already unique tickers, but be defensive)
     seen, out = set(), []
     for r in rows:

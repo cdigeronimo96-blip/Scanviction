@@ -66,6 +66,23 @@ def category_dir(cat):
     return COMPOSITE_DIR.get(cat, "bull")
 
 
+# Backtest-derived category "edge" weights (2026-06 forward-return study, ~6mo): BOOST the
+# categories that led the market — 🏆 Relative Strength (+13.8% / 71% win), ⚡ Momentum Surge,
+# 🌊 Momentum Leaders — and DE-EMPHASIZE the coin-flip / regime-fragile ones (🌪️ Volatility
+# Squeeze, 🍃 VCP, and the short setups that faded in the up-tape) in the Top-Signals RANKING ONLY.
+# Signal generation and the fits are unchanged; this only orders which setups surface first, so it
+# can't overfit the way tightening a fit does. Default 1.0. Retune as out-of-sample data accrues.
+CATEGORY_EDGE = {
+    "🏆 Relative Strength": 1.50, "⚡ Momentum Surge": 1.40, "🌊 Momentum Leaders": 1.25,
+    "🎯 Pullback Buy": 1.12, "🦈 Quiet Accumulation": 1.05,
+    "🌪️ Volatility Squeeze": 0.70, "🍃 VCP Volume Dry-Up": 0.75,
+    "📉 Breakdown": 0.80, "🐻 Distribution": 0.80, "🔻 Overbought Fade": 0.85,
+}
+
+def category_edge(cat):
+    return CATEGORY_EDGE.get(cat, 1.0)
+
+
 def precompute_indicators(df):
     """Compute the indicator SERIES shared by compute_scores AND compute_factors
     exactly ONCE (RSI-14, MA20, MA50, MACD line+signal, 20-day volume MA). The warm
