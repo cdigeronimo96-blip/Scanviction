@@ -6551,16 +6551,22 @@ def page_login():
     st.markdown('<div class="page-wrap">',unsafe_allow_html=True)
     _,cc,_=st.columns([1,2,1])
     with cc:
+        # Suppress Streamlit's transient "Missing Submit Button" warning that flashes red while the
+        # form's submit button streams in AFTER its inputs on a nav rerun (a cosmetic frontend
+        # artifact — every form here DOES have a submit button). Scoped to THIS form via the keyed
+        # container, and real errors are rendered OUTSIDE the form (below) so they still show.
+        st.markdown("<style>.st-key-loginbox [data-testid='stForm'] [data-testid='stAlert']{display:none!important;}</style>", unsafe_allow_html=True)
         st.markdown(f'<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Welcome Back 👋</div><div style="font-size:13px;color:#374f6e;">Sign in to your MarketSignalPro account</div></div>',unsafe_allow_html=True)
-        with st.form("lf",clear_on_submit=False):
-            email=st.text_input("Email address",label_visibility="visible")
-            pw=st.text_input("Password",type="password",label_visibility="visible")
-            if st.form_submit_button("Sign In →",type="primary",use_container_width=True):
+        with st.container(key="loginbox"):
+            with st.form("lf",clear_on_submit=False):
+                email=st.text_input("Email address",label_visibility="visible")
+                pw=st.text_input("Password",type="password",label_visibility="visible")
+                _submit=st.form_submit_button("Sign In →",type="primary",use_container_width=True)
+            if _submit:
                 if not email or not pw: st.error("Please enter your email and password.")
                 elif login(email,pw):
                     st.session_state["_login_welcome"] = st.session_state.user.get("name","")
-                    # Honor intended destination
-                    intended = st.session_state.pop("_intended_page", None)
+                    intended = st.session_state.pop("_intended_page", None)   # honor intended destination
                     nav(intended if intended else "dashboard")
                 else: st.error("Invalid email or password.")
 
