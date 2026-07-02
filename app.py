@@ -2383,7 +2383,7 @@ def _restore_page_from_url():
 
     valid = {"landing","features","login","signup","verify_email","forgot_pw","pricing",
              "contact","dashboard","discover","watchlist","screener","bi_dashboard",
-             "stock_detail","settings","admin","signal_track"}
+             "stock_detail","settings","admin","signal_track","terms","privacy"}
 
     # ── Password reset deep-link: route to forgot_pw so the reset form shows ──
     # The reset email link is `/?reset_token=<tok>&email=<addr>` with no &page=,
@@ -5896,11 +5896,11 @@ def render_footer(force=False):
                     </span>
                     <div style="font-size:12px;color:rgba(255,255,255,.2);margin-top:6px;">Market Intelligence Platform</div>
                 </div>
-                <div style="display:flex;gap:32px;font-size:12px;color:rgba(255,255,255,.2);">
-                    <span style="cursor:pointer;">Privacy Policy</span>
-                    <span style="cursor:pointer;">Terms of Service</span>
-                    <span style="cursor:pointer;">Risk Disclaimer</span>
-                    <span style="cursor:pointer;">Contact</span>
+                <div style="display:flex;gap:32px;font-size:12px;">
+                    <a href="?page=privacy" target="_self" style="color:rgba(255,255,255,.4);text-decoration:none;">Privacy Policy</a>
+                    <a href="?page=terms" target="_self" style="color:rgba(255,255,255,.4);text-decoration:none;">Terms of Service</a>
+                    <a href="?page=terms" target="_self" style="color:rgba(255,255,255,.4);text-decoration:none;">Risk Disclaimer</a>
+                    <a href="?page=contact" target="_self" style="color:rgba(255,255,255,.4);text-decoration:none;">Contact</a>
                 </div>
             </div>
             <div class="disc">⚠️ <strong style="color:#4a5e7a;">Risk Disclaimer:</strong> Trading stocks involves substantial risk of financial loss. MarketSignalPro provides algorithmic, educational content only — not financial, investment, legal, or tax advice. All signals may be inaccurate or delayed. Past performance does not guarantee future results. Always consult a licensed financial professional before making investment decisions.</div>
@@ -5971,6 +5971,34 @@ def render_signal_proof(context="overview"):
         </div>
         <div style="font-size:10px;color:#2a3a52;margin-top:10px;">Equal-weight average of each tracked signal's measured move in its called direction (a short counts a decline as a gain). Educational only · not financial advice · past performance ≠ future results.</div>
     </div>''', unsafe_allow_html=True)
+
+HERO_MIN_PRICE = float(os.environ.get("HERO_MIN_PRICE", "3"))  # marketing hero skips sub-$ penny names
+
+def _hero_snaps(rows):
+    """READ-ONLY per-ticker snapshots for the landing hero's real % since signal (cached per warm).
+    The warm worker already RECORDS __universe__ snapshots, so the public landing only READS here —
+    no writes on a page hit by crawlers. Prefers the category snapshot ('since signal'), falls back to
+    the universe one. Returns {ticker: snap or None}."""
+    try:
+        with _UNIVERSE_LOCK:
+            bid = _UNIVERSE_CACHE.get("built_at", 0)
+    except Exception:
+        bid = 0
+    ck = (bid, tuple(r.get("t") for r in rows))
+    if bid and st.session_state.get("_hero_snap_key") == ck and "_hero_snap" in st.session_state:
+        return st.session_state["_hero_snap"]
+    snaps = {}
+    try:
+        alls = _load_recs()
+        for r in rows:
+            t = r.get("t"); cat = r.get("primary_cat")
+            snaps[t] = (alls.get(_rec_key(cat, t)) if cat else None) or alls.get(_rec_key("__universe__", t))
+    except Exception:
+        pass
+    if bid:
+        st.session_state["_hero_snap"] = snaps; st.session_state["_hero_snap_key"] = ck
+    return snaps
+
 
 def page_landing():
     # NAV_CSS is injected by render_topbar() below — injecting it here too added an extra empty
@@ -6065,18 +6093,24 @@ def page_landing():
         # On-brand product preview: a LIVE, continuously-scrolling Top Signals feed —
         # conviction-ranked cards with custom icons + the data edge. Pure CSS marquee
         # (guaranteed to animate everywhere — no scroll-timeline / JS dependency).
-        # LIVE Top Signals — real, conviction-ranked rows from the warm universe. NOTHING here is
-        # fabricated: a sub-stat shows ONLY when the underlying data is real (insider Form-4 buys or
-        # FINRA days-to-cover), and per-card "% since" is intentionally omitted (the aggregate proof
-        # lives in the Signal Track Record band). If today's scan hasn't warmed yet we show an honest
-        # "warming up" state — never placeholder cards with made-up prices.
-        def _sigcard(t, px, chg, sc, col, cat, sub):
+        # LIVE Top Signals — real, conviction-ranked rows from the warm universe. NOTHING is
+        # fabricated: price/%/conviction are live, a sub-stat shows ONLY when the data is real (insider
+        # Form-4 buys or FINRA days-to-cover), and "% since signal" is the TRUE move from the locked
+        # entry snapshot (blank when we have no snapshot). Marketing polish: skip sub-$HERO_MIN_PRICE
+        # penny names and cap 2 per category so the feed looks varied. Honest "warming up" state when
+        # the scan hasn't completed — never placeholder cards with made-up prices.
+        def _sigcard(t, px, chg, sc, col, cat, sub, perf=None):
             pxcol = "#34d399" if chg.startswith("▲") else "#fb7185"
+            perf_row = ""
+            if perf:
+                _age, _since, _scol = perf
+                perf_row = (f'<div class="sig-perf"><span class="sp-age">{_age}</span>'
+                            f'<span class="sp-pct" style="color:{_scol};">{_since}</span></div>')
             return (f'<div class="sig"><div class="r1"><span class="tick">{t}</span>'
                     f'<span class="px" style="color:{pxcol};">{px} {chg}</span></div>'
                     f'<div class="cv"><div class="bar"><div class="fill" style="width:{max(4,min(100,sc))}%;background:{col};"></div></div>'
                     f'<span class="num" style="color:{col};">{sc}</span></div>'
-                    f'<div class="tag">{cat_icon(cat,15)}<span>{_clean_name(cat)}<span class="sub">{sub}</span></span></div></div>')
+                    f'<div class="tag">{cat_icon(cat,15)}<span>{_clean_name(cat)}<span class="sub">{sub}</span></span></div>{perf_row}</div>')
         def _hero_sub(r):
             info = r.get("info") or {}
             ib = int(info.get("insider_buys") or 0); dtc = float(info.get("dtc") or 0)
@@ -6087,9 +6121,23 @@ def page_landing():
         try:
             _warm = build_scored_universe()          # instant (cache-served, non-blocking)
             if _warm:
-                _live_rows = _top_signals({"_": _warm}, n=6)
+                _ranked = _top_signals({"_": _warm}, n=24)   # pull extra, then filter + diversify
+                _cat_seen = {}
+                for r in _ranked:
+                    if ((r.get("q") or {}).get("price", 0) or 0) < HERO_MIN_PRICE:
+                        continue                                  # skip penny names on the hero
+                    _c = r.get("primary_cat", "")
+                    if _cat_seen.get(_c, 0) >= 2:
+                        continue                                  # max 2 per category for variety
+                    _cat_seen[_c] = _cat_seen.get(_c, 0) + 1
+                    _live_rows.append(r)
+                    if len(_live_rows) >= 6:
+                        break
+                if not _live_rows:                                # filters removed everything → fall back
+                    _live_rows = _ranked[:6]
         except Exception:
             _live_rows = []
+        _snaps = _hero_snaps(_live_rows) if _live_rows else {}
         _sigs = []
         for r in _live_rows:
             q = r.get("q") or {}; price = q.get("price", 0) or 0; pct = q.get("pct", 0) or 0
@@ -6098,7 +6146,17 @@ def page_landing():
             col = (("#fb7185" if conv >= 70 else "#fb923c" if conv >= 45 else "#94a3b8") if _bear
                    else ("#34d399" if conv >= 70 else "#f59e0b" if conv >= 45 else "#94a3b8"))
             ar = "▲" if pct >= 0 else "▼"
-            _sigs.append((r.get("t", ""), f"${price:,.2f}", f"{ar}{abs(pct):.1f}%", conv, col, cat, _hero_sub(r)))
+            # TRUE % since signal from the locked entry snapshot (never fabricated; blank if no snap)
+            _perf = None
+            _snap = _snaps.get(r.get("t"))
+            if _snap:
+                _entry = _snap.get("entry_price", 0) or 0
+                if _entry > 0 and price > 0:
+                    _since = (price - _entry) / _entry * 100.0
+                    _sign = "+" if _since >= 0 else ""
+                    _perf = (f"Signaled {_humanize_age(_snap.get('triggered_at', 0))}",
+                             f"{_sign}{_since:.1f}% since", "#34d399" if _since >= 0 else "#fb7185")
+            _sigs.append((r.get("t", ""), f"${price:,.2f}", f"{ar}{abs(pct):.1f}%", conv, col, cat, _hero_sub(r), _perf))
         _is_live = bool(_sigs)
         _cards = "".join(_sigcard(*s) for s in _sigs)
         if _is_live:
@@ -11379,6 +11437,95 @@ def page_verify_email():
 # ─────────────────────────────────────────────────────────────
 # PAGE: CONTACT
 # ─────────────────────────────────────────────────────────────
+def _lsec(n, title, *paras):
+    ps = "".join(f'<p style="margin:8px 0 0;">{p}</p>' for p in paras)
+    return f'<h2 style="font-size:16px;font-weight:700;color:#e2e8f0;margin:22px 0 4px;">{n}. {title}</h2>{ps}'
+
+def _legal_shell(title, updated, body_html, key):
+    render_topbar()
+    st.markdown('<div class="page-wrap pw-narrow">', unsafe_allow_html=True)
+    st.markdown(f"""<div style="max-width:820px;margin:0 auto;padding:16px 0 6px;">
+      <h1 style="font-size:28px;font-weight:800;color:#e2e8f0;margin-bottom:2px;">{title}</h1>
+      <div style="font-size:12px;color:#5d6b86;margin-bottom:14px;">Last updated: {updated}</div>
+      <div style="background:#0e1421;border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px 14px;font-size:12px;color:#94a3b8;margin-bottom:6px;">
+        MarketSignalPro is an <strong>educational software and market-data tool</strong> — <strong>not</strong> investment,
+        financial, legal, or tax advice. We are not a registered investment adviser or broker-dealer.
+      </div>
+      <div style="font-size:14px;color:#c5cfdd;line-height:1.7;">{body_html}</div>
+    </div>""", unsafe_allow_html=True)
+    if st.button("← Back to Home", key=key):
+        nav("landing")
+    st.markdown('</div>', unsafe_allow_html=True)
+    render_footer()
+
+def page_terms():
+    _mail = f'<a href="mailto:{SUPPORT_EMAIL}" style="color:#818cf8;text-decoration:none;">{SUPPORT_EMAIL}</a>'
+    body = (
+        _lsec(1, "Acceptance of these Terms",
+              'By creating an account or using MarketSignalPro (the "Service"), you agree to these Terms of Service. If you do not agree, do not use the Service.')
+        + _lsec(2, "What MarketSignalPro is — and is not",
+              'The Service provides algorithmic, <strong>educational</strong> market data, technical-analysis "signals," screening, watchlists, and alerts covering U.S.-listed securities. The same rules-based information is published to all subscribers.',
+              'The Service is <strong>not</strong> investment, financial, legal, or tax advice, is <strong>not</strong> tailored to your personal circumstances, and creates no advisory or fiduciary relationship. We do not manage money, hold customer funds, execute trades, or tell any specific person to buy or sell any security. You are solely responsible for your own investment decisions.')
+        + _lsec(3, "Eligibility",
+              'You must be at least 18 years old and able to form a binding contract, and you are responsible for complying with all laws that apply to you.')
+        + _lsec(4, "Your account",
+              'Provide accurate information and keep your password secure. You are responsible for all activity under your account, and you agree to notify us promptly of any unauthorized use.')
+        + _lsec(5, "Subscriptions, billing &amp; cancellation",
+              'We offer a free tier and paid subscriptions (currently $19/month or $149/year). Paid plans are billed in advance through our payment processor, Stripe, and <strong>renew automatically</strong> each period until cancelled.',
+              'You may cancel at any time; cancellation stops future renewals and your paid features remain active through the end of the current billing period. Prices may change on a prospective basis with notice.')
+        + _lsec(6, "Refunds",
+              'You may request a refund within <strong>30 days</strong> of your first paid purchase by emailing ' + _mail + '. After that window, payments for the current period are non-refundable, but you may cancel to avoid future charges.')
+        + _lsec(7, "Acceptable use",
+              'You agree not to resell or redistribute the Service or its data; scrape, crawl, or bulk-export content except as expressly permitted; reverse engineer or disrupt the Service; or use it for any unlawful purpose, including trading on material non-public information.')
+        + _lsec(8, "Intellectual property",
+              'The Service, its content, scores, and software are owned by MarketSignalPro and protected by law. We grant you a limited, personal, non-transferable license to use the Service for your own individual purposes.')
+        + _lsec(9, "Market data",
+              'Prices, filings, and third-party inputs (e.g., exchange data, SEC filings, short-interest and sentiment data) are provided by third parties, may be <strong>delayed, incomplete, or inaccurate</strong>, and are used on an as-available basis. We do not guarantee the accuracy, timeliness, or completeness of any data or signal.')
+        + _lsec(10, "No warranties",
+              'The Service is provided "AS IS" and "AS AVAILABLE," without warranties of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that any signal will be profitable or that the Service will be uninterrupted or error-free.')
+        + _lsec(11, "Limitation of liability",
+              'To the maximum extent permitted by law, MarketSignalPro and its operators will not be liable for any trading or investment losses, or for any indirect, incidental, special, or consequential damages. Our total liability for any claim will not exceed the amount you paid us in the 12 months before the claim.')
+        + _lsec(12, "Indemnification",
+              'You agree to indemnify and hold MarketSignalPro harmless from claims arising out of your use of the Service or your violation of these Terms.')
+        + _lsec(13, "Termination",
+              'We may suspend or terminate accounts that violate these Terms or that we reasonably believe create risk. You may stop using the Service and delete your account at any time.')
+        + _lsec(14, "Changes to these Terms",
+              'We may update these Terms from time to time. Material changes will be posted here with a new "Last updated" date; continued use after changes means you accept them.')
+        + _lsec(15, "Governing law",
+              'These Terms are governed by the laws of the State of Ohio, United States, without regard to conflict-of-laws rules, and disputes will be resolved in the state or federal courts located in Ohio.')
+        + _lsec(16, "Contact",
+              'Questions about these Terms? Email ' + _mail + '.')
+    )
+    _legal_shell("Terms of Service", "July 2, 2026", body, "terms_back")
+
+def page_privacy():
+    _mail = f'<a href="mailto:{SUPPORT_EMAIL}" style="color:#818cf8;text-decoration:none;">{SUPPORT_EMAIL}</a>'
+    body = (
+        _lsec(1, "Information we collect",
+              '<strong>Account information</strong> you provide: your name and email address, and a securely hashed password. <strong>Usage information</strong>: pages viewed and product events (e.g., sign-up, log-in) used to improve the Service, with identifiers stored in hashed form. <strong>Payment information</strong>: handled by Stripe — we receive confirmation of your subscription but <strong>never see or store your full card number</strong>. <strong>Technical data</strong>: standard log and device data such as browser type and approximate location from your IP.')
+        + _lsec(2, "How we use your information",
+              'To operate your account and deliver signals and alerts; to process subscriptions and send transactional email (verification, password reset, receipts); to secure the Service and prevent abuse; to understand and improve product usage; and to comply with legal obligations.')
+        + _lsec(3, "How we share information",
+              'We do <strong>not</strong> sell your personal information. We share it only with service providers that help us run the Service — for example <strong>Stripe</strong> (payments), <strong>Resend</strong> (email delivery), and our hosting, database, and market-data providers — and when required by law or to protect our rights.')
+        + _lsec(4, "Cookies &amp; sessions",
+              'We use a session token to keep you logged in and to operate the Service. We do not use third-party advertising cookies.')
+        + _lsec(5, "Data retention",
+              'We keep account information while your account is active and as needed for legal, security, and record-keeping purposes. You can request deletion at any time (see "Your rights").')
+        + _lsec(6, "Security",
+              'Passwords are stored using strong one-way hashing (bcrypt), data is transmitted over encrypted connections (HTTPS/TLS), and payments run entirely through Stripe. No method of storage or transmission is 100% secure, but we work to protect your information.')
+        + _lsec(7, "Your rights",
+              'You may access, correct, or delete your account information, or ask what we hold about you, by emailing ' + _mail + '. We will respond within a reasonable time.')
+        + _lsec(8, "Children",
+              'The Service is intended for adults (18+) and is not directed to children. We do not knowingly collect information from anyone under 18.')
+        + _lsec(9, "United States",
+              'The Service is operated from the United States and your information is processed there. By using the Service you consent to this processing.')
+        + _lsec(10, "Changes to this policy",
+              'We may update this Privacy Policy; material changes will be posted here with a new "Last updated" date.')
+        + _lsec(11, "Contact",
+              'Privacy questions? Email ' + _mail + '.')
+    )
+    _legal_shell("Privacy Policy", "July 2, 2026", body, "privacy_back")
+
 def page_contact():
     render_topbar()
     back_button("ct_back")
@@ -11785,6 +11932,8 @@ else:
     elif page=="forgot_pw":    page_forgot()
     elif page=="pricing":      page_pricing()
     elif page=="contact":      page_contact()
+    elif page=="terms":        page_terms()
+    elif page=="privacy":      page_privacy()
     elif page=="dashboard":    page_dashboard()
     elif page=="discover":     page_discover()
     elif page=="watchlist":    page_watchlist()
