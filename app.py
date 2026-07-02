@@ -6018,8 +6018,9 @@ def render_signal_proof(context="overview"):
     </div>''', unsafe_allow_html=True)
 
 def page_landing():
-    st.markdown(NAV_CSS, unsafe_allow_html=True)
-
+    # NAV_CSS is injected by render_topbar() below — injecting it here too added an extra empty
+    # stMarkdown element whose vertical-block gap (~16px) pushed the landing's topbar 16px lower
+    # than every other page, causing the header to jump/flash on landing<->page navigation.
     # ── Landing page uses render_topbar for consistent in-app navigation ──
     render_topbar()  # guest state (not authed), shows Features/Pricing/Login/Sign Up
 
