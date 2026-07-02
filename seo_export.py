@@ -20,6 +20,11 @@ except Exception:                      # pragma: no cover
 _DEFAULT_DIR = os.environ.get(
     "MSP_DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".msp_data"))
 SNAPSHOT_PATH = os.environ.get("MSP_SEO_SNAPSHOT", os.path.join(_DEFAULT_DIR, "universe_snapshot.json"))
+# Also mirrored into the Streamlit static/ dir so the LIVE app can expose it publicly at
+# /app/static/universe_snapshot.json (requires enableStaticServing in .streamlit/config.toml) — that
+# URL is what the SEO GitHub Action fetches (SEO_SNAPSHOT_URL). See SEO_README.md.
+STATIC_SNAPSHOT_PATH = os.environ.get("MSP_SEO_STATIC",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "universe_snapshot.json"))
 
 # Master toggle for the app-side write (default on; the write is leader-gated + wrapped in try/except).
 ENABLED = os.environ.get("SEO_SNAPSHOT", "1").strip().lower() not in ("0", "false", "no", "")
@@ -80,17 +85,30 @@ def build_snapshot(rows, generated_at=None):
     }
 
 
-def write_snapshot(rows, path=None, generated_at=None):
-    """Atomically write the snapshot JSON (temp file + os.replace). Returns the path written."""
-    path = path or SNAPSHOT_PATH
-    snap = build_snapshot(rows, generated_at=generated_at)
+def _atomic_write_json(path, obj):
+    """Atomic write (temp file + os.replace) so a reader never sees a half-written file."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)), suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(snap, f, ensure_ascii=False)
+            json.dump(obj, f, ensure_ascii=False)
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
+
+
+def write_snapshot(rows, path=None, generated_at=None):
+    """Atomically write the snapshot JSON. Returns the primary path written. On the real app write
+    (path omitted) it ALSO mirrors into the static/ dir for public serving; a custom/test path does
+    not, so tests never touch the repo's static dir."""
+    is_default = path is None
+    path = path or SNAPSHOT_PATH
+    snap = build_snapshot(rows, generated_at=generated_at)
+    _atomic_write_json(path, snap)
+    if is_default:
+        try:
+            _atomic_write_json(STATIC_SNAPSHOT_PATH, snap)
+        except Exception:
+            pass
     return path

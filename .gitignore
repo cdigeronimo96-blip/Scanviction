@@ -29,3 +29,8 @@ support_messages.jsonl
 # OS
 Thumbs.db
 .DS_Store
+
+# generated SEO static site + snapshot
+seo_site/
+universe_snapshot.json
+static/universe_snapshot.json

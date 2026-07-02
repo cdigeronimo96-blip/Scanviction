@@ -1,5 +1,12 @@
 # MarketSignalPro theme — premium indigo. Drives Streamlit's native widget accents
 # (toggles, sliders, checkboxes, focus rings) so they match the app's custom CSS.
+
+[server]
+# Serve files in ./static/ at /app/static/<file>. The warm worker publishes the SEO snapshot to
+# static/universe_snapshot.json (seo_export.py) so the SEO GitHub Action can fetch it from the live
+# app at https://marketsignalpro.streamlit.app/app/static/universe_snapshot.json (SEO_SNAPSHOT_URL).
+enableStaticServing = true
+
 [theme]
 base = "dark"
 primaryColor = "#6366f1"
