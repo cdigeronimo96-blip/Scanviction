@@ -6688,6 +6688,66 @@ def _send_push_notification(player_ids, title, message, url=None):
     except Exception as e:
         return False, str(e)
 
+def _email_shell(inner):
+    """Wrap email body content in the branded MarketSignalPro dark shell (logo + footer)."""
+    return (
+        '<div style="font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
+        'background:#07090f;margin:0;padding:0;">'
+        '<div style="max-width:520px;margin:0 auto;padding:40px 30px;">'
+        '<div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;margin-bottom:22px;">'
+        '<span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span>'
+        '<span style="color:#e2e8f0;">Pro</span></div>'
+        + inner +
+        '<div style="font-size:11px;color:#2a3a52;text-align:center;margin-top:22px;line-height:1.6;">'
+        'Educational signals only — not financial advice. Past performance ≠ future results.<br>'
+        '&copy; MarketSignalPro</div></div></div>')
+
+def _verify_email_html(code):
+    """Welcoming, on-brand verification email that sells the product + carries the code."""
+    inner = (
+        '<div style="background:linear-gradient(160deg,#0e1530,#0a0e1c);border:1px solid #1c2440;'
+        'border-radius:16px;padding:32px 28px;">'
+        '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;'
+        'color:#818cf8;margin-bottom:10px;">Welcome aboard</div>'
+        '<div style="font-size:25px;font-weight:800;color:#f1f5f9;line-height:1.22;margin-bottom:12px;">'
+        'The whole market, ranked by conviction \U0001F680</div>'
+        '<div style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:24px;">'
+        "You're in. MarketSignalPro scores ~2,500 of the most liquid U.S. stocks across 20+ signal "
+        'categories every session — momentum leaders, breakouts, volatility squeezes, insider '
+        'clusters and more — so the strongest setups surface first, in plain English. Confirm your '
+        'email and your Top Signals feed goes live.</div>'
+        '<div style="font-size:12px;color:#6b7fa0;margin-bottom:8px;letter-spacing:0.5px;">'
+        'YOUR VERIFICATION CODE</div>'
+        f'<div style="font-size:38px;font-weight:900;letter-spacing:10px;color:#a5b4fc;padding:18px;'
+        f'background:#080b14;border:1px solid #6366f1;border-radius:12px;text-align:center;">{code}</div>'
+        '<div style="font-size:12px;color:#4a5e7a;margin-top:16px;line-height:1.6;">Enter it in the app '
+        "to unlock your account. The code expires in 10 minutes. Didn't sign up? You can safely ignore "
+        'this email.</div></div>')
+    return _email_shell(inner)
+
+def _reset_email_html(email, reset_url):
+    """Password-reset email that names the account and gives a clear reset link."""
+    inner = (
+        '<div style="background:linear-gradient(160deg,#0e1530,#0a0e1c);border:1px solid #1c2440;'
+        'border-radius:16px;padding:32px 28px;">'
+        '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;'
+        'color:#818cf8;margin-bottom:10px;">Password reset</div>'
+        '<div style="font-size:24px;font-weight:800;color:#f1f5f9;line-height:1.25;margin-bottom:14px;">'
+        'Reset your password \U0001F511</div>'
+        '<div style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:10px;">We received a '
+        'request to reset the password for your MarketSignalPro account:</div>'
+        f'<div style="font-size:14px;font-weight:700;color:#a5b4fc;background:#080b14;border:1px solid '
+        f'#1c2440;border-radius:8px;padding:11px 14px;margin-bottom:22px;word-break:break-all;">{_esc(email)}</div>'
+        f'<a href="{reset_url}" style="display:block;text-align:center;padding:13px 24px;background:#6366f1;'
+        'color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;font-size:14px;">'
+        'Reset your password &rarr;</a>'
+        '<div style="font-size:12px;color:#4a5e7a;margin-top:16px;line-height:1.6;">This link expires in '
+        "1 hour. If you didn't request this, you can safely ignore this email — your password won't "
+        'change.</div>'
+        f'<div style="font-size:11px;color:#2a3a52;margin-top:14px;word-break:break-all;">Or paste this '
+        f'link into your browser:<br>{reset_url}</div></div>')
+    return _email_shell(inner)
+
 def _send_password_reset(email, reset_token):
     """Send password reset email. Returns (True,None) or (False, info)."""
     try:
@@ -6696,13 +6756,7 @@ def _send_password_reset(email, reset_token):
         reset_url  = f"{app_url}/?reset_token={reset_token}&email={email}"
         if resend_key:
             import requests as _r
-            html = f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;">
-                <h2 style="color:#6366f1;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
-                <h3 style="color:#e2e8f0;">Reset your password</h3>
-                <p style="color:#6b7fa0;">Click below to reset. Expires in 1 hour.</p>
-                <a href="{reset_url}" style="display:inline-block;padding:12px 28px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Reset Password →</a>
-                <p style="color:#374f6e;font-size:11px;margin-top:16px;">Or copy: {reset_url}</p>
-            </div>"""
+            html = _reset_email_html(email, reset_url)
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
                 json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <support@marketsignalpro.com>"),"to":[email],
@@ -6745,18 +6799,14 @@ def _send_verification_email_bg(email, code):
     except Exception: email_from = "MarketSignalPro <support@marketsignalpro.com>"
     if not resend_key:
         return False, f"DEMO_CODE:{code}"
-    html = (f'<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">'
-            f'<h2>Market<span style="color:#f59e0b;">Signal</span>Pro</h2><h3>Verify your email</h3>'
-            f'<div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#6366f1;padding:20px;'
-            f'background:#0d1525;border-radius:12px;text-align:center;">{code}</div>'
-            f'<p style="color:#6b7fa0;margin-top:20px;">Expires in 10 minutes.</p></div>')
+    html = _verify_email_html(code)
     def _bg():
         try:
             import requests as _r
             _r.post("https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
                 json={"from": email_from, "to": [email],
-                      "subject": "Your MarketSignalPro verification code", "html": html},
+                      "subject": "Welcome to MarketSignalPro — confirm your email", "html": html},
                 timeout=15)
         except Exception:
             pass
@@ -11252,14 +11302,8 @@ def _send_verification_email(email, code):
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
                 json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <support@marketsignalpro.com>"),
                       "to":[email],
-                      "subject":"Your MarketSignalPro verification code",
-                      "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;color:#e2e8f0;padding:40px;">
-                        <h2 style="color:#6366f1;">Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
-                        <h3>Verify your email</h3>
-                        <p style="color:#6b7fa0;">Your verification code is:</p>
-                        <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#6366f1;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
-                        <p style="color:#6b7fa0;margin-top:20px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
-                      </div>"""})
+                      "subject":"Welcome to MarketSignalPro — confirm your email",
+                      "html":_verify_email_html(code)})
             if resp.status_code in (200,201): return True,None
             return False, f"Email send failed: {resp.text}"
     except: pass
