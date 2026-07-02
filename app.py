@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 # (verify_pw handles bcrypt + legacy sha256; _esc escapes user text for HTML sinks.)
 from security import _esc, _hp, hp, _is_bcrypt_hash, verify_pw, HAS_BCRYPT
 import secguard   # abuse guards: signup honeypot + rate limits, login lockout, reset throttling
+import seo_export  # writes the slim universe snapshot the standalone SEO site generator reads
 
 # Cookie manager DISABLED. stx.CookieManager mounts an iframe that re-syncs to
 # Python on nearly every run, causing a continuous rerun loop — each rerun marks
@@ -4501,6 +4502,10 @@ def _refresh_universe_now():
         try: _record_category_entries(rows)
         except Exception: pass
         try: _record_event_signals(rows)
+        except Exception: pass
+    # SEO snapshot for the standalone static-site generator (leader only; never blocks the warm).
+    if rows and _worker_is_leader() and seo_export.ENABLED:
+        try: seo_export.write_snapshot(rows)
         except Exception: pass
     return rows
 
