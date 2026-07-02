@@ -5279,6 +5279,14 @@ NAV_CSS = """<style>
 .sw-nav .stButton>button{font-size:13px !important;font-weight:500 !important;padding:6px 12px !important;min-height:38px !important;height:38px !important;border:1px solid rgba(255,255,255,0.15) !important;background:rgba(255,255,255,0.04) !important;color:#a8bdd4 !important;border-radius:7px !important;white-space:nowrap !important;width:100% !important;}
 .sw-nav .stButton>button:hover{border-color:rgba(99,102,241,0.5) !important;background:rgba(99,102,241,0.1) !important;color:#a5b4fc !important;}
 .sw-nav .stButton>button[kind="primary"]{background:#6366f1 !important;border-color:#6366f1 !important;color:#fff !important;font-weight:700 !important;}
+/* Suppress Streamlit's transient "Missing Submit Button" RED FLASH inside forms: on a nav rerun the
+   submit button streams in a beat after the inputs, so the frontend briefly renders that error, then
+   removes it (<~0.4s). Keep alerts INSIDE any form hidden for the first ~0.4s, then fade in the ones
+   that PERSIST (genuine validation errors). Every form here has a submit button, so nothing real is
+   lost — the persistent error just fades in a hair later. Applies app-wide (login errors render
+   OUTSIDE their form, so they stay instant). */
+[data-testid="stForm"] [data-testid="stAlert"]{animation:mspFormAlert 0.45s ease;}
+@keyframes mspFormAlert{0%,88%{opacity:0;}100%{opacity:1;}}
 </style>"""
 
 LOGO_HTML = (
