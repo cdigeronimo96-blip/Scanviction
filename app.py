@@ -9379,27 +9379,34 @@ def page_watchlist():
         st.markdown('</div>',unsafe_allow_html=True)
         return
 
-    # Load watchlist data
-    rows=[]; prog=st.progress(0,"Loading watchlist…")
-    for i,t in enumerate(wl):
-        prog.progress((i+1)/len(wl),f"Loading {t}…")
-        try:
-            q=get_quote(t)
-            if not q: continue
-            df=yf_ohlcv(t,30); info=yf_fund(t); sent=st_sent(t)
-            sc,bd,op,risk,_=compute_scores(df,info,sent)
-            rec_lbl,rec_clr,_=get_recommendation(sc,bd,info)
-            pct=q.get("pct",0); price=q.get("price",0)
-            cc_=GREEN if pct>=0 else RED
-            rows.append({
-                "Ticker":t,"Name":q.get("name","")[:22],"Price":f"${price:,.2f}",
-                "Change":f"{pct:+.2f}%","Signal":rec_lbl,"Score":sc,
-                "Risk":risk,"Sector":info.get("sector","N/A"),
-                "Short Float":f"{(info.get('sf',0) or 0)*100:.1f}%",
-                "_pct":pct,"_cc":cc_,"_rec_clr":rec_clr
-            })
-        except: continue
-    prog.empty()
+    # Load watchlist data. Reuse the warm scan (instant for any scanned name — its already-computed
+    # quote/score/info) and only cold-fetch genuinely off-scan tickers. One clean spinner instead of
+    # the per-ticker progress bar that read as cramped/unpolished.
+    rows=[]
+    with st.spinner("Loading your watchlist…"):
+        for t in wl:
+            try:
+                wr=_warm_row_for(t)
+                if wr and wr.get("q"):
+                    q=wr["q"]; sc=int(wr.get("sc",0) or 0); bd=wr.get("bd") or {}
+                    info=wr.get("info") or {}; risk=wr.get("risk","") or ""
+                else:
+                    q=get_quote(t)
+                    if not q: continue
+                    df=yf_ohlcv(t,30); info=yf_fund(t); sent=st_sent(t)
+                    sc,bd,op,risk,_=compute_scores(df,info,sent)
+                if not q: continue
+                rec_lbl,rec_clr,_=get_recommendation(sc,bd,info)
+                pct=q.get("pct",0); price=q.get("price",0)
+                cc_=GREEN if pct>=0 else RED
+                rows.append({
+                    "Ticker":t,"Name":q.get("name","")[:22],"Price":f"${price:,.2f}",
+                    "Change":f"{pct:+.2f}%","Signal":rec_lbl,"Score":sc,
+                    "Risk":risk,"Sector":info.get("sector","N/A"),
+                    "Short Float":f"{(info.get('sf',0) or 0)*100:.1f}%",
+                    "_pct":pct,"_cc":cc_,"_rec_clr":rec_clr
+                })
+            except Exception: continue
 
     if not rows:
         st.info("Could not load watchlist data. Try again in a moment.")
