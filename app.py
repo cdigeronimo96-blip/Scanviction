@@ -454,6 +454,38 @@ def track_once(flag, event, props=None):
         pass
     track_event(event, props)
 
+def read_funnel_events(limit=200000):
+    """Aggregate events.jsonl into {event: {"n": total, "u": unique_uids}} + the most recent rows.
+    Read-only + best-effort (never raises). Powers the owner funnel view."""
+    import json as _j
+    counts, uniq, recent = {}, {}, []
+    try:
+        with open(_EVENTS_PATH, encoding="utf-8") as f:
+            lines = f.readlines()[-limit:]
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = _j.loads(line)
+            except Exception:
+                continue
+            ev = e.get("event", "?")
+            counts[ev] = counts.get(ev, 0) + 1
+            u = e.get("uid")
+            if u:
+                uniq.setdefault(ev, set()).add(u)
+        for line in reversed(lines[-40:]):
+            try:
+                recent.append(_j.loads(line.strip()))
+            except Exception:
+                pass
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return {ev: {"n": counts[ev], "u": len(uniq.get(ev, ()))} for ev in counts}, recent
+
 # ALERTS_DB_PATH / USERS_DB_PATH / SESS_DB_PATH and SESSION_TTL_SECONDS now come from
 # auth_store (imported below); it sources the paths from msp_store so the app and the
 # alerts worker share the exact same files/rows.
@@ -6983,6 +7015,42 @@ def page_forgot():
 # ─────────────────────────────────────────────────────────────
 # PAGE: DASHBOARD
 # ─────────────────────────────────────────────────────────────
+def _render_onboarding():
+    """First-run activation nudge: a 3-step checklist (watchlist → open a signal → set an alert).
+    Activation is the metric that most drives retention, so we make the path obvious. Auto-hides when
+    complete (and fires an 'activated' funnel event) or when dismissed for the session."""
+    if not is_authed() or st.session_state.get("_onboard_dismissed"):
+        return
+    s1 = bool(st.session_state.get("watchlist"))
+    s2 = bool(st.session_state.get("_seen_detail"))
+    s3 = bool(st.session_state.get("alerts"))
+    if s1 and s2 and s3:
+        track_once("_activated_tracked", "activated")   # fully activated → funnel event, then hide
+        return
+    done = sum([s1, s2, s3])
+    def _row(ok, label):
+        ic = "✅" if ok else "⬜"; col = "#5d6b86" if ok else "#e2e8f0"; deco = "line-through" if ok else "none"
+        return f'<div style="display:flex;align-items:center;gap:9px;font-size:13px;color:{col};text-decoration:{deco};margin:4px 0;">{ic} {label}</div>'
+    st.markdown(f"""<div class="card" style="border-left:3px solid {GOLD};margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-size:14px;font-weight:800;color:#e2e8f0;">🚀 Get started ({done}/3)</div>
+          <div style="font-size:11px;color:#5d6b86;">~30 seconds — this is how the app earns its keep</div>
+        </div>
+        {_row(s1, "Add a stock to your watchlist")}
+        {_row(s2, "Open a signal to see its conviction breakdown")}
+        {_row(s3, "Set a price alert so we ping you on a move")}
+    </div>""", unsafe_allow_html=True)
+    b1, b2, _sp = st.columns([1, 1, 2])
+    with b1:
+        if (not s1 or not s2):
+            if st.button("Browse signals →", key="ob_go", use_container_width=True): nav("discover")
+        elif not s3:
+            if st.button("Set an alert →", key="ob_go", use_container_width=True): nav("watchlist")
+    with b2:
+        if st.button("Dismiss", key="ob_dismiss", use_container_width=True):
+            st.session_state["_onboard_dismissed"] = True; st.rerun()
+
+
 def page_dashboard():
     render_topbar("dashboard")
     st.markdown('<div class="page-wrap pw-narrow">' ,unsafe_allow_html=True)
@@ -7008,6 +7076,9 @@ def page_dashboard():
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── First-run activation checklist (auto-hides when done/dismissed) ──
+    _render_onboarding()
 
     # ── Live market countdown timer ──
     render_market_timer()
@@ -8159,6 +8230,7 @@ def render_signal_chart(df, cat, factors, q, ticker):
 
 def page_detail():
     render_topbar()
+    st.session_state["_seen_detail"] = True   # onboarding: opening a signal detail = activation step 2
     st.markdown('<div class="page-wrap">',unsafe_allow_html=True)
     ticker=st.session_state.get("detail_ticker")
     data=st.session_state.get("detail_data",{})
@@ -11155,16 +11227,35 @@ def page_admin():
             if st.button("Clear Key",key="clr_api"): st.session_state._admin_td_key=""; st.success("Cleared.")
 
     with tabs[3]:
-        st.markdown('<div class="sec-hd" style="font-size:13px;">Site Analytics (Simulated)</div>',unsafe_allow_html=True)
-        if HAS_PLOTLY:
-            dates=pd.date_range(end=datetime.now(),periods=30,freq='D')
-            su=[random.randint(45,130) for _ in range(30)]; pu=[random.randint(6,28) for _ in range(30)]
-            fig=go.Figure()
-            fig.add_trace(go.Scatter(x=list(dates),y=su,name="New Signups",line=dict(color=BLUE,width=2),fill="tozeroy",fillcolor="rgba(99,102,241,0.08)"))
-            fig.add_trace(go.Scatter(x=list(dates),y=pu,name="Premium Upgrades",line=dict(color=GOLD,width=2)))
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=0,b=0),height=260,legend=dict(bgcolor="rgba(0,0,0,0)",font=dict(color="#6b7fa0",size=11)),xaxis=dict(showgrid=False,color="#4a5e7a"),yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#4a5e7a"))
-            st.plotly_chart(fig,use_container_width=True)
-        st.markdown('<div class="disc">📊 Connect Mixpanel, PostHog, or similar for real analytics.</div>',unsafe_allow_html=True)
+        st.markdown('<div class="sec-hd" style="font-size:13px;">🎯 Acquisition Funnel (real)</div>',unsafe_allow_html=True)
+        _fd, _frecent = read_funnel_events()
+        if not _fd:
+            st.markdown('<div class="disc">No events logged yet. The funnel fills in as visitors hit the site — landing views, sign-ups, verifications, logins, and payments are recorded to <code>.msp_data/events.jsonl</code>.</div>',unsafe_allow_html=True)
+        else:
+            _steps=[("landing_view","Landing views","#818cf8"),
+                    ("signup_started","Sign-ups started","#a5b4fc"),
+                    ("signup_verified","Sign-ups verified","#34d399"),
+                    ("login_success","Logins","#22c55e"),
+                    ("payment_success","Payments","#f59e0b")]
+            _maxn=max((_fd.get(k,{}).get("n",0) for k,_,_ in _steps), default=0) or 1
+            _bars=""
+            for k,label,col in _steps:
+                n=_fd.get(k,{}).get("n",0); u=_fd.get(k,{}).get("u",0)
+                w=max(2,int(n/_maxn*100))
+                _bars+=(f'<div style="margin:7px 0;"><div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:3px;">'
+                        f'<span>{label}</span><span style="font-family:JetBrains Mono,monospace;color:#e2e8f0;">{n:,}<span style="color:#5d6b86;"> · {u:,} uniq</span></span></div>'
+                        f'<div style="background:rgba(255,255,255,.05);border-radius:4px;height:10px;"><div style="width:{w}%;height:10px;border-radius:4px;background:{col};"></div></div></div>')
+            st.markdown(f'<div class="card">{_bars}</div>',unsafe_allow_html=True)
+            _lv=_fd.get("landing_view",{}).get("n",0); _sv=_fd.get("signup_verified",{}).get("n",0); _pay=_fd.get("payment_success",{}).get("n",0)
+            c1,c2,c3=st.columns(3)
+            c1.metric("Visitor → Verified", f"{(_sv/_lv*100):.1f}%" if _lv else "—")
+            c2.metric("Verified → Paid", f"{(_pay/_sv*100):.1f}%" if _sv else "—")
+            c3.metric("Total payments", f"{_pay:,}")
+            st.markdown('<div class="disc" style="margin-top:10px;">From <code>events.jsonl</code> on this server instance. ⚠️ Streamlit Cloud storage is per-instance and resets on reboot — for durable, cross-instance analytics, ship these events to Postgres or PostHog.</div>',unsafe_allow_html=True)
+            with st.expander("Recent events"):
+                for e in _frecent[:25]:
+                    _extra = " · "+_esc(str(e.get("plan"))) if e.get("plan") else ""
+                    st.markdown(f'<div style="font-size:11px;color:#6b7fa0;font-family:JetBrains Mono,monospace;">{_esc(e.get("ts",""))} · {_esc(e.get("event",""))}{_extra}</div>',unsafe_allow_html=True)
 
     with tabs[4]:
         st.markdown('<div class="sec-hd" style="font-size:13px;">Ranking & Display Controls</div>',unsafe_allow_html=True)
