@@ -269,7 +269,7 @@ def main(argv=None):
     ap.add_argument("--snapshot", default=os.environ.get(
         "MSP_SEO_SNAPSHOT", os.path.join(".msp_data", "universe_snapshot.json")))
     ap.add_argument("--out", default=os.environ.get("SEO_OUT", "seo_site"))
-    ap.add_argument("--site-url", default=os.environ.get("SEO_SITE_URL", "https://www.marketsignalpro.com"))
+    ap.add_argument("--site-url", default=os.environ.get("SEO_SITE_URL", "https://stocks.marketsignalpro.com"))
     ap.add_argument("--app-url", default=os.environ.get("APP_URL", "https://marketsignalpro.streamlit.app"))
     a = ap.parse_args(argv)
     if not os.path.exists(a.snapshot):

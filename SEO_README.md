@@ -30,7 +30,7 @@ app.py (warm worker, leader)               seo_generate.py (standalone, pure std
 python seo_generate.py \
   --snapshot .msp_data/universe_snapshot.json \
   --out seo_site \
-  --site-url https://www.marketsignalpro.com \
+  --site-url https://stocks.marketsignalpro.com \
   --app-url  https://marketsignalpro.streamlit.app
 ```
 
@@ -58,7 +58,7 @@ jobs:
         with: { python-version: "3.12" }
       # Get the latest snapshot (see "Snapshot source" below), then:
       - run: python seo_generate.py --snapshot universe_snapshot.json --out seo_site
-             --site-url https://www.marketsignalpro.com --app-url https://marketsignalpro.streamlit.app
+             --site-url https://stocks.marketsignalpro.com --app-url https://marketsignalpro.streamlit.app
       - uses: cloudflare/wrangler-action@v3   # or netlify/actions/cli
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}

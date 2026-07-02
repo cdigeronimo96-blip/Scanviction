@@ -46,7 +46,7 @@ jobs:
           python seo_generate.py \
             --snapshot universe_snapshot.json \
             --out seo_site \
-            --site-url https://www.marketsignalpro.com \
+            --site-url https://stocks.marketsignalpro.com \
             --app-url  https://marketsignalpro.streamlit.app
 
       # ── Deploy (Cloudflare Pages). Swap for netlify/actions if you prefer. ──
