@@ -420,6 +420,39 @@ except Exception:
 def _data_path(name, env_var):
     return _os.environ.get(env_var, _os.path.join(_DEFAULT_DATA_DIR, name))
 
+# ── Lightweight funnel analytics ─────────────────────────────────────────────
+# One JSON line per funnel event appended to .msp_data/events.jsonl. No external SDK / no dashboard
+# dependency — the founder can tail or aggregate it (`landing_view → signup_verified → login_success
+# → payment_success`), or later ship it onward. Emails are stored HASHED so the log stays
+# low-sensitivity, and track_event NEVER raises — analytics must never break a user flow.
+_EVENTS_PATH = _data_path("events.jsonl", "MSP_EVENTS_PATH")
+_EVENTS_LOCK = threading.Lock()
+def track_event(event, props=None):
+    try:
+        import json as _j
+        rec = {"ts": datetime.now().isoformat(timespec="seconds"), "event": str(event)}
+        for k, v in (props or {}).items():
+            if k == "email" and v:
+                rec["uid"] = hashlib.sha256(str(v).strip().lower().encode()).hexdigest()[:16]
+            elif v is not None:
+                rec[k] = v
+        with _EVENTS_LOCK:
+            with open(_EVENTS_PATH, "a", encoding="utf-8") as f:
+                f.write(_j.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+def track_once(flag, event, props=None):
+    """Fire an event at most once per session (guarded by a session_state flag) — for funnel-top or
+    return-page events that would otherwise re-fire on every Streamlit rerun."""
+    try:
+        if st.session_state.get(flag):
+            return
+        st.session_state[flag] = True
+    except Exception:
+        pass
+    track_event(event, props)
+
 # ALERTS_DB_PATH / USERS_DB_PATH / SESS_DB_PATH and SESSION_TTL_SECONDS now come from
 # auth_store (imported below); it sources the paths from msp_store so the app and the
 # alerts worker share the exact same files/rows.
@@ -1064,6 +1097,7 @@ def handle_payment_return():
         else:
             remember_pending_upgrade(buyer, new_plan)
         st.session_state["_pay_success"] = v_plan
+        track_once("_pay_tracked", "payment_success", {"plan": v_plan, "email": buyer})
         return True
 
     elif params.get("payment") == "cancelled":
@@ -5262,7 +5296,7 @@ def render_lock(name=""):
             Upgrade to Premium to unlock all 23 composite signal categories (incl. bear/short),<br>
             plus the Market Scanner, signal charts, the short-squeeze scanner, and unlimited alerts.
         </div>
-        <div style="font-size:12px;color:#2a3a52;margin-bottom:20px;">Starting at $29/month · Cancel anytime · No contracts</div>
+        <div style="font-size:12px;color:#2a3a52;margin-bottom:20px;">Founding price: $19/month · Cancel anytime · No contracts</div>
     </div>""", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     _,lc,_=st.columns([1,2,1])
@@ -5871,117 +5905,6 @@ def render_footer(force=False):
     """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
-# DEMO PANELS (for landing hero)
-# ─────────────────────────────────────────────────────────────
-DEMO = [
-    """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.08);border-radius:11px;overflow:hidden;">
-    <div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></div><div style="width:8px;height:8px;border-radius:50%;background:#fbbf24;display:inline-block;"></div><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></div>
-        <span style="font-size:11px;color:#374f6e;margin-left:6px;font-family:'JetBrains Mono',monospace;">StockTwits Hot Stocks</span></div>
-        <span style="font-size:9px;color:#22c55e;font-weight:700;">● LIVE</span>
-    </div>
-    <div style="padding:14px;">
-        <div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-            <div><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">TSLA</span>
-            <div style="margin-top:5px;"><span style="background:#05260f;color:#4ade80;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(74,222,128,.3);">🟢 STRONG BUY</span><span style="background:#260d00;color:#fb923c;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;margin-left:4px;">🔥 HOT</span></div></div>
-            <div style="text-align:right;"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:#e2e8f0;">$199.49</div><div style="font-size:11px;font-weight:700;color:#22c55e;">▲ 3.47%</div></div>
-        </div>
-        <div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-            <div><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">NVDA</span>
-            <div style="margin-top:5px;"><span style="background:#05260f;color:#4ade80;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;">🟢 BUY</span><span style="background:#05260f;color:#86efac;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;margin-left:3px;">Golden Cross ✨</span></div></div>
-            <div style="text-align:right;"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:#e2e8f0;">$127.40</div><div style="font-size:11px;font-weight:700;color:#22c55e;">▲ 2.91%</div><div style="font-size:10px;font-weight:700;color:#4ade80;background:#05260f;padding:1px 8px;border-radius:3px;margin-top:3px;">Score 88</div></div>
-        </div>
-        <div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
-            <div><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">AMD</span>
-            <div style="margin-top:5px;"><span style="background:#201000;color:#fbbf24;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;">🟡 WATCH</span></div></div>
-            <div style="text-align:right;"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:#e2e8f0;">$148.20</div><div style="font-size:11px;font-weight:700;color:#ef4444;">▼ 0.82%</div></div>
-        </div>
-    </div></div>""",
-
-    """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.08);border-radius:11px;overflow:hidden;">
-    <div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></div><div style="width:8px;height:8px;border-radius:50%;background:#fbbf24;display:inline-block;"></div><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></div>
-        <span style="font-size:11px;color:#374f6e;margin-left:6px;font-family:'JetBrains Mono',monospace;">Short Squeeze Candidates</span></div>
-        <span style="background:rgba(245,158,11,.12);color:#f59e0b;font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid rgba(245,158,11,.3);">PREMIUM ⭐</span>
-    </div>
-    <div style="padding:14px;">
-        <div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-            <div><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">AMC</span>
-            <div style="margin-top:5px;"><span style="background:rgba(245,158,11,.15);color:#f59e0b;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(245,158,11,.3);">💥 SQUEEZE BUY</span></div></div>
-            <div style="text-align:right;"><div style="font-size:9px;color:#2a3a52;">Short Float</div><div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#ef4444;">29.99%</div></div>
-        </div>
-        <div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-            <div><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">CVNA</span>
-            <div style="margin-top:5px;"><span style="background:#05260f;color:#4ade80;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;">🟢 STRONG BUY</span></div></div>
-            <div style="text-align:right;"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:#22c55e;">+5.42%</div><div style="font-size:12px;color:#3a5068;">Score: 76</div></div>
-        </div>
-        <div style="background:#080b14;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
-            <div><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">MSTR</span>
-            <div style="margin-top:5px;"><span style="background:rgba(245,158,11,.15);color:#f59e0b;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;border:1px solid rgba(245,158,11,.3);">💥 SQUEEZE BUY</span></div></div>
-            <div style="text-align:right;"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:#e2e8f0;">$411</div><div style="font-size:11px;font-weight:700;color:#22c55e;">+185%</div></div>
-        </div>
-    </div></div>""",
-
-    """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.08);border-radius:11px;overflow:hidden;">
-    <div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 14px;display:flex;align-items:center;gap:6px;">
-        <div style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></div><div style="width:8px;height:8px;border-radius:50%;background:#fbbf24;display:inline-block;"></div><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></div>
-        <span style="font-size:11px;color:#374f6e;margin-left:6px;font-family:'JetBrains Mono',monospace;">Smart Insights — Plain Language</span>
-    </div>
-    <div style="padding:14px;">
-        <div style="background:#0a1020;border-left:3px solid #22c55e;border-radius:0 7px 7px 0;padding:11px 13px;margin-bottom:7px;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">TSLA</span><span style="background:#05260f;color:#4ade80;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;border:1px solid rgba(74,222,128,.3);">🟢 BUY</span></div>
-            <div style="font-size:12px;color:#374f6e;line-height:1.6;"><span style="color:#2dd4bf;font-weight:600;">The Moving Average</span> is breaking out above an important price range, which can sometimes lead to further upside.</div>
-        </div>
-        <div style="background:#0a1020;border-left:3px solid #fbbf24;border-radius:0 7px 7px 0;padding:11px 13px;margin-bottom:7px;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">PLUG</span><span style="background:rgba(251,191,36,.15);color:#fbbf24;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;">🟡 WATCH</span></div>
-            <div style="font-size:12px;color:#374f6e;line-height:1.6;">There are a lot of <span style="color:#e2e8f0;font-weight:600;">traders</span> betting against this stock, and <span style="color:#e2e8f0;font-weight:600;">momentum is building</span>.</div>
-        </div>
-        <div style="background:#0a1020;border-left:3px solid #ef4444;border-radius:0 7px 7px 0;padding:11px 13px;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#818cf8;font-size:14px;">AAPL</span><span style="background:rgba(239,68,68,.15);color:#f87171;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;">🔴 AVOID</span></div>
-            <div style="font-size:12px;color:#374f6e;line-height:1.6;">The stock <span style="color:#e2e8f0;font-weight:600;">may have risen too quickly</span> and could be due for <em style="color:#e2e8f0;font-weight:600;">a pullback</em>.</div>
-        </div>
-    </div></div>""",
-]
-
-
-# Additional hero demo panels
-DEMO_SCORE = """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.08);border-radius:11px;overflow:hidden;">
-<div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
-  <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#ef4444;"></div><div style="width:8px;height:8px;border-radius:50%;background:#fbbf24;"></div><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;"></div>
-  <span style="font-size:11px;color:#374f6e;margin-left:6px;font-family:'JetBrains Mono',monospace;">Score Breakdown — NVDA</span></div>
-  <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:#4ade80;">88</span>
-</div>
-<div style="padding:14px;">
-  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Momentum (RSI)</span><span style="font-size:11px;font-weight:700;color:#4ade80;">20/25</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:80%;height:5px;border-radius:3px;"></div></div></div>
-  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Trend (MA20/50)</span><span style="font-size:11px;font-weight:700;color:#4ade80;">18/20</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:90%;height:5px;border-radius:3px;"></div></div></div>
-  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">MACD Signal</span><span style="font-size:11px;font-weight:700;color:#4ade80;">13/15</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:87%;height:5px;border-radius:3px;"></div></div></div>
-  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Volume Surge</span><span style="font-size:11px;font-weight:700;color:#fbbf24;">9/15</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#f59e0b;width:60%;height:5px;border-radius:3px;"></div></div></div>
-  <div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#374f6e;">Social Sentiment</span><span style="font-size:11px;font-weight:700;color:#4ade80;">12/15</span></div><div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;"><div style="background:#22c55e;width:80%;height:5px;border-radius:3px;"></div></div></div>
-  <div style="margin-top:10px;padding:8px 10px;background:#080b14;border-radius:7px;font-size:11px;color:#374f6e;line-height:1.6;">
-    ✅ Trading above both 20d and 50d moving averages — buyers in control<br>✅ MACD bullish crossover confirmed — momentum building<br>⚠️ Volume below recent surge levels — watch for expansion
-  </div>
-</div></div>"""
-
-DEMO_BI = """<div style="background:#0d1525;border:1px solid rgba(255,255,255,.08);border-radius:11px;overflow:hidden;">
-<div style="background:#080b14;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
-  <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#ef4444;"></div><div style="width:8px;height:8px;border-radius:50%;background:#fbbf24;"></div><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;"></div>
-  <span style="font-size:11px;color:#374f6e;margin-left:6px;font-family:'JetBrains Mono',monospace;">Opportunity Matrix</span></div>
-  <span style="background:rgba(168,85,247,0.15);color:#c084fc;font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid rgba(168,85,247,.3);">EXCLUSIVE ✨</span>
-</div>
-<div style="padding:10px;">
-  <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr 1fr 1fr;gap:3px;font-size:10px;">
-    <div style="color:#2a3a52;"></div>
-    <div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Mom</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Trend</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Vol</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Sent</div><div style="text-align:center;color:#6b7fa0;font-weight:600;padding:3px;">Sq</div>
-    <div style="font-family:'JetBrains Mono',monospace;color:#818cf8;font-weight:700;padding:3px 0;display:flex;align-items:center;">NVDA</div>
-    <div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">20</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">18</div><div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">9</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">12</div><div style="background:#080f1e;border-radius:3px;text-align:center;padding:5px;color:#4a5e7a;font-weight:700;">0</div>
-    <div style="font-family:'JetBrains Mono',monospace;color:#818cf8;font-weight:700;padding:3px 0;display:flex;align-items:center;">TSLA</div>
-    <div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">14</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">16</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">13</div><div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">10</div><div style="background:#1a3a00;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">6</div>
-    <div style="font-family:'JetBrains Mono',monospace;color:#818cf8;font-weight:700;padding:3px 0;display:flex;align-items:center;">GME</div>
-    <div style="background:#0a2818;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">18</div><div style="background:#080f1e;border-radius:3px;text-align:center;padding:5px;color:#4a5e7a;font-weight:700;">4</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">15</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">14</div><div style="background:#0d5016;border-radius:3px;text-align:center;padding:5px;color:white;font-weight:700;">10</div>
-  </div>
-</div></div>"""
-
-# ─────────────────────────────────────────────────────────────
 # PAGE: LANDING
 # ─────────────────────────────────────────────────────────────
 # ── "Proof" track-record stat (landing + Market Overview) ─────────────────────
@@ -6050,6 +5973,7 @@ def page_landing():
     # than every other page, causing the header to jump/flash on landing<->page navigation.
     # ── Landing page uses render_topbar for consistent in-app navigation ──
     render_topbar()  # guest state (not authed), shows Features/Pricing/Login/Sign Up
+    track_once("_lv_tracked", "landing_view")   # funnel top (once per session)
 
     # ── HERO — tighter layout, left-aligned copy + right preview close together ──
     st.markdown(f"""
@@ -6136,22 +6060,50 @@ def page_landing():
         # On-brand product preview: a LIVE, continuously-scrolling Top Signals feed —
         # conviction-ranked cards with custom icons + the data edge. Pure CSS marquee
         # (guaranteed to animate everywhere — no scroll-timeline / JS dependency).
-        _sigs = [
-            ("NVDA", "$182.40", "▲2.1%", 86, "#34d399", "🌊 Momentum Leaders", "", "3h ago", "+4.2%"),
-            ("GME",  "$28.40",  "▲6.0%", 81, "#f59e0b", "🔥 Short Squeeze", " · 8.3 days to cover", "1d ago", "+11.4%"),
-            ("FLUT", "$268.10", "▲1.2%", 78, "#818cf8", "🏛️ Insider Cluster", " · 2 open-market buys", "5h ago", "+2.1%"),
-            ("AVGO", "$342.60", "▲0.9%", 74, "#a5b4fc", "🏅 Quality Momentum", " · P/E 21", "2d ago", "+6.8%"),
-            ("CRWD", "$402.10", "▲3.4%", 72, "#818cf8", "🍃 VCP Volume Dry-Up", " · coiling near highs", "6h ago", "+3.4%"),
-            ("MU",   "$138.90", "▲1.8%", 70, "#34d399", "🚀 Breakout Watch", " · new 60-day high", "4h ago", "+1.9%"),
-        ]
-        def _sigcard(t, px, chg, sc, col, cat, sub, age, since):
+        # LIVE Top Signals — real, conviction-ranked rows from the warm universe. NOTHING here is
+        # fabricated: a sub-stat shows ONLY when the underlying data is real (insider Form-4 buys or
+        # FINRA days-to-cover), and per-card "% since" is intentionally omitted (the aggregate proof
+        # lives in the Signal Track Record band). If today's scan hasn't warmed yet we show an honest
+        # "warming up" state — never placeholder cards with made-up prices.
+        def _sigcard(t, px, chg, sc, col, cat, sub):
+            pxcol = "#34d399" if chg.startswith("▲") else "#fb7185"
             return (f'<div class="sig"><div class="r1"><span class="tick">{t}</span>'
-                    f'<span class="px">{px} {chg}</span></div>'
-                    f'<div class="cv"><div class="bar"><div class="fill" style="width:{sc}%;background:{col};"></div></div>'
+                    f'<span class="px" style="color:{pxcol};">{px} {chg}</span></div>'
+                    f'<div class="cv"><div class="bar"><div class="fill" style="width:{max(4,min(100,sc))}%;background:{col};"></div></div>'
                     f'<span class="num" style="color:{col};">{sc}</span></div>'
-                    f'<div class="tag">{cat_icon(cat,15)}<span>{_clean_name(cat)}<span class="sub">{sub}</span></span></div>'
-                    f'<div class="sig-perf"><span class="sp-age">Signaled {age}</span><span class="sp-pct">{since} since</span></div></div>')
+                    f'<div class="tag">{cat_icon(cat,15)}<span>{_clean_name(cat)}<span class="sub">{sub}</span></span></div></div>')
+        def _hero_sub(r):
+            info = r.get("info") or {}
+            ib = int(info.get("insider_buys") or 0); dtc = float(info.get("dtc") or 0)
+            if ib >= 2:  return f" · {ib} insider buys"
+            if dtc >= 3: return f" · {dtc:.1f} days to cover"
+            return ""
+        _live_rows = []
+        try:
+            _warm = build_scored_universe()          # instant (cache-served, non-blocking)
+            if _warm:
+                _live_rows = _top_signals({"_": _warm}, n=6)
+        except Exception:
+            _live_rows = []
+        _sigs = []
+        for r in _live_rows:
+            q = r.get("q") or {}; price = q.get("price", 0) or 0; pct = q.get("pct", 0) or 0
+            conv = int(r.get("conviction") or r.get("sc") or 0); cat = r.get("primary_cat", "") or ""
+            _bear = category_dir(cat) == "bear"
+            col = (("#fb7185" if conv >= 70 else "#fb923c" if conv >= 45 else "#94a3b8") if _bear
+                   else ("#34d399" if conv >= 70 else "#f59e0b" if conv >= 45 else "#94a3b8"))
+            ar = "▲" if pct >= 0 else "▼"
+            _sigs.append((r.get("t", ""), f"${price:,.2f}", f"{ar}{abs(pct):.1f}%", conv, col, cat, _hero_sub(r)))
+        _is_live = bool(_sigs)
         _cards = "".join(_sigcard(*s) for s in _sigs)
+        if _is_live:
+            _dot = '<span class="ldot"></span>'; _ppill = 'Live · Conviction-ranked'
+            _feed = f'<div class="feedwrap"><div class="feed">{_cards}{_cards}</div></div>'
+        else:
+            _dot = '<span class="ldot" style="background:#5d6b86;animation:none;"></span>'; _ppill = 'Warming up…'
+            _feed = ('<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;'
+                     'color:#5d6b86;font-size:12px;text-align:center;gap:8px;padding:24px;"><div style="font-size:22px;">⏳</div>'
+                     '<div>Today\'s scan is warming up.<br>Live signals appear here in a moment.</div></div>')
         hero_comp = f"""
         <style>
         html,body{{margin:0;padding:0;height:100%;background:transparent;font-family:Inter,-apple-system,sans-serif;overflow:hidden;}}
@@ -6190,10 +6142,10 @@ def page_landing():
         </style>
         <div class="panel">
           <div class="phead">
-            <div class="ptitle"><span class="ldot"></span> Top Signals</div>
-            <div class="ppill">Live · Conviction-ranked</div>
+            <div class="ptitle">{_dot} Top Signals</div>
+            <div class="ppill">{_ppill}</div>
           </div>
-          <div class="feedwrap"><div class="feed">{_cards}{_cards}</div></div>
+          {_feed}
           <div class="pfoot">Scored from live market data, SEC filings &amp; short interest</div>
         </div>
         """
@@ -6510,7 +6462,7 @@ def page_features():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if gold_btn("Unlock Premium — $29/mo", "feat_top_prem"): nav("pricing")
+        if gold_btn("Unlock Premium — $19/mo", "feat_top_prem"): nav("pricing")
         st.markdown("<br>", unsafe_allow_html=True)
     elif not is_authed():
         st.markdown(f"""
@@ -6601,6 +6553,7 @@ def page_login():
                 elif login(email,pw):
                     secguard.clear_login_fails(email)
                     st.session_state["_login_welcome"] = st.session_state.user.get("name","")
+                    track_event("login_success", {"email": email})
                     intended = st.session_state.pop("_intended_page", None)   # honor intended destination
                     nav(intended if intended else "dashboard")
                 else:
@@ -6667,6 +6620,7 @@ def page_signup():
             else:
                 ok,msg=signup(email, pw, first_name, last_name)
                 if ok:
+                    track_event("signup_started", {"email": email})
                     full_name = f"{first_name} {last_name}".strip()
                     code=str(random.randint(100000,999999))
                     st.session_state["_verify_code"]=code
@@ -7266,7 +7220,7 @@ def page_dashboard():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if gold_btn("Start Premium — $29/month →", "dash_upgrade"): nav("pricing")
+        if gold_btn("Start Premium — $19/month →", "dash_upgrade"): nav("pricing")
 
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -9924,7 +9878,7 @@ def page_pricing():
     # ── Embedded Stripe checkout (show when session created) ──
     if st.session_state.get("_stripe_embed"):
         embed = st.session_state["_stripe_embed"]
-        plan_name = "Premium Monthly ($29/mo)" if embed["plan"]=="premium" else "Annual Plan ($199/yr)"
+        plan_name = "Premium Monthly ($19/mo)" if embed["plan"]=="premium" else "Annual Plan ($149/yr)"
         render_topbar("pricing")
         st.markdown(f"""
         <div style="text-align:center;padding:32px 0 20px;">
@@ -10176,8 +10130,9 @@ def page_pricing():
         st.markdown(f"""<div class="sw-pc-col sw-pc-sel-blue">
             {card_badge("premium")}
             <div style="font-size:14px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">Premium Monthly</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:#e2e8f0;line-height:1.1;margin-bottom:2px;">$29</div>
-            <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">per month · cancel anytime</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:#e2e8f0;line-height:1.1;margin-bottom:2px;">$19<span style="font-size:16px;font-weight:600;color:#374f6e;"> /mo</span></div>
+            <div style="font-size:11px;color:#374f6e;margin-bottom:4px;">cancel anytime</div>
+            <div style="font-size:11px;font-weight:700;color:{GOLD};margin-bottom:10px;">🔒 Founding price — locked in for life</div>
             <hr style="border-color:{BORDER};margin:10px 0 14px;">
             <div class="sw-pc-feats">
             ✅&nbsp; Everything in Free<br>
@@ -10193,7 +10148,7 @@ def page_pricing():
             </div>
         </div>""", unsafe_allow_html=True)
         st.markdown('<div class="pc-cta-mark pc-cta-blue"></div>', unsafe_allow_html=True)
-        if st.button("Get Premium — $29/mo", key="pc_premium", use_container_width=True):
+        if st.button("Get Premium — $19/mo", key="pc_premium", use_container_width=True):
             if not is_authed():
                 st.session_state["_pending_checkout"]="premium"
                 nav("signup")
@@ -10205,8 +10160,8 @@ def page_pricing():
         st.markdown(f"""<div class="sw-pc-col sw-pc-sel-gold">
             {card_badge("annual")}
             <div style="font-size:14px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">Annual Plan</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:{GOLD};line-height:1.1;margin-bottom:2px;">$199</div>
-            <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">per year · $16.58/mo · save $149</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:800;color:{GOLD};line-height:1.1;margin-bottom:2px;">$149</div>
+            <div style="font-size:11px;color:#374f6e;margin-bottom:14px;">per year · $12.42/mo · save $79 vs monthly</div>
             <hr style="border-color:rgba(245,158,11,0.15);margin:10px 0 14px;">
             <div class="sw-pc-feats">
             ✅&nbsp; Everything in Premium<br>
@@ -10214,13 +10169,14 @@ def page_pricing():
             ✅&nbsp; Early feature access<br>
             ✅&nbsp; Export to CSV<br>
             ✅&nbsp; Custom alert schedules<br>
-            ✅&nbsp; API access (Q3 2026)<br>
-            ✅&nbsp; Backtesting (coming)<br>
-            ✅&nbsp; Portfolio tracker (coming)
+            <div style="margin-top:10px;font-size:10px;font-weight:700;letter-spacing:0.4px;color:#374f6e;text-transform:uppercase;">On the roadmap</div>
+            <span class="sw-pc-dim">🔜&nbsp; API access<br>
+            🔜&nbsp; Backtesting<br>
+            🔜&nbsp; Portfolio tracker</span>
             </div>
         </div>""", unsafe_allow_html=True)
         st.markdown('<div class="pc-cta-mark pc-cta-gold"></div>', unsafe_allow_html=True)
-        if st.button("Get Annual — $199/yr", key="pc_annual", use_container_width=True):
+        if st.button("Get Annual — $149/yr", key="pc_annual", use_container_width=True):
             if not is_authed():
                 st.session_state["_pending_checkout"]="annual"
                 nav("signup")
@@ -10877,14 +10833,14 @@ def page_settings():
             st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">Upgrade to unlock all 23 composite categories, the Market Scanner, signal charts, and more.</div>',unsafe_allow_html=True)
             uc1,uc2=st.columns(2,gap="small")
             with uc1:
-                if gold_btn("👑 Upgrade to Premium — $29/mo","set_prem_mo"):
+                if gold_btn("👑 Upgrade to Premium — $19/mo","set_prem_mo"):
                     if stripe_configured():
                         url,err=create_checkout_session("premium",st.session_state.user["email"])
                         if url: st.session_state["_redirect_url"]=url; st.rerun()
                         else: st.error(err)
                     else: nav("pricing")
             with uc2:
-                if st.button("👑 Get Annual — $199/yr (Save 43%)",key="set_prem_yr",use_container_width=True):
+                if st.button("👑 Get Annual — $149/yr (Save 35%)",key="set_prem_yr",use_container_width=True):
                     if stripe_configured():
                         url,err=create_checkout_session("annual",st.session_state.user["email"])
                         if url: st.session_state["_redirect_url"]=url; st.rerun()
@@ -11170,8 +11126,8 @@ def page_admin():
             <div style="font-size:12px;color:#374f6e;line-height:2.0;">
             <strong style="color:#e2e8f0;">1. Create a Stripe account</strong> at <a href="https://stripe.com" target="_blank" style="color:#a5b4fc;">stripe.com</a><br>
             <strong style="color:#e2e8f0;">2. Create Products & Prices</strong> in Stripe Dashboard → Products:<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• MarketSignalPro Premium Monthly → Recurring $29/mo → copy Price ID<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• MarketSignalPro Annual Plan → Recurring $199/yr → copy Price ID<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• MarketSignalPro Premium Monthly → Recurring $19/mo → copy Price ID<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• MarketSignalPro Annual Plan → Recurring $149/yr → copy Price ID<br>
             <strong style="color:#e2e8f0;">3. Get your Secret Key</strong> from Stripe Dashboard → Developers → API Keys<br>
             <strong style="color:#e2e8f0;">4. Add to Streamlit Secrets</strong> (Settings → Secrets in your app dashboard):<br>
             </div>
@@ -11393,6 +11349,7 @@ def page_verify_email():
                     for k in ["_verify_code","_verify_email","_verify_user","_demo_code"]:
                         st.session_state.pop(k,None)
                     st.session_state["_signup_success"] = udata.get("name","")
+                    track_event("signup_verified", {"email": uemail})
                     st.success("✅ Email verified! Welcome to MarketSignalPro.")
                     time.sleep(0.3)
                     nav("dashboard")
