@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 # auth-critical code is isolated and unit-testable without importing this monolith.
 # (verify_pw handles bcrypt + legacy sha256; _esc escapes user text for HTML sinks.)
 from security import _esc, _hp, hp, _is_bcrypt_hash, verify_pw, HAS_BCRYPT
+import secguard   # abuse guards: signup honeypot + rate limits, login lockout, reset throttling
 
 # Cookie manager DISABLED. stx.CookieManager mounts an iframe that re-syncs to
 # Python on nearly every run, causing a continuous rerun loop — each rerun marks
@@ -2061,6 +2062,24 @@ init()
 # ─────────────────────────────────────────────────────────────
 # AUTH
 # ─────────────────────────────────────────────────────────────
+def _client_key():
+    """Best-effort client identifier for abuse RATE-LIMITING only (never authorization): the
+    forwarded client IP when the proxy exposes it (Streamlit Cloud sets X-Forwarded-For), else a
+    stable per-session random id. A bot spinning fresh sessions gets fresh keys, but the global
+    signup circuit-breaker + honeypot + min-fill-time still catch that."""
+    try:
+        h = st.context.headers or {}
+        ip = (h.get("X-Forwarded-For") or h.get("x-forwarded-for") or "").split(",")[0].strip()
+        if ip:
+            return "ip:" + ip
+    except Exception:
+        pass
+    k = st.session_state.get("_client_fp")
+    if not k:
+        k = "sess:" + _secrets.token_hex(8)
+        st.session_state["_client_fp"] = k
+    return k
+
 def login(email, pw):
     # Always reload users_db from disk first (in case signups happened in other tabs)
     st.session_state.users_db = _get_global_db()
@@ -6572,12 +6591,21 @@ def page_login():
                 pw=st.text_input("Password",type="password",label_visibility="visible")
                 _submit=st.form_submit_button("Sign In →",type="primary",use_container_width=True)
             if _submit:
-                if not email or not pw: st.error("Please enter your email and password.")
+                _ck=_client_key(); _lock=secguard.login_locked(email)
+                if not email or not pw:
+                    st.error("Please enter your email and password.")
+                elif _lock:
+                    st.error(f"Too many failed attempts. Try again in ~{max(1,_lock//60)} min.")
+                elif not secguard.rate_ok("login_client",_ck,30,300):
+                    st.error("Too many attempts from here — please wait a moment.")
                 elif login(email,pw):
+                    secguard.clear_login_fails(email)
                     st.session_state["_login_welcome"] = st.session_state.user.get("name","")
                     intended = st.session_state.pop("_intended_page", None)   # honor intended destination
                     nav(intended if intended else "dashboard")
-                else: st.error("Invalid email or password.")
+                else:
+                    _l=secguard.note_login_fail(email)
+                    st.error("Invalid email or password." + (f" Account temporarily locked for ~{max(1,_l//60)} min after repeated failures." if _l else ""))
 
         # Show hints based on whether secrets are configured
         has_secrets=False
@@ -6604,6 +6632,11 @@ def page_signup():
     _,cc,_=st.columns([1,2,1])
     with cc:
         st.markdown('<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Create Your Account 🚀</div><div style="font-size:13px;color:#374f6e;">Free forever. No credit card. No API keys.</div></div>',unsafe_allow_html=True)
+        # Anti-bot layer: a honeypot field hidden from humans (bots that fill every input trip it)
+        # + a min-fill-time gate (bots submit instantly) stamped when the form first renders. Rate
+        # limits (per-client + a global circuit breaker) are applied in the submit handler below.
+        st.markdown("<style>.st-key-su_hpbox{display:none!important;height:0;overflow:hidden;}</style>", unsafe_allow_html=True)
+        st.session_state.setdefault("_su_render_ts", time.time())
         with st.form("sf"):
             name_col1, name_col2 = st.columns(2, gap="small")
             with name_col1:
@@ -6614,28 +6647,37 @@ def page_signup():
             pw=st.text_input("Password",type="password",placeholder="Min 6 characters")
             pw2=st.text_input("Confirm password",type="password")
             agree=st.checkbox("I agree to the Terms of Service. I understand MarketSignalPro is for educational purposes only and is not financial advice.")
-            if st.form_submit_button("Create Free Account →",type="primary",use_container_width=True):
-                if not all([first_name, last_name, email, pw, pw2]): st.error("Please fill in all fields.")
-                elif pw!=pw2: st.error("Passwords don't match.")
-                elif len(pw)<6: st.error("Password must be 6+ characters.")
-                elif not agree: st.error("Please agree to the Terms of Service.")
-                else:
-                    ok,msg=signup(email, pw, first_name, last_name)
-                    if ok:
-                        # Generate verification code and send email
-                        full_name = f"{first_name} {last_name}".strip()
-                        code=str(random.randint(100000,999999))
-                        st.session_state["_verify_code"]=code
-                        st.session_state["_verify_email"]=email
-                        st.session_state["_verify_user"]={"name":full_name}
-                        # Log out the just-created session — require verification first
-                        st.session_state.pop("user",None); st.session_state.pop("role",None)
-                        # Fire the email in the BACKGROUND so signup returns instantly.
-                        ok2,info=_send_verification_email_bg(email,code)
-                        if not ok2 and info and info.startswith("DEMO_CODE:"):
-                            st.session_state["_demo_code"]=info.split(":",1)[1]
-                        nav("verify_email")
-                    else: st.error(msg)
+            with st.container(key="su_hpbox"):   # honeypot — invisible to humans
+                _hp_val=st.text_input("Company (leave this blank)",key="su_company",label_visibility="collapsed")
+            _submit=st.form_submit_button("Create Free Account →",type="primary",use_container_width=True)
+        if _submit:
+            _too_fast=(time.time()-st.session_state.get("_su_render_ts",0))<secguard.SIGNUP_MIN_FILL_S
+            _ok_rate,_rate_msg=secguard.signup_allowed(_client_key())
+            if (not secguard.honeypot_ok(_hp_val)) or _too_fast:
+                st.error("Something went wrong — please try again.")   # generic: don't tip off bots
+            elif not _ok_rate:
+                st.error(_rate_msg)
+            elif not all([first_name, last_name, email, pw, pw2]): st.error("Please fill in all fields.")
+            elif len(first_name)>60 or len(last_name)>60: st.error("Please shorten your name.")
+            elif any(c in (first_name+last_name) for c in "<>{}"): st.error("Your name contains invalid characters.")
+            elif not secguard.valid_email(email): st.error("Please enter a valid email address.")
+            elif pw!=pw2: st.error("Passwords don't match.")
+            elif len(pw)<6: st.error("Password must be 6+ characters.")
+            elif not agree: st.error("Please agree to the Terms of Service.")
+            else:
+                ok,msg=signup(email, pw, first_name, last_name)
+                if ok:
+                    full_name = f"{first_name} {last_name}".strip()
+                    code=str(random.randint(100000,999999))
+                    st.session_state["_verify_code"]=code
+                    st.session_state["_verify_email"]=email
+                    st.session_state["_verify_user"]={"name":full_name}
+                    st.session_state.pop("user",None); st.session_state.pop("role",None)  # require verify first
+                    ok2,info=_send_verification_email_bg(email,code)  # fired in the BG so signup returns instantly
+                    if not ok2 and info and info.startswith("DEMO_CODE:"):
+                        st.session_state["_demo_code"]=info.split(":",1)[1]
+                    nav("verify_email")
+                else: st.error(msg)
         if st.button("Already have an account? Sign In",key="s2l",use_container_width=True): nav("login")
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -6897,24 +6939,27 @@ def page_forgot():
         with st.form("fpf"):
             email=st.text_input("Email Address",placeholder="you@example.com")
             if st.form_submit_button("📧 Send Reset Link →",type="primary",use_container_width=True):
-                if not email or "@" not in email: st.error("Enter a valid email address.")
-                elif email in st.session_state.users_db:
-                    token=_secrets.token_urlsafe(24)   # CSPRNG reset token (was non-crypto random)
-                    st.session_state.users_db[email]["reset_token"]=token
-                    st.session_state.users_db[email]["reset_token_expiry"]=time.time()+3600
-                    _save_global_db(st.session_state.users_db)
-                    save_user_to_file(email,st.session_state.users_db[email])
-                    ok,info=_send_password_reset(email,token)
-                    if ok:
-                        st.markdown('<div style="background:#04200d;border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:18px;text-align:center;margin-top:10px;"><div style="font-size:32px;margin-bottom:8px;">📧</div><div style="font-size:15px;font-weight:700;color:#4ade80;margin-bottom:4px;">Reset Email Sent!</div><div style="font-size:12px;color:#374f6e;">Check your inbox. The link expires in 1 hour.</div></div>',unsafe_allow_html=True)
-                    elif info and info.startswith("DEMO_RESET:"):
-                        demo_tok=info.split(":",1)[1]
-                        demo_url=f"{_get_app_url()}/?reset_token={demo_tok}&email={email}"
-                        st.markdown(f'<div style="background:#0d1525;border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:16px;margin-top:10px;"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:8px;">📧 Demo Mode — No email provider configured</div><div style="font-size:11px;color:#374f6e;margin-bottom:8px;">Add RESEND_API_KEY to Secrets for production email.</div><div style="font-size:11px;color:#4ade80;word-break:break-all;">{demo_url}</div></div>',unsafe_allow_html=True)
-                    else:
-                        st.error(f"Failed to send: {info}")
+                _rok,_rmsg=secguard.reset_allowed(email,_client_key())
+                if not secguard.valid_email(email):
+                    st.error("Enter a valid email address.")
+                elif not _rok:
+                    st.error(_rmsg)   # anti email-bombing: per-address + per-client throttle
                 else:
-                    st.markdown(f'<div style="background:#04200d;border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:18px;text-align:center;margin-top:10px;"><div style="font-size:24px;margin-bottom:8px;">📧</div><div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:4px;">Check Your Email</div><div style="font-size:12px;color:#374f6e;">If {email} is registered, a reset link was sent.</div></div>',unsafe_allow_html=True)
+                    # Send ONLY if the email is registered, but ALWAYS show the SAME response so an
+                    # attacker can't ENUMERATE which addresses have accounts from the reply.
+                    _demo_url=""
+                    if email in st.session_state.users_db:
+                        token=_secrets.token_urlsafe(24)   # CSPRNG reset token
+                        st.session_state.users_db[email]["reset_token"]=token
+                        st.session_state.users_db[email]["reset_token_expiry"]=time.time()+3600
+                        _save_global_db(st.session_state.users_db)
+                        save_user_to_file(email,st.session_state.users_db[email])
+                        ok,info=_send_password_reset(email,token)
+                        if (not ok) and info and info.startswith("DEMO_RESET:"):
+                            _demo_url=f"{_get_app_url()}/?reset_token={info.split(':',1)[1]}&email={email}"
+                    st.markdown(f'<div style="background:#04200d;border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:18px;text-align:center;margin-top:10px;"><div style="font-size:24px;margin-bottom:8px;">📧</div><div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:4px;">Check Your Email</div><div style="font-size:12px;color:#374f6e;">If <strong>{_esc(email)}</strong> is registered, a reset link was sent. Check your inbox (and spam).</div></div>',unsafe_allow_html=True)
+                    if _demo_url:   # dev only (no RESEND key) — surfaces the link for local testing
+                        st.markdown(f'<div style="background:#0d1525;border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:16px;margin-top:10px;"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:8px;">📧 Demo Mode — no email provider configured</div><div style="font-size:11px;color:#374f6e;margin-bottom:8px;">Add RESEND_API_KEY to Secrets for production email.</div><div style="font-size:11px;color:#4ade80;word-break:break-all;">{_esc(_demo_url)}</div></div>',unsafe_allow_html=True)
         if st.button("← Back to Login",key="f2l",use_container_width=True): nav("login")
     st.markdown('</div>',unsafe_allow_html=True)  # close page-wrap
 
@@ -10510,7 +10555,7 @@ def page_settings():
         if not verified_email:
             st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
             st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">📧 Verify Your Email</div>',unsafe_allow_html=True)
-            st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">Send a verification code to <strong style="color:#e2e8f0;">{email}</strong></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:10px;">Send a verification code to <strong style="color:#e2e8f0;">{_esc(email)}</strong></div>',unsafe_allow_html=True)
             if st.button("📧 Send Email Verification Code", key="email_send_code", type="primary", use_container_width=True):
                 code = str(random.randint(100000, 999999))
                 st.session_state["_verify_code"] = code
@@ -10549,7 +10594,7 @@ def page_settings():
 
         st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
         st.markdown(f'<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">🚪 Account Sessions</div>',unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Currently signed in as <strong style="color:#e2e8f0;">{email}</strong></div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Currently signed in as <strong style="color:#e2e8f0;">{_esc(email)}</strong></div>',unsafe_allow_html=True)
         if st.button("🚪 Sign Out of This Session", key="set_logout", use_container_width=True):
             logout()
 
@@ -11044,7 +11089,7 @@ def page_admin():
             uc1,uc2,uc3,uc4=st.columns([3,1,2,1])
             with uc1:
                 v_icon="✅" if u.get("verified") else "⚠️"
-                st.markdown(f'<div style="padding:8px 0;"><div style="font-size:13px;font-weight:600;color:#e2e8f0;">{u["name"]}</div><div style="font-size:11px;color:#2a3a52;">{v_icon} {email}</div></div>',unsafe_allow_html=True)
+                st.markdown(f'<div style="padding:8px 0;"><div style="font-size:13px;font-weight:600;color:#e2e8f0;">{_esc(u["name"])}</div><div style="font-size:11px;color:#2a3a52;">{v_icon} {_esc(email)}</div></div>',unsafe_allow_html=True)
             with uc2:
                 rc_={"owner":GOLD,"admin":"#a5b4fc","premium":"#a78bfa","free":"#4a5e7a"}.get(u["role"],"#4a5e7a")
                 st.markdown(f'<div style="padding:10px 0;"><span style="font-size:10px;font-weight:700;color:{rc_};">{u["role"].upper()}</span></div>',unsafe_allow_html=True)
