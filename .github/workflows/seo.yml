@@ -75,8 +75,8 @@ jobs:
       - name: Deploy to Netlify
         if: ${{ env.NETLIFY_AUTH_TOKEN != '' }}
         run: |
-          npm install -g netlify-cli@17
-          netlify deploy --prod --dir=seo_site
+          npm install -g netlify-cli
+          netlify deploy --prod --dir=seo_site --site="$NETLIFY_SITE_ID" --auth="$NETLIFY_AUTH_TOKEN"
 
       - name: Upload site as artifact (fallback when no Netlify token yet)
         if: ${{ env.NETLIFY_AUTH_TOKEN == '' }}
