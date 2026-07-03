@@ -29,6 +29,11 @@ DISCLAIMER = ("Educational information only — not financial, investment, or tr
               "Signals are algorithmic and may be delayed or wrong. Past performance does not "
               "guarantee future results. Do your own research.")
 
+# Google Search Console "HTML tag" verification token — baked into every page's <head> so
+# verification is permanent (survives regenerations). Set via --google-verification or the
+# GOOGLE_SITE_VERIFICATION env var (paste just the content value from the meta tag Google gives you).
+GOOGLE_VERIFICATION = os.environ.get("GOOGLE_SITE_VERIFICATION", "")
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 def esc(s):
@@ -94,11 +99,13 @@ h1{font-size:26px;margin:22px 0 6px}h2{font-size:18px;margin:28px 0 10px;color:#
 
 def page(title, description, canonical, body, jsonld=None, site_url="", app_url=""):
     ld = f'<script type="application/ld+json">{json.dumps(jsonld)}</script>' if jsonld else ""
+    gv = f'<meta name="google-site-verification" content="{esc(GOOGLE_VERIFICATION)}">' if GOOGLE_VERIFICATION else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{gv}
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(description)}">
 <link rel="canonical" href="{esc(canonical)}">
@@ -271,7 +278,12 @@ def main(argv=None):
     ap.add_argument("--out", default=os.environ.get("SEO_OUT", "seo_site"))
     ap.add_argument("--site-url", default=os.environ.get("SEO_SITE_URL", "https://stocks.marketsignalpro.com"))
     ap.add_argument("--app-url", default=os.environ.get("APP_URL", "https://marketsignalpro.streamlit.app"))
+    ap.add_argument("--google-verification", default=os.environ.get("GOOGLE_SITE_VERIFICATION", ""),
+                    help="Google Search Console HTML-tag content token (baked into every page head)")
     a = ap.parse_args(argv)
+    global GOOGLE_VERIFICATION
+    if a.google_verification:
+        GOOGLE_VERIFICATION = a.google_verification
     if not os.path.exists(a.snapshot):
         print(f"ERROR: snapshot not found: {a.snapshot}\n"
               f"Run the app once so the warm worker writes it, or pass --snapshot.", file=sys.stderr)
