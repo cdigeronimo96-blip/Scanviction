@@ -24,6 +24,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Job-level env so `secrets` can be referenced in step `if:` conditions (secrets context is
+    # not allowed directly in step `if:`). Missing secrets resolve to '' and the step is skipped.
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      GOOGLE_SITE_VERIFICATION: ${{ secrets.GOOGLE_SITE_VERIFICATION }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +47,8 @@ jobs:
           fi
           python -c "import json;d=json.load(open('universe_snapshot.json'));print('snapshot rows:',d.get('count'))"
 
-      - name: Generate the static site
+      # GOOGLE_SITE_VERIFICATION comes from the job env → the generator bakes it into every page.
+      - name: Generate the static site (full universe; keeps the Search Console verification)
         run: |
           python seo_generate.py \
             --snapshot universe_snapshot.json \
@@ -49,17 +56,19 @@ jobs:
             --site-url https://stocks.marketsignalpro.com \
             --app-url  https://marketsignalpro.streamlit.app
 
-      # ── Deploy (Cloudflare Pages). Swap for netlify/actions if you prefer. ──
-      - name: Deploy to Cloudflare Pages
-        if: ${{ secrets.CF_API_TOKEN != '' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: pages deploy seo_site --project-name=marketsignalpro-seo
+      # ── Deploy to Netlify (where stocks.marketsignalpro.com lives). ──
+      # Secrets to add: NETLIFY_AUTH_TOKEN (Netlify → User settings → Applications → New access token)
+      #                 NETLIFY_SITE_ID    (Site → Project configuration → Project ID: 05b6210b-a127-4311-97e8-dc759facd5ff)
+      #                 GOOGLE_SITE_VERIFICATION (the Search Console token, so the full site stays verified)
+      # netlify-cli reads NETLIFY_AUTH_TOKEN + NETLIFY_SITE_ID from the job env automatically.
+      - name: Deploy to Netlify
+        if: ${{ env.NETLIFY_AUTH_TOKEN != '' }}
+        run: |
+          npm install -g netlify-cli@17
+          netlify deploy --prod --dir=seo_site
 
-      - name: Upload site as artifact (fallback when no CF token yet)
-        if: ${{ secrets.CF_API_TOKEN == '' }}
+      - name: Upload site as artifact (fallback when no Netlify token yet)
+        if: ${{ env.NETLIFY_AUTH_TOKEN == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: seo_site

@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from security import _esc, _hp, hp, _is_bcrypt_hash, verify_pw, HAS_BCRYPT
 import secguard   # abuse guards: signup honeypot + rate limits, login lockout, reset throttling
 import seo_export  # writes the slim universe snapshot the standalone SEO site generator reads
+import analytics_store  # durable Postgres-backed funnel events (survive Cloud reboots); JSONL fallback
 
 # Cookie manager DISABLED. stx.CookieManager mounts an iframe that re-syncs to
 # Python on nearly every run, causing a continuous rerun loop — each rerun marks
@@ -432,11 +433,17 @@ def track_event(event, props=None):
     try:
         import json as _j
         rec = {"ts": datetime.now().isoformat(timespec="seconds"), "event": str(event)}
+        uid = None; extra = {}
         for k, v in (props or {}).items():
             if k == "email" and v:
-                rec["uid"] = hashlib.sha256(str(v).strip().lower().encode()).hexdigest()[:16]
+                uid = hashlib.sha256(str(v).strip().lower().encode()).hexdigest()[:16]
+                rec["uid"] = uid
             elif v is not None:
-                rec[k] = v
+                rec[k] = v; extra[k] = v
+        # Durable: Postgres when DATABASE_URL is set (survives Streamlit Cloud reboots).
+        try: analytics_store.record_event(str(event), uid=uid, props=extra)
+        except Exception: pass
+        # Local JSONL — the fallback when there's no DB, and a belt-and-suspenders log.
         with _EVENTS_LOCK:
             with open(_EVENTS_PATH, "a", encoding="utf-8") as f:
                 f.write(_j.dumps(rec, ensure_ascii=False) + "\n")
@@ -455,8 +462,15 @@ def track_once(flag, event, props=None):
     track_event(event, props)
 
 def read_funnel_events(limit=200000):
-    """Aggregate events.jsonl into {event: {"n": total, "u": unique_uids}} + the most recent rows.
-    Read-only + best-effort (never raises). Powers the owner funnel view."""
+    """Aggregate funnel events into {event: {"n": total, "u": unique_uids}} + the most recent rows.
+    Read-only + best-effort (never raises). Powers the owner funnel view. Prefers durable Postgres
+    (survives reboots); falls back to the local events.jsonl when there's no DB."""
+    try:
+        fc = analytics_store.funnel_counts()
+        if fc is not None:                       # DB is up (even if empty) — use it
+            return fc, analytics_store.recent_events(40)
+    except Exception:
+        pass
     import json as _j
     counts, uniq, recent = {}, {}, []
     try:
@@ -11251,7 +11265,9 @@ def page_admin():
             c1.metric("Visitor → Verified", f"{(_sv/_lv*100):.1f}%" if _lv else "—")
             c2.metric("Verified → Paid", f"{(_pay/_sv*100):.1f}%" if _sv else "—")
             c3.metric("Total payments", f"{_pay:,}")
-            st.markdown('<div class="disc" style="margin-top:10px;">From <code>events.jsonl</code> on this server instance. ⚠️ Streamlit Cloud storage is per-instance and resets on reboot — for durable, cross-instance analytics, ship these events to Postgres or PostHog.</div>',unsafe_allow_html=True)
+            _src = ("✅ Durable <strong>Postgres</strong> — events survive Cloud reboots." if analytics_store.enabled()
+                    else "⚠️ <code>events.jsonl</code> on this instance (ephemeral — resets on reboot). Set <code>DATABASE_URL</code> for durable analytics.")
+            st.markdown(f'<div class="disc" style="margin-top:10px;">Source: {_src}</div>',unsafe_allow_html=True)
             with st.expander("Recent events"):
                 for e in _frecent[:25]:
                     _extra = " · "+_esc(str(e.get("plan"))) if e.get("plan") else ""
