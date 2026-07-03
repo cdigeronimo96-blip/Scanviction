@@ -205,8 +205,24 @@ def render_index(rows, cats, date_str, site_url, app_url):
     all_links = " · ".join(
         f'<a href="{esc(site_url)}/stocks/{esc(r["t"])}.html">{esc(r["t"])}</a>' for r in rows)
     body = f"""
-<h1>Today's Top Stock Signals</h1>
+<h1>MarketSignalPro — Today's Top Stock Signals</h1>
 <div class="muted">As of {esc(date_str)} · {len(rows)} US stocks scored from daily bars, SEC filings &amp; short interest</div>
+
+<div class="card" style="margin:16px 0;">
+  <p style="font-size:15px;color:#e2e8f0;margin:0 0 10px;"><strong>MarketSignalPro</strong> is a subscription
+  stock-analytics service. We scan ~2,500 U.S. stocks every day and surface educational technical-analysis
+  signals — momentum, breakouts, short-squeeze setups, insider buying — each with a 0–100 conviction score,
+  plus stock screening, watchlists, and price/volume alerts.</p>
+  <h2 style="margin:14px 0 8px;">Plans</h2>
+  <div class="grid">
+    <div class="tile"><b>Free</b><div class="pill">Core signals + watchlist</div></div>
+    <div class="tile"><b>Premium — $19/month</b><div class="pill">All signal categories, screener, alerts, unlimited watchlist</div></div>
+    <div class="tile"><b>Annual — $149/year</b><div class="pill">Everything in Premium</div></div>
+  </div>
+  <p class="muted" style="margin:10px 0 12px;">Cancel anytime · billed securely via Stripe · digital subscription, no physical goods · educational only, not financial advice.</p>
+  <a class="cta" href="{esc(app_url)}/?utm_source=seo&amp;utm_medium=home_pricing">Start free / see plans →</a>
+</div>
+
 <h2>Highest-conviction signals</h2><div class="grid">{top_tiles}</div>
 <h2>Browse by signal type</h2><div class="grid">{cat_links}</div>
 <h2>All tickers</h2><p style="font-size:13px;line-height:2">{all_links}</p>
