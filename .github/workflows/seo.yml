@@ -31,19 +31,30 @@ jobs:
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       GOOGLE_SITE_VERIFICATION: ${{ secrets.GOOGLE_SITE_VERIFICATION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Fetch snapshot (from URL if provided, else use committed file)
+      # Build input = the committed universe_snapshot.json. SEO_SNAPSHOT_URL is an OPTIONAL override
+      # (Streamlit static files are auth-gated, so it usually won't work) — it fetches to a temp file
+      # and only replaces the committed one if it's valid JSON, so a failed fetch never clobbers it.
+      - name: Prepare snapshot
+        env:
+          SEO_SNAPSHOT_URL: ${{ secrets.SEO_SNAPSHOT_URL }}
         run: |
-          if [ -n "${{ secrets.SEO_SNAPSHOT_URL }}" ]; then
-            curl -fsSL "${{ secrets.SEO_SNAPSHOT_URL }}" -o universe_snapshot.json
+          if [ -n "$SEO_SNAPSHOT_URL" ]; then
+            if curl -fsSL "$SEO_SNAPSHOT_URL" -o snap.tmp && python -c "import json;json.load(open('snap.tmp'))" 2>/dev/null; then
+              mv snap.tmp universe_snapshot.json
+              echo "Using fresh snapshot from SEO_SNAPSHOT_URL."
+            else
+              rm -f snap.tmp
+              echo "::warning::SEO_SNAPSHOT_URL unreachable/invalid — using the committed universe_snapshot.json."
+            fi
           fi
           if [ ! -f universe_snapshot.json ]; then
-            echo "::error::No universe_snapshot.json (set SEO_SNAPSHOT_URL or commit the file)."; exit 1
+            echo "::error::universe_snapshot.json not found. Commit it to the repo (regenerate locally: run the app to warm, then copy .msp_data/universe_snapshot.json to the repo root)."; exit 1
           fi
           python -c "import json;d=json.load(open('universe_snapshot.json'));print('snapshot rows:',d.get('count'))"
 
