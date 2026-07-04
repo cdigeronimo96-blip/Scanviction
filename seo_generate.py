@@ -205,33 +205,48 @@ def render_index(rows, cats, date_str, site_url, app_url):
     all_links = " · ".join(
         f'<a href="{esc(site_url)}/stocks/{esc(r["t"])}.html">{esc(r["t"])}</a>' for r in rows)
     body = f"""
-<h1>MarketSignalPro — Today's Top Stock Signals</h1>
-<div class="muted">As of {esc(date_str)} · {len(rows)} US stocks scored from daily bars, SEC filings &amp; short interest</div>
-
-<div class="card" style="margin:16px 0;">
-  <p style="font-size:15px;color:#e2e8f0;margin:0 0 10px;"><strong>MarketSignalPro</strong> is a subscription
-  stock-analytics service. We scan ~2,500 U.S. stocks every day and surface educational technical-analysis
-  signals — momentum, breakouts, short-squeeze setups, insider buying — each with a 0–100 conviction score,
-  plus stock screening, watchlists, and price/volume alerts.</p>
-  <h2 style="margin:14px 0 8px;">Plans</h2>
-  <div class="grid">
-    <div class="tile"><b>Free</b><div class="pill">Core signals + watchlist</div></div>
-    <div class="tile"><b>Premium — $19/month</b><div class="pill">All signal categories, screener, alerts, unlimited watchlist</div></div>
-    <div class="tile"><b>Annual — $149/year</b><div class="pill">Everything in Premium</div></div>
+<section style="text-align:center;padding:24px 0 14px;">
+  <div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#818cf8;">Whole-market signal engine</div>
+  <h1 style="font-size:34px;line-height:1.15;margin:12px 0 10px;">Every setup in the market,<br><span style="color:#f59e0b;">ranked by conviction.</span></h1>
+  <p style="font-size:15px;color:#94a3b8;max-width:660px;margin:0 auto 18px;line-height:1.6;">We scan ~2,500 U.S. stocks every day and score each one 0&ndash;100 &mdash; momentum, breakouts, short-squeeze setups, insider buying &mdash; so the strongest setups surface first. Check any stock's conviction breakdown and how it's done since we flagged it.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+    <a class="cta" style="padding:13px 22px;font-size:14px;" href="{esc(app_url)}/?utm_source=seo&amp;utm_medium=hero">Start free &rarr;</a>
+    <a class="cta" style="padding:13px 22px;font-size:14px;background:#0e1530;border:1px solid #2a3550;" href="#pricing">See plans</a>
   </div>
-  <p class="muted" style="margin:10px 0 12px;">Cancel anytime · billed securely via Stripe · digital subscription, no physical goods · educational only, not financial advice.</p>
-  <a class="cta" href="{esc(app_url)}/?utm_source=seo&amp;utm_medium=home_pricing">Start free / see plans →</a>
+  <div class="muted" style="margin-top:12px;">&#10003; Free forever &nbsp;&middot;&nbsp; &#10003; No credit card &nbsp;&middot;&nbsp; &#10003; Live market + SEC data</div>
+</section>
+
+<h2>How it works</h2>
+<div class="grid">
+  <div class="tile"><b>1 &middot; Discover</b><div class="pill">Browse ~2,500 stocks ranked by conviction across 23 signal categories.</div></div>
+  <div class="tile"><b>2 &middot; Dig in</b><div class="pill">Open any stock for its conviction breakdown + % since we flagged it.</div></div>
+  <div class="tile"><b>3 &middot; Get pinged</b><div class="pill">Add to a watchlist and set price alerts so you never miss a move.</div></div>
 </div>
 
-<h2>Highest-conviction signals</h2><div class="grid">{top_tiles}</div>
+<h2 id="pricing">Plans</h2>
+<div class="card" style="margin:8px 0 16px;">
+  <p style="font-size:14px;color:#cbd5e1;margin:0 0 10px;"><strong>MarketSignalPro</strong> is a subscription
+  stock-analytics service &mdash; educational technical signals, stock screening, watchlists, and price/volume alerts.</p>
+  <div class="grid">
+    <div class="tile"><b>Free</b><div class="pill">Core signals + watchlist</div></div>
+    <div class="tile"><b>Premium &mdash; $19/month</b><div class="pill">All 23 signal categories, screener, alerts, unlimited watchlist</div></div>
+    <div class="tile"><b>Annual &mdash; $149/year</b><div class="pill">Everything in Premium</div></div>
+  </div>
+  <p class="muted" style="margin:10px 0 12px;">Cancel anytime &middot; billed securely via Stripe &middot; digital subscription, no physical goods &middot; educational only, not financial advice.</p>
+  <a class="cta" href="{esc(app_url)}/?utm_source=seo&amp;utm_medium=home_pricing">Get started &rarr;</a>
+</div>
+
+<h2>Today's highest-conviction signals</h2>
+<div class="muted" style="margin-bottom:8px;">As of {esc(date_str)} &middot; {len(rows)} US stocks scored from daily bars, SEC filings &amp; short interest</div>
+<div class="grid">{top_tiles}</div>
 <h2>Browse by signal type</h2><div class="grid">{cat_links}</div>
 <h2>All tickers</h2><p style="font-size:13px;line-height:2">{all_links}</p>
 """
     jsonld = {"@context": "https://schema.org", "@type": "WebSite", "name": BRAND,
               "url": site_url, "dateModified": date_str}
-    desc = (f"Free daily technical signals on {len(rows)}+ US stocks — momentum, breakouts, "
-            f"short squeeze, insider buying. Updated {date_str}.")[:158]
-    return page(f"Today's Top Stock Signals ({date_str}) | {BRAND}", desc, canonical, body, jsonld, site_url, app_url)
+    desc = (f"Free daily technical signals on {len(rows)}+ US stocks, each scored 0-100 by conviction - "
+            f"momentum, breakouts, short squeeze, insider buying. Updated {date_str}.")[:158]
+    return page(f"{BRAND} - Daily Stock Signals, Ranked by Conviction", desc, canonical, body, jsonld, site_url, app_url)
 
 
 def sitemap(urls):
