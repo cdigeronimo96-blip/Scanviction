@@ -4351,20 +4351,21 @@ def _signal_stop_line(tkr, cat, price):
     return ""
 
 def _deliver_new_signals(added):
-    """Push newly-recorded signals to entitled Telegram subscribers, once each, in TWO lanes:
+    """Push newly-recorded signals to subscribers, once each, in TWO lanes over TWO channels:
 
       • EVENT alerts (insider / 8-K / short-interest) are time-sensitive filings → sent
         IMMEDIATELY, one message each ("look now" layer).
-      • Category/technical ENTRIES are batched into ONE ranked digest per user per cycle.
-        They all land together when a new daily bar re-scores, so individual pings would
-        flood; a single "here are the new setups" summary (top-N by score×edge) reads far
-        better and matches the daily cadence of the underlying signals.
+      • Category/technical ENTRIES are batched into ONE ranked digest per user per cycle
+        (top-N by score×edge) — they all land together on a new daily bar, so individual
+        pings would flood; one "here are the new setups" summary reads better.
 
-    Telegram is a premium channel (opt-in chat id + telegram_enabled, optional category
-    narrowing via category_alerts). No-op without a captured token or new signals."""
-    token = _TG_TOKEN_CAPTURED
-    if not token or not added:
+    Channels: TELEGRAM (premium, opt-in chat id + telegram_enabled) AND EMAIL (any tier with
+    email_enabled that has opted into category_alerts — Resend, in-process so it works on
+    Streamlit Cloud without the external cron). Both narrow to the user's category_alerts.
+    Deduped per (user, signal) across channels via the shared delivered store."""
+    if not added:
         return
+    token = _TG_TOKEN_CAPTURED
     try:
         import msp_store as _ms
         _dkey = _ms._data_path("msp_tg_delivered.json", "TG_DELIVERED_PATH")
@@ -4380,15 +4381,16 @@ def _deliver_new_signals(added):
         DIGEST_MAX = int(_os.environ.get("DIGEST_MAX", "12"))
 
         for email, u in users.items():
-            cid = u.get("telegram_chat_id", "")
-            if not cid:
-                continue
-            if u.get("role", "free") not in ("premium", "admin", "owner"):
-                continue   # Telegram alerts are a premium channel
             prefs = u.get("notif_prefs") or {}
-            if not prefs.get("telegram_enabled", True):
-                continue
+            is_prem = u.get("role", "free") in ("premium", "admin", "owner")
+            cid = u.get("telegram_chat_id", "")
             wanted = u.get("category_alerts") or []
+            do_tg = bool(token and cid and is_prem and prefs.get("telegram_enabled", True))
+            # Email digest goes to opted-in users (has category_alerts set) with email on —
+            # keeps volume bounded and respects the Settings toggle.
+            do_email = bool(prefs.get("email_enabled", True) and wanted)
+            if not (do_tg or do_email):
+                continue
 
             # ── Lane 1: EVENT alerts — immediate, one message each ──
             for ev in events:
@@ -4401,10 +4403,17 @@ def _deliver_new_signals(added):
                     continue
                 price = float(ev.get("trigger_price", 0) or 0)
                 rec = ev.get("recommendation", "") or ""
-                msg = (f"📊 <b>{tkr}</b> — <b>{cat}</b>\n\n{rec}\n"
-                       f"Price: <b>${price:,.2f}</b>{_signal_stop_line(tkr, cat, price)}\n"
-                       f"Open MarketSignalPro for the full breakdown.")
-                if _tg_send_raw(token, cid, msg):
+                sent = False
+                if do_tg:
+                    tg = (f"📊 <b>{tkr}</b> — <b>{cat}</b>\n\n{rec}\n"
+                          f"Price: <b>${price:,.2f}</b>{_signal_stop_line(tkr, cat, price)}\n"
+                          f"Open MarketSignalPro for the full breakdown.")
+                    if _tg_send_raw(token, cid, tg): sent = True
+                if do_email:
+                    if _alert_email(email, f"📊 {cat}: {tkr}",
+                            [f"<b>{_esc(tkr)}</b> — <b>{_esc(cat)}</b>", _esc(rec),
+                             f"Price: <b>${price:,.2f}</b>"]): sent = True
+                if sent:
                     delivered[dk] = time.time(); changed = True
 
             # ── Lane 2: category ENTRIES — one ranked digest ──
@@ -4418,19 +4427,28 @@ def _deliver_new_signals(added):
                     mine.append(ev)
             if mine:
                 shown = mine[:DIGEST_MAX]
-                lines = []
-                for ev in shown:
-                    _sc = ev.get("score_at_trigger", "?")
-                    _rec = ev.get("recommendation", "") or ""
-                    lines.append(f"• <b>{ev['ticker']}</b> · {ev.get('category','')} · <b>{_sc}/100</b>"
-                                 + (f" · {_rec}" if _rec else ""))
                 more = len(mine) - len(shown)
-                digest = (f"📊 <b>{len(mine)} new setup{'s' if len(mine) != 1 else ''}</b> — MarketSignalPro\n\n"
-                          + "\n".join(lines)
-                          + (f"\n…and {more} more in the app." if more > 0 else "")
-                          + "\n\nOpen MarketSignalPro for the full multi-factor breakdowns.")
-                if _tg_send_raw(token, cid, digest):
-                    for ev in mine:   # mark ALL delivered (incl. beyond the shown top-N) so no re-send
+                tg_lines, em_lines = [], []
+                for ev in shown:
+                    _sc = ev.get("score_at_trigger", "?"); _rec = ev.get("recommendation", "") or ""
+                    _cat = ev.get("category", "")
+                    tg_lines.append(f"• <b>{ev['ticker']}</b> · {_cat} · <b>{_sc}/100</b>"
+                                    + (f" · {_rec}" if _rec else ""))
+                    em_lines.append(f"• <b>{_esc(ev['ticker'])}</b> · {_esc(_cat)} · <b>{_sc}/100</b>"
+                                    + (f" · {_esc(_rec)}" if _rec else ""))
+                tail = f"\n…and {more} more in the app." if more > 0 else ""
+                hd = f"{len(mine)} new setup{'s' if len(mine) != 1 else ''}"
+                sent = False
+                if do_tg:
+                    digest = (f"📊 <b>{hd}</b> — MarketSignalPro\n\n" + "\n".join(tg_lines) + tail
+                              + "\n\nOpen MarketSignalPro for the full multi-factor breakdowns.")
+                    if _tg_send_raw(token, cid, digest): sent = True
+                if do_email:
+                    if _alert_email(email, f"📊 {hd}",
+                            [f"<b>{hd}</b>"] + em_lines
+                            + ([f"…and {more} more in the app."] if more > 0 else [])): sent = True
+                if sent:
+                    for ev in mine:   # mark ALL delivered (incl. beyond the shown top-N)
                         eid = ev.get("id") or f"{ev['ticker']}_{ev.get('category','')}"
                         delivered[f"{email}:{eid}"] = time.time()
                     changed = True
@@ -4687,6 +4705,120 @@ def _worker_is_leader():
     except Exception:
         return True  # fail open — better to write than to stall tracking
 
+def _alert_email(to, subject, body_lines):
+    """Send an alert/digest email via Resend. `body_lines` is a list of already-safe HTML
+    lines (or a string). No-op (returns False) without RESEND_API_KEY. Runs in-process so
+    email alerts work on Streamlit Cloud WITHOUT the external cron worker."""
+    try: key = st.secrets.get("RESEND_API_KEY", "") or ""
+    except Exception: key = ""
+    if not key or not to:
+        return False
+    try: frm = st.secrets.get("EMAIL_FROM", "MarketSignalPro <noreply@marketsignalpro.com>")
+    except Exception: frm = "MarketSignalPro <noreply@marketsignalpro.com>"
+    try: app_url = st.secrets.get("APP_URL", "https://marketsignalpro.streamlit.app")
+    except Exception: app_url = "https://marketsignalpro.streamlit.app"
+    body = body_lines if isinstance(body_lines, str) else "<br>".join(body_lines)
+    html = (f'<div style="font-family:Inter,Arial,sans-serif;background:#07090f;padding:32px;">'
+            f'<div style="max-width:560px;margin:0 auto;background:#0d1525;border:1px solid rgba(99,102,241,.3);'
+            f'border-radius:12px;padding:24px;">'
+            f'<div style="font-size:18px;font-weight:800;color:#e2e8f0;margin-bottom:14px;">'
+            f'Market<span style="color:#f59e0b;">Signal</span>Pro</div>'
+            f'<div style="font-size:14px;color:#d1d9e6;line-height:1.7;">{body}</div>'
+            f'<a href="{_esc(app_url)}" style="display:inline-block;margin-top:18px;padding:10px 18px;'
+            f'background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:13px;">'
+            f'Open MarketSignalPro &rarr;</a>'
+            f'<div style="font-size:11px;color:#2a3a52;margin-top:16px;">Educational signals only. Not financial advice.</div>'
+            f'</div></div>')
+    try:
+        resp = requests.post("https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"from": frm, "to": [to], "subject": subject, "html": html}, timeout=12)
+        return resp.status_code in (200, 201)
+    except Exception:
+        return False
+
+def _deliver_user_alert(email, u, tkr, msg, price, pct, channels):
+    """Deliver one triggered user price/RSI/volume alert. Email allowed for all tiers;
+    Telegram is premium + connected + enabled."""
+    prefs = u.get("notif_prefs") or {}
+    if "email" in channels and prefs.get("email_enabled", True):
+        _alert_email(email, f"⚡ Alert: {tkr}",
+                     [f"<b>{_esc(msg)}</b>", f"Price: <b>${price:,.2f}</b> ({pct:+.2f}%)"])
+    cid = u.get("telegram_chat_id", "")
+    if ("telegram" in channels and cid and u.get("role", "free") in ("premium", "admin", "owner")
+            and prefs.get("telegram_enabled", True) and _TG_TOKEN_CAPTURED):
+        _tg_send_raw(_TG_TOKEN_CAPTURED, cid,
+                     f"🔔 <b>MarketSignalPro Alert</b>\n\n{_esc(msg)}\n\nPrice: <b>${price:,.2f}</b> ({pct:+.2f}%)")
+
+def _process_price_alerts():
+    """Evaluate user price/%/volume/RSI alerts against the warm universe (per-ticker Polygon
+    fallback for names outside it) and deliver inline. Runs each worker cycle so alerts fire
+    on Streamlit Cloud WITHOUT the external cron. Leader-only; deduped per alert per hour."""
+    try:
+        if not _worker_is_leader():
+            return
+        import msp_store as _ms
+        alerts_db = _ms.read_json(_ms.ALERTS_DB_PATH, {}) or {}
+        if not alerts_db:
+            return
+        users = _ms.read_json(_ms.USERS_DB_PATH, {}) or {}
+        fpath = _ms._data_path("msp_alert_fired.json", "ALERT_FIRED_PATH")
+        fired = _ms.read_json(fpath, {}) or {}
+        now = time.time()
+        fired = {k: v for k, v in fired.items() if (now - (v or 0)) < 4 * 3600}
+        warm = {}
+        with _UNIVERSE_LOCK:
+            for r in _UNIVERSE_CACHE.get("rows", []):
+                if r.get("t"):
+                    warm[r["t"]] = r
+        hourslug = datetime.now().strftime("%Y-%m-%d-%H")
+        changed = False
+        for email, ualerts in alerts_db.items():
+            u = users.get(email, {"role": "free"})
+            for a in (ualerts or []):
+                if not a.get("active", True):
+                    continue
+                tkr = (a.get("ticker", "") or "").upper()
+                if not tkr:
+                    continue
+                fk = f"{email}:{a.get('id', tkr)}:{hourslug}"
+                if fk in fired:
+                    continue
+                r = warm.get(tkr)
+                if r:
+                    q = r.get("q") or {}; f = r.get("factors") or {}
+                    price = float(q.get("price") or 0); pct = float(q.get("pct") or 0)
+                    vr = float(f.get("vol_ratio") or q.get("vol_ratio") or 0)
+                    rsi = float(f.get("rsi") if f.get("rsi") is not None else 50)
+                    have_tech = True
+                else:
+                    qq = _raw_quote(tkr) or {}
+                    price = float(qq.get("price") or 0); pct = float(qq.get("pct") or 0)
+                    vr = 0.0; rsi = 50.0; have_tech = False
+                if not price:
+                    continue
+                atype = a.get("type", ""); thr = float(a.get("threshold", 0) or 0)
+                trig = False; msg = ""
+                if atype == "price_above" and price >= thr:
+                    trig = True; msg = f"🎯 {tkr} hit ${price:,.2f} — above your ${thr:,.2f} target"
+                elif atype == "price_below" and price <= thr:
+                    trig = True; msg = f"⚠️ {tkr} at ${price:,.2f} — below your ${thr:,.2f} level"
+                elif atype == "pct_change" and abs(pct) >= thr:
+                    trig = True; msg = f"📈 {tkr} moved {'▲ up' if pct > 0 else '▼ down'} {abs(pct):.1f}% today"
+                elif atype == "volume_spike" and have_tech and vr >= thr:
+                    trig = True; msg = f"🔊 {tkr} volume is {vr:.1f}× average"
+                elif atype == "rsi_oversold" and have_tech and rsi <= thr:
+                    trig = True; msg = f"📉 {tkr} RSI {rsi:.0f} — oversold"
+                elif atype == "rsi_overbought" and have_tech and rsi >= thr:
+                    trig = True; msg = f"📈 {tkr} RSI {rsi:.0f} — overbought"
+                if trig:
+                    _deliver_user_alert(email, u, tkr, msg, price, pct, a.get("channels", ["email"]))
+                    fired[fk] = now; changed = True
+        if changed:
+            _ms.write_json(fpath, fired)
+    except Exception:
+        pass
+
 def _universe_worker():
     """Daemon loop: keep the warm universe fresh on the FAST cadence. This is
     the SINGLE source of universe builds — there's no separate 'kick' thread to
@@ -4717,6 +4849,10 @@ def _universe_worker():
                 _record_health("worker", True, int((time.time()-cycle_start)*1000))
             else:
                 _refresh_prices_only()   # cheap: one snapshot call, prices updated in place
+            # After prices are fresh, fire any user price/RSI/volume alerts inline (leader-only),
+            # so alerts work on Streamlit Cloud without the external cron worker.
+            try: _process_price_alerts()
+            except Exception: pass
         except Exception as e:
             import traceback as _tb
             _record_health("worker", False, err=f"{type(e).__name__}: {str(e)[:120]}")
