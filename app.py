@@ -5687,6 +5687,41 @@ def render_topbar(active=""):
     background:linear-gradient(90deg, rgba(239,68,68,0.20), rgba(239,68,68,0.06)) !important;
     color:#fff !important;
 }}
+
+/* ════ MOBILE TOPBAR REFLOW ════
+   The real topbar is st.columns + st.button; on narrow screens Streamlit stacks
+   those columns full-width, so the nav sprawls into a giant vertical list. This
+   collapses it into a tidy wrapped row (logo on its own top line, nav pills below).
+   Scoped via :has() to ONLY the guest topbar (contains tb_g_signup) and the authed
+   topbar (contains usermenu) — no other page columns are affected — and gated behind
+   a max-width media query so the desktop/web layout is untouched. */
+@media (max-width:900px) {{
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]),
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) {{
+      display:flex !important; flex-direction:row !important; flex-wrap:wrap !important;
+      align-items:center !important; gap:6px !important; row-gap:6px !important;
+  }}
+  /* logo gets its own top row, left-aligned */
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) > [data-testid="stColumn"]:first-child,
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="stColumn"]:first-child {{
+      flex:0 0 100% !important; width:100% !important; min-width:0 !important; margin-bottom:2px !important;
+  }}
+  /* remaining columns share the wrapped rows evenly instead of each taking 100% */
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) > [data-testid="stColumn"]:not(:first-child),
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="stColumn"]:not(:first-child) {{
+      flex:1 1 auto !important; width:auto !important; min-width:66px !important;
+  }}
+  /* kill inner vertical-block gaps + the empty guest wrapper divs that pad the height */
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) [data-testid="stVerticalBlock"],
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) [data-testid="stVerticalBlock"] {{ gap:0 !important; }}
+  .sw-tb-btn {{ display:none !important; }}
+  /* compact the pills themselves */
+  [class*="st-key-tb_g_"] button,
+  [class*="st-key-navtb_"] button {{
+      height:34px !important; min-height:34px !important; padding:0 8px !important;
+      font-size:12px !important; width:100% !important;
+  }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
