@@ -10,7 +10,7 @@
 
 import streamlit as st
 import streamlit.components.v1 as components
-import requests, pandas as pd, ta, yfinance as yf
+import requests, pandas as pd, ta
 import hashlib, time, random, math, sys, os, threading
 import secrets as _secrets
 from datetime import datetime, timedelta
@@ -2594,12 +2594,49 @@ def data_health_snapshot():
     """Return a copy of the live-data health table for display."""
     return {k: dict(v) for k, v in _DATA_HEALTH.items()}
 
+def _poly_key():
+    """The configured Polygon key (secrets first, then env). '' if unset."""
+    try: k = st.secrets.get("POLYGON_API_KEY", "") or ""
+    except Exception: k = ""
+    return k or _os.environ.get("POLYGON_API_KEY", "") or ""
+
+def _poly_bars(ticker, days=90):
+    """Polygon daily OHLCV bars for ANY US ticker (stock or ETF), oldest→newest. [] on failure.
+    This is the per-ticker data path — covers names outside the warm universe so we never
+    need to scrape Yahoo."""
+    k = _poly_key()
+    if not k: return []
+    try:
+        import polygon_adapter as _pa
+        return _pa.daily_bars(k, ticker, days=days)
+    except Exception:
+        return []
+
+def _poly_quote_one(ticker):
+    """Fresh-ish single-ticker Polygon snapshot (delayed on non-realtime tiers). {} on failure."""
+    k = _poly_key()
+    if not k: return {}
+    try:
+        import polygon_adapter as _pa
+        return _pa.snapshot_one(k, ticker) or {}
+    except Exception:
+        return {}
+
+def _poly_reference(ticker):
+    """Per-ticker Polygon reference (name, mktcap, sector-ish, desc). {} on failure."""
+    k = _poly_key()
+    if not k: return {}
+    try:
+        import polygon_adapter as _pa
+        return _pa.ticker_reference(k, ticker) or {}
+    except Exception:
+        return {}
+
 def _raw_quote(ticker):
     # Use Twelve Data FIRST when a key is configured — it uses YOUR API budget
-    # so it's not subject to yfinance's shared-IP rate limiting that starves
-    # this app on Streamlit Cloud. Fall back to yfinance fast_info if no key or
-    # Twelve Data fails. fast_info is cheap/reliable for price/volume; avoid
-    # .info (slow + common yfinance rate-limit failure point).
+    # so it's not subject to rate limiting on a shared IP. Then fall back to POLYGON
+    # (per-ticker snapshot → daily bars) — the same licensed feed the app runs on, which
+    # covers any US-listed name. (Yahoo/yfinance was removed: ToS gray area for a paid app.)
     t0 = time.time()
     # ── Twelve Data path (preferred when key present AND budget remains) ──
     try:
@@ -2628,69 +2665,69 @@ def _raw_quote(ticker):
                             "low": float(d.get("low", p) or p), "volume": vol}
     except Exception as e:
         _record_health("twelvedata", False, err=e)
-    # ── yfinance fallback ──
+    # ── Polygon fallback (per-ticker; covers any US-listed name) ──
     try:
-        tk = yf.Ticker(ticker)
-        p = pv = vol = op = hi = lo = None
-        name = ticker
-        try:
-            fi = tk.fast_info
-            p = float(fi.get("lastPrice") or fi.get("last_price"))
-            pv = float(fi.get("previousClose") or fi.get("previous_close") or p)
-            vol = int(fi.get("lastVolume") or fi.get("last_volume") or 0)
-            op = float(fi.get("open") or p); hi = float(fi.get("dayHigh") or p); lo = float(fi.get("dayLow") or p)
-        except Exception:
-            p = None
-        if p is None:  # fall back to history
-            h = tk.history(period="2d", interval="1d", timeout=8)
-            if len(h) < 1:
-                _record_health("yfinance", False, err=f"no history {ticker}")
-                return None
-            p = round(float(h["Close"].iloc[-1]), 2)
-            pv = round(float(h["Close"].iloc[-2]), 2) if len(h) >= 2 else p
-            op = round(float(h["Open"].iloc[-1]), 2); hi = round(float(h["High"].iloc[-1]), 2)
-            lo = round(float(h["Low"].iloc[-1]), 2); vol = int(h["Volume"].iloc[-1])
-        p = round(p, 2); pv = round(pv or p, 2)
-        out = {"price": p, "prev": pv, "open": round(op or p, 2),
-               "high": round(hi or p, 2), "low": round(lo or p, 2),
-               "volume": int(vol or 0), "pct": round(((p - pv) / pv) * 100, 2) if pv else 0,
-               "chg": round(p - pv, 2), "name": name}
-        _record_health("yfinance", True, int((time.time() - t0) * 1000))
-        return out
+        s = _poly_quote_one(ticker)                       # fresh-ish snapshot
+        if not s or s.get("price") is None:               # else EOD from daily bars
+            bars = _poly_bars(ticker, days=6)
+            if bars:
+                last = bars[-1]; prev = bars[-2] if len(bars) >= 2 else last
+                s = {"price": last["c"], "prev": prev["c"], "open": last["o"],
+                     "high": last["h"], "low": last["l"], "volume": last["v"]}
+        if s and s.get("price") is not None:
+            p = round(float(s["price"]), 2)
+            pv = round(float(s.get("prev") or p), 2)
+            out = {"price": p, "prev": pv, "open": round(float(s.get("open") or p), 2),
+                   "high": round(float(s.get("high") or p), 2), "low": round(float(s.get("low") or p), 2),
+                   "volume": int(s.get("volume") or 0),
+                   "pct": round(((p - pv) / pv) * 100, 2) if pv else 0,
+                   "chg": round(p - pv, 2), "name": ticker}
+            _record_health("polygon", True, int((time.time() - t0) * 1000))
+            return out
+        _record_health("polygon", False, err=f"no data {ticker}")
+        return None
     except Exception as e:
-        _record_health("yfinance", False, err=e)
+        _record_health("polygon", False, err=e)
         return None
 
 def _raw_ohlcv(ticker,n=60):
     t0 = time.time()
     try:
-        h=yf.Ticker(ticker).history(period=f"{min(n+20,130)}d", timeout=8)
-        if len(h)<5:
-            _record_health("yfinance", False, err=f"thin ohlcv {ticker}")
+        bars = _poly_bars(ticker, days=n + 20)
+        if len(bars) < 5:
+            _record_health("polygon", False, err=f"thin ohlcv {ticker}")
             return None
-        df=h.tail(n).reset_index(); df.columns=[c.lower() for c in df.columns]
-        out=df.rename(columns={"date":"datetime"})[["datetime","open","high","low","close","volume"]].copy()
-        _record_health("yfinance", True, int((time.time()-t0)*1000))
+        rows = bars[-n:]
+        out = pd.DataFrame([{"datetime": b["date"], "open": b["o"], "high": b["h"],
+                             "low": b["l"], "close": b["c"], "volume": b["v"]} for b in rows])
+        out["datetime"] = pd.to_datetime(out["datetime"])
+        _record_health("polygon", True, int((time.time()-t0)*1000))
         return out
     except Exception as e:
-        _record_health("yfinance", False, err=e)
+        _record_health("polygon", False, err=e)
         return None
 
 def _raw_fund(ticker):
+    # Polygon reference (name / market cap / sector-ish / description) + daily bars for the
+    # 52-week range and average volume. Short-float, days-to-cover, P/E and beta aren't in
+    # Polygon's reference feed — the warm universe already carries short-interest + EPS for
+    # scored names, and the detail page merges that in; for unscored names these stay blank.
     t0 = time.time()
     try:
-        i=yf.Ticker(ticker).info
-        out={"mktcap":i.get("marketCap",0),"sf":i.get("shortPercentOfFloat",0),
-                "dtc":i.get("shortRatio",0),"avgvol":i.get("averageVolume",0),
-                "sector":i.get("sector","N/A"),"industry":i.get("industry","N/A"),
-                "pe":i.get("trailingPE",None),"hi52":i.get("fiftyTwoWeekHigh",0),
-                "lo52":i.get("fiftyTwoWeekLow",0),"beta":i.get("beta",None),
-                "name":i.get("shortName",i.get("longName",ticker)),
-                "desc":(i.get("longBusinessSummary","")[:300]+"...") if i.get("longBusinessSummary") else ""}
-        _record_health("yfinance_fund", True, int((time.time()-t0)*1000))
+        ref = _poly_reference(ticker)
+        bars = _poly_bars(ticker, days=365)
+        hi52 = round(max((b["h"] for b in bars), default=0), 2)
+        lo52 = round(min((b["l"] for b in bars if b["l"] > 0), default=0), 2)
+        avgvol = int(sum(b["v"] for b in bars) / len(bars)) if bars else 0
+        sic = ref.get("sic") or "N/A"
+        out = {"mktcap": ref.get("mktcap") or 0, "sf": 0, "dtc": 0, "avgvol": avgvol,
+               "sector": sic, "industry": sic, "pe": None, "hi52": hi52, "lo52": lo52,
+               "beta": None, "name": ref.get("name") or ticker,
+               "desc": (ref.get("desc") or "")}
+        _record_health("polygon_fund", bool(ref or bars), int((time.time()-t0)*1000))
         return out
     except Exception as e:
-        _record_health("yfinance_fund", False, err=e)
+        _record_health("polygon_fund", False, err=e)
         return {}
 
 def _stocktwits_token():
@@ -3004,18 +3041,14 @@ def yf_fund(ticker):
 
 @st.cache_data(ttl=900,show_spinner=False)
 def yf_fast_fund(ticker):
-    """FAST fundamentals via yfinance fast_info: market cap + 52-week range ONLY. fast_info
-    is a lightweight endpoint, unlike the slow full .info scrape in yf_fund (1-3s) — so
-    opening a stock detail doesn't block on .info just to show market cap / 52W."""
+    """FAST fundamentals: market cap (Polygon reference) + 52-week range (Polygon daily bars).
+    Kept name for call-site compatibility; no longer touches Yahoo."""
     try:
-        fi = yf.Ticker(ticker).fast_info
-        def _g(k):
-            try: return fi[k]
-            except Exception:
-                try: return getattr(fi, k, None)
-                except Exception: return None
-        return {"mktcap": _g("market_cap") or 0, "hi52": _g("year_high") or 0,
-                "lo52": _g("year_low") or 0}
+        ref = _poly_reference(ticker)
+        bars = _poly_bars(ticker, days=365)
+        hi52 = round(max((b["h"] for b in bars), default=0), 2)
+        lo52 = round(min((b["l"] for b in bars if b["l"] > 0), default=0), 2)
+        return {"mktcap": ref.get("mktcap") or 0, "hi52": hi52, "lo52": lo52}
     except Exception:
         return {}
 
@@ -3047,52 +3080,25 @@ def st_sent(ticker):
 
 @st.cache_data(ttl=300,show_spinner=False)
 def get_indexes():
-    """Fetch the major index quotes for the dashboard. Tries Twelve Data first
-    (uses YOUR API key — not subject to yfinance's shared-IP rate limiting that
-    starves Streamlit Cloud), falls back to yfinance per-ticker. Per-call
-    timeouts keep the dashboard responsive even if one provider is slow."""
+    """Market-overview tiles from Polygon ETF PROXIES. The Polygon Stocks plan has no index
+    feed (indices are a separate subscription), so we show the liquid ETF that tracks each
+    index — labeled honestly ('S&P 500 · SPY'). EOD close + a 5-day sparkline, one call each.
+    (Yahoo/yfinance removed.)"""
+    proxies = [("S&P 500 · SPY", "SPY"), ("Nasdaq · QQQ", "QQQ"), ("Dow · DIA", "DIA"),
+               ("Russell · IWM", "IWM"), ("Volatility · VIXY", "VIXY")]
     out = {}
-    td_key = ""
-    try: td_key = st.secrets.get("TWELVE_DATA_API_KEY", "") or ""
-    except Exception: pass
-    for n, t in INDEXES.items():
-        got = False
-        if td_key:
-            try:
-                r = requests.get(f"https://api.twelvedata.com/quote?symbol={t}&apikey={td_key}",
-                                 timeout=5, headers={"User-Agent": "MarketSignalPro/1.0"})
-                _td_sync_from_headers(r.headers)
-                if r.status_code == 200:
-                    d = r.json()
-                    if "close" in d:
-                        p = float(d["close"]); pv = float(d.get("previous_close", p) or p)
-                        pct = float(d.get("percent_change", 0) or 0)
-                        # Twelve Data doesn't return a sparkline here; fetch a tiny time_series.
-                        hist = []
-                        try:
-                            ts = requests.get(
-                                f"https://api.twelvedata.com/time_series?symbol={t}&interval=1day&outputsize=5&apikey={td_key}",
-                                timeout=5).json()
-                            vals = ts.get("values", []) or []
-                            hist = [round(float(v.get("close", 0)), 2) for v in reversed(vals) if v.get("close")]
-                        except Exception:
-                            pass
-                        out[n] = {"price": round(p, 2), "pct": round(pct, 2), "hist": hist or [pv, p]}
-                        got = True
-            except Exception:
-                pass
-        if got:
-            continue
+    for label, etf in proxies:
         try:
-            h = yf.Ticker(t).history(period="5d", timeout=6)
-            if len(h) >= 2:
-                p = h["Close"].iloc[-1]; pv = h["Close"].iloc[-2]
-                out[n] = {"price": round(p, 2), "pct": round(((p-pv)/pv)*100, 2),
-                          "hist": [round(float(v), 2) for v in h["Close"].tail(5).values]}
+            bars = _poly_bars(etf, days=8)
+            closes = [b["c"] for b in bars]
+            if len(closes) >= 2:
+                p = closes[-1]; pv = closes[-2]
+                out[label] = {"price": round(p, 2), "pct": round(((p-pv)/pv)*100, 2) if pv else 0,
+                              "hist": [round(float(v), 2) for v in closes[-5:]]}
             else:
-                out[n] = {"price": 0, "pct": 0, "hist": []}
+                out[label] = {"price": 0, "pct": 0, "hist": []}
         except Exception:
-            out[n] = {"price": 0, "pct": 0, "hist": []}
+            out[label] = {"price": 0, "pct": 0, "hist": []}
     return out
 
 @st.cache_data(ttl=900,show_spinner=False)
@@ -3100,8 +3106,9 @@ def get_sectors():
     out={}
     for s,e in SECTOR_ETFS.items():
         try:
-            h=yf.Ticker(e).history(period="5d")
-            if len(h)>=2: out[s]=round(((h["Close"].iloc[-1]-h["Close"].iloc[-2])/h["Close"].iloc[-2])*100,2)
+            bars=_poly_bars(e, days=6)
+            if len(bars)>=2: out[s]=round(((bars[-1]["c"]-bars[-2]["c"])/bars[-2]["c"])*100,2)
+            else: out[s]=0.0
         except: out[s]=0.0
     return out
 
@@ -3110,9 +3117,9 @@ def get_bi_movers():
     out=[]
     for t in BROAD_UNI[:28]:
         try:
-            h=yf.Ticker(t).history(period="5d")
-            if len(h)>=2:
-                p=h["Close"].iloc[-1]; pv=h["Close"].iloc[-2]; v=h["Volume"].iloc[-1]; av=h["Volume"].mean()
+            bars=_poly_bars(t, days=8)
+            if len(bars)>=2:
+                p=bars[-1]["c"]; pv=bars[-2]["c"]; v=bars[-1]["v"]; av=sum(b["v"] for b in bars)/len(bars)
                 out.append({"t":t,"price":round(p,2),"pct":round(((p-pv)/pv)*100,2),"vol":int(v),"vr":round(v/av,1) if av>0 else 1})
         except: continue
     return out

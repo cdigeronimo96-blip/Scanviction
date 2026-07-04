@@ -251,6 +251,30 @@ def snapshot_all(api_key: str) -> dict:
     return out
 
 
+def snapshot_one(api_key: str, ticker: str) -> dict:
+    """Single-ticker snapshot (delayed on non-realtime tiers) → price/prev/day OHLC/volume.
+    {} on failure. Complements daily_bars() for one-off per-ticker quote lookups so the
+    app never needs to scrape Yahoo for a name outside the warm universe."""
+    path = f"/v2/snapshot/locale/us/markets/stocks/tickers/{ticker.upper()}"
+    try:
+        data = _get(api_key, path)
+    except PolygonError:
+        return {}
+    t = data.get("ticker") or {}
+    last = t.get("lastTrade") or {}
+    day = t.get("day") or {}
+    prev = t.get("prevDay") or {}
+    price = last.get("p") or day.get("c") or prev.get("c")
+    if not price:
+        return {}
+    return {
+        "price": price, "prev": prev.get("c"),
+        "open": day.get("o"), "high": day.get("h"), "low": day.get("l"),
+        "volume": day.get("v") or prev.get("v"),
+        "pct": t.get("todaysChangePerc"), "chg": t.get("todaysChange"),
+    }
+
+
 def ticker_reference(api_key: str, ticker: str) -> dict:
     """Per-ticker reference (name, market cap, sector-ish, exchange). Lazy — call
     only for names the user opens, not the whole universe."""
