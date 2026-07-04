@@ -8131,8 +8131,8 @@ def _discover_body():
     # ── HOME with data: guidance + cross-category Top Signals + themed browser ──
     _render_regime_guidance(rg)
 
-    st.markdown('<div class="disc-section-label">Top Signals Right Now</div>', unsafe_allow_html=True)
-    st.markdown('<div class="disc-sub">The highest-conviction setups across every signal, ranked by our blended Conviction Score. Tap any card for the full breakdown.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="disc-section-label">Today\'s Board · Top Signals</div>', unsafe_allow_html=True)
+    st.markdown('<div class="disc-sub">Every setup in the market, ranked by our blended Conviction Score — browse the full board any time. (Your daily brief pings just what\'s new.) Tap any card for the full breakdown.</div>', unsafe_allow_html=True)
     top = _top_signals(grouped, 6)
     snaps = _discover_lock_and_load_snaps(top)
     _render_conviction_grid(top, "ts", snaps)
