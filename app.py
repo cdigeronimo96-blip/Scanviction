@@ -7050,7 +7050,8 @@ def page_forgot():
 # PAGE: DASHBOARD
 # ─────────────────────────────────────────────────────────────
 def _render_onboarding():
-    """First-run activation nudge: a 3-step checklist (watchlist → open a signal → set an alert).
+    """First-run activation nudge: a 3-step checklist that walks the value flow — explore a signal in
+    Discover (conviction breakdown + % since signal) → add it to the watchlist → set a price alert.
     Activation is the metric that most drives retention, so we make the path obvious. Auto-hides when
     complete (and fires an 'activated' funnel event) or when dismissed for the session."""
     if not is_authed() or st.session_state.get("_onboard_dismissed"):
@@ -7066,13 +7067,14 @@ def _render_onboarding():
         ic = "✅" if ok else "⬜"; col = "#5d6b86" if ok else "#e2e8f0"; deco = "line-through" if ok else "none"
         return f'<div style="display:flex;align-items:center;gap:9px;font-size:13px;color:{col};text-decoration:{deco};margin:4px 0;">{ic} {label}</div>'
     st.markdown(f"""<div class="card" style="border-left:3px solid {GOLD};margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <div style="font-size:14px;font-weight:800;color:#e2e8f0;">🚀 Get started ({done}/3)</div>
-          <div style="font-size:11px;color:#5d6b86;">~30 seconds — this is how the app earns its keep</div>
+          <div style="font-size:11px;color:#5d6b86;">~1 minute — the quickest tour of how MarketSignalPro works</div>
         </div>
-        {_row(s1, "Add a stock to your watchlist")}
-        {_row(s2, "Open a signal to see its conviction breakdown")}
-        {_row(s3, "Set a price alert so we ping you on a move")}
+        <div style="font-size:12px;color:#6b7fa0;margin-bottom:9px;">We score ~2,500 US stocks every day and rank them by conviction. Here's how to put that to work:</div>
+        {_row(s2, "Head to <b>Discover</b>, open a stock, and check its <b>conviction breakdown</b> + <b>% since we flagged it</b>")}
+        {_row(s1, "Add that stock to your <b>watchlist</b> to keep tracking it")}
+        {_row(s3, "Set a <b>price alert</b> so we ping you the moment it moves")}
     </div>""", unsafe_allow_html=True)
     b1, b2, _sp = st.columns([1, 1, 2])
     with b1:
