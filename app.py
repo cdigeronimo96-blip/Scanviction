@@ -2302,6 +2302,11 @@ def can_access(page) -> bool:
 
 def nav(p):
     """Navigate to a page and update URL params so browser back/forward works."""
+    # Leaving a page ALSO exits any in-progress checkout — the checkout screens
+    # (_redirect_url / _stripe_embed) hard-override the page render, so without this a
+    # topbar/nav click gets swallowed and the user is trapped on the checkout screen.
+    for _k in ("_redirect_url", "_stripe_embed"):
+        st.session_state.pop(_k, None)
     cur = st.session_state.get("page")
     if cur and cur != p:
         hist = st.session_state.get("_page_hist", [])
