@@ -7595,7 +7595,7 @@ def _conviction_card_html(r, locked=False, snap=None):
         convc = "#fb7185" if conv >= 70 else "#fb923c" if conv >= 45 else "#94a3b8"
     else:
         convc = GREEN if conv >= 70 else GOLD if conv >= 45 else RED
-    short_b = '<span class="cv-short">SHORT</span>' if is_bear else ""
+    short_b = '<span class="cv-short" style="margin-left:6px;">SHORT</span>' if is_bear else ""
     if locked:
         head = ('<span class="cv-tick" style="filter:blur(5px);user-select:none;">NVDA</span>'
                 '<span class="cv-px" style="filter:blur(4px);user-select:none;">$000 ▲0%</span>')
@@ -8596,7 +8596,7 @@ def page_detail():
                         <div style="flex:1;background:rgba(255,255,255,.05);border-radius:3px;height:6px;">
                             <div style="background:{c_};width:{int(pct_*100)}%;height:6px;border-radius:3px;"></div>
                         </div>
-                        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{c_};width:32px;text-align:right;">{pts}/{mx}</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{c_};width:42px;flex:0 0 auto;white-space:nowrap;text-align:right;">{pts}/{mx}</div>
                     </div>""",unsafe_allow_html=True)
             else:
                 st.markdown(f'<div style="background:#080b14;border:1px solid rgba(245,158,11,.2);border-radius:7px;padding:10px;font-size:12px;color:{GOLD};">🔒 Score breakdown is Premium only.</div>',unsafe_allow_html=True)
