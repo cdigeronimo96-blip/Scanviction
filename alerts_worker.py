@@ -203,7 +203,14 @@ def process_all_alerts():
 
     alerts_db=load_json(ALERTS_DB,{}); users_db=load_json(USERS_DB,{})
 
-    # ── Standard user alerts ──
+    # ── Standard user alerts (price / % / volume / RSI) ──
+    # The Streamlit app now evaluates these INLINE every warm cycle (app._process_price_alerts),
+    # so they fire on Cloud without this cron. Skip here by default to avoid DOUBLE-sending
+    # (the app + worker use separate dedup stores). Set WORKER_DELIVERS_PRICE_ALERTS=1 to run
+    # them from the cron instead (e.g. if you deploy the worker standalone without the app).
+    if os.environ.get("WORKER_DELIVERS_PRICE_ALERTS", "0").lower() not in ("1", "true", "yes"):
+        log.info("\n── Standard Alerts — handled inline by the app; worker skipping ──")
+        alerts_db = {}
     log.info(f"\n── Standard Alerts ──")
     for email,user_alerts in alerts_db.items():
         user=users_db.get(email,{"role":"free"})
