@@ -5936,12 +5936,12 @@ def render_topbar(active=""):
             if _unseen > _base and active != "signals":
                 _names = ", ".join(e.get("ticker", "") for e in _unseen_list[:3] if e.get("ticker"))
                 _more = f" +{_unseen - 3} more" if _unseen > 3 else ""
-                st.toast(f"🔔 {_unseen} new signal{'s' if _unseen != 1 else ''}"
-                         + (f": {_names}{_more}" if _names else " in your feed"), icon="🔔")
+                st.toast(f"🔔 {_unseen} new in your Daily Brief"
+                         + (f": {_names}{_more}" if _names else ""), icon="🔔")
             st.session_state["_unseen_shown"] = _unseen
         except Exception:
             pass
-        _sig_lbl = f"🔔 {_unseen}" if _unseen else "🔔"
+        _sig_lbl = "🔔 Brief" + (f" {_unseen}" if _unseen else "")
         pages = [("Home","dashboard"),("Discover","discover"),("Watch","watchlist"),
                  (_sig_lbl,"signals")]
         if is_premium():   # Market Scanner is premium-only — hide it from the free-user nav
@@ -9127,9 +9127,9 @@ def page_signals():
             save_user_to_file(_em, st.session_state.users_db[_em])
     except Exception: pass
 
-    st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:2px;">Signals Feed</div>'
-                '<div style="font-size:13px;color:#374f6e;margin-bottom:16px;">A live log of everything worth knowing — stocks entering a signal category, open-market insider buys, fresh SEC 8-K catalysts and short-interest surges — newest first, no scanning required. '
-                'Want these pushed to your phone or browser? Turn it on in <span style="color:#818cf8;font-weight:600;">Settings → Alerts</span>.</div>',
+    st.markdown('<div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:2px;">Daily Brief</div>'
+                '<div style="font-size:13px;color:#374f6e;margin-bottom:16px;">What\'s new since you last looked — stocks newly entering a signal category, open-market insider buys, fresh SEC 8-K catalysts and short-interest surges — newest first, no scanning required. This is the "what changed" companion to <span style="color:#818cf8;font-weight:600;">Discover</span> (the full ranked board). '
+                'Want it pushed to your phone, browser or email? Turn it on in <span style="color:#818cf8;font-weight:600;">Settings → Alerts</span>.</div>',
                 unsafe_allow_html=True)
 
     if not HAS_SIGNAL_ENGINE:
@@ -10980,9 +10980,9 @@ def page_settings():
                     border-radius:12px;padding:16px 20px;margin-bottom:16px;">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
                 <div>
-                    <div style="font-size:13px;font-weight:700;color:#4ade80;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;">✨ AUTOMATIC PROPRIETARY SIGNALS</div>
+                    <div style="font-size:13px;font-weight:700;color:#4ade80;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;">✨ YOUR DAILY BRIEF</div>
                     <div style="font-size:13px;color:#e2e8f0;font-weight:600;margin-bottom:4px;">Default ON for Premium subscribers</div>
-                    <div style="font-size:12px;color:#6b7fa0;line-height:1.7;">When a stock enters one of our composite categories (Squeeze Setup, Hidden Mover, Sentiment Flip, etc.), you automatically get a notification. No configuration needed.</div>
+                    <div style="font-size:12px;color:#6b7fa0;line-height:1.7;">Your Daily Brief pushes what's NEW since you last looked — stocks newly entering a signal category, plus insider buys, 8-K filings and short-interest surges. It's the "what changed" companion to Discover (the full ranked board). No configuration needed.</div>
                 </div>
             </div>
         </div>
@@ -10996,7 +10996,7 @@ def page_settings():
             colp1, colp2 = st.columns([3,1], gap="small")
             with colp1:
                 st.markdown(f"""<div style="background:#0d1525;border:1px solid {BORDER};border-radius:10px;padding:14px;">
-                    <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📡 Receiving alerts for {len(current_cat_alerts)} of {len(COMPOSITE_CATS)} composite categories</div>
+                    <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">📡 Your Daily Brief covers {len(current_cat_alerts)} of {len(COMPOSITE_CATS)} signal categories</div>
                     <div style="font-size:11px;color:#374f6e;line-height:1.7;">{', '.join([c.split(' ')[1] if ' ' in c else c for c in current_cat_alerts[:6]])}{'...' if len(current_cat_alerts)>6 else ''}</div>
                 </div>""", unsafe_allow_html=True)
             with colp2:
@@ -11007,8 +11007,8 @@ def page_settings():
                     save_user_to_file(st.session_state.user["email"], st.session_state.users_db[st.session_state.user["email"]])
                     st.toast(f"{'✅ Proprietary signals enabled' if new_state else '⏸ Proprietary signals paused'}", icon="🔔")
 
-            with st.expander("⚙️ Customize which alerts I receive", expanded=False):
-                st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:8px;">Uncheck anything you don\'t want to be notified about.</div>', unsafe_allow_html=True)
+            with st.expander("⚙️ Customize your Daily Brief", expanded=False):
+                st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:8px;">Uncheck any category you don\'t want in your Daily Brief.</div>', unsafe_allow_html=True)
                 selected_cats = []
                 st.markdown('<div style="font-size:11px;font-weight:700;color:#4a5e7a;letter-spacing:1.5px;text-transform:uppercase;margin:2px 0 6px;">Signal categories</div>', unsafe_allow_html=True)
                 cat_cols = st.columns(2, gap="small")
