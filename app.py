@@ -5696,20 +5696,28 @@ def render_topbar(active=""):
    topbar (contains usermenu) — no other page columns are affected — and gated behind
    a max-width media query so the desktop/web layout is untouched. */
 @media (max-width:900px) {{
+  /* Streamlit renamed the column test-id from "column" → "stColumn" across versions,
+     and an earlier global rule forces [data-testid="column"]{{min-width:100%}} to stack
+     everything. Match BOTH test-ids so this works regardless of version and outweighs
+     that stacking rule. */
   [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]),
   [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) {{
       display:flex !important; flex-direction:row !important; flex-wrap:wrap !important;
-      align-items:center !important; gap:6px !important; row-gap:6px !important;
+      align-items:center !important; gap:6px !important; row-gap:6px !important; min-height:0 !important;
   }}
   /* logo gets its own top row, left-aligned */
   [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) > [data-testid="stColumn"]:first-child,
-  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="stColumn"]:first-child {{
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) > [data-testid="column"]:first-child,
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="stColumn"]:first-child,
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="column"]:first-child {{
       flex:0 0 100% !important; width:100% !important; min-width:0 !important; margin-bottom:2px !important;
   }}
   /* remaining columns share the wrapped rows evenly instead of each taking 100% */
   [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) > [data-testid="stColumn"]:not(:first-child),
-  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="stColumn"]:not(:first-child) {{
-      flex:1 1 auto !important; width:auto !important; min-width:66px !important;
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) > [data-testid="column"]:not(:first-child),
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="stColumn"]:not(:first-child),
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-usermenu"]) > [data-testid="column"]:not(:first-child) {{
+      flex:1 1 auto !important; width:auto !important; min-width:64px !important; max-width:none !important;
   }}
   /* kill inner vertical-block gaps + the empty guest wrapper divs that pad the height */
   [data-testid="stHorizontalBlock"]:has([class*="st-key-tb_g_signup"]) [data-testid="stVerticalBlock"],
@@ -7105,7 +7113,12 @@ def _render_onboarding():
     done = sum([s1, s2, s3])
     def _row(ok, label):
         ic = "✅" if ok else "⬜"; col = "#5d6b86" if ok else "#e2e8f0"; deco = "line-through" if ok else "none"
-        return f'<div style="display:flex;align-items:center;gap:9px;font-size:13px;color:{col};text-decoration:{deco};margin:4px 0;">{ic} {label}</div>'
+        # Icon + a SINGLE label span. Putting the label's inline <b> tags directly in a flex
+        # container turns each into its own flex item, which wraps into a scrambled grid on
+        # narrow (mobile) widths — wrapping it in one span makes it flow as normal text.
+        return (f'<div style="display:flex;align-items:flex-start;gap:9px;font-size:13px;color:{col};margin:5px 0;">'
+                f'<span style="flex:0 0 auto;line-height:1.5;">{ic}</span>'
+                f'<span style="flex:1 1 auto;min-width:0;line-height:1.5;text-decoration:{deco};">{label}</span></div>')
     st.markdown(f"""<div class="card" style="border-left:3px solid {GOLD};margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <div style="font-size:14px;font-weight:800;color:#e2e8f0;">🚀 Get started ({done}/3)</div>
