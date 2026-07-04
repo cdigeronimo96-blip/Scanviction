@@ -2318,6 +2318,26 @@ def nav(p):
         pass
     st.rerun()
 
+def _scroll_to_top_on_change():
+    """Reset scroll to the top when the page OR the Discover category changes, so a click doesn't
+    leave you stranded mid-list on the previous scroll position. Fires ONLY on a real view change
+    (guarded by _view_key) — not every rerun, which would make scrolling impossible."""
+    try:
+        key = f"{st.session_state.get('page','')}|{st.session_state.get('discover_cat','')}"
+        if st.session_state.get("_view_key") == key:
+            return
+        st.session_state["_view_key"] = key
+        components.html(
+            "<script>try{var w=window.parent||window;var d=w.document;"
+            "var el=d.querySelector('section.main')||d.querySelector('[data-testid=\"stMain\"]')"
+            "||d.querySelector('[data-testid=\"stAppViewContainer\"]');"
+            "if(el){if(el.scrollTo)el.scrollTo(0,0);else el.scrollTop=0;}"
+            "if(w.scrollTo)w.scrollTo(0,0);}catch(e){}</script>",
+            height=0,
+        )
+    except Exception:
+        pass
+
 def go_back():
     """Back button helper — navigates via in-app history."""
     hist = st.session_state.get("_page_hist", [])
@@ -8889,7 +8909,13 @@ def page_signals():
     _type = st.radio("Show", TYPE_OPTS, horizontal=True, key="sig_type_filter", label_visibility="collapsed")
     fc1, fc2 = st.columns([3, 1])
     with fc1:
-        cats = st.multiselect("Filter categories", list(COMPOSITE_CATS.keys()),
+        # Options come from the categories ACTUALLY present in the current feed (minus the event
+        # types, which the "Show" filter above handles). Deriving from the data guarantees every
+        # option matches real events — the static COMPOSITE_CATS list drifted from the stored
+        # category strings, so selecting one filtered to nothing.
+        _feed_cats = sorted({e.get("category", "") for e in events
+                             if e.get("category") and e.get("category") not in EVENT_ALERT_TYPES})
+        cats = st.multiselect("Filter categories", _feed_cats,
                               default=[], placeholder="All categories", key="sig_cat_filter")
     with fc2:
         min_sc = st.slider("Min score", 0, 100, 0, key="sig_min_sc")
@@ -10057,18 +10083,22 @@ def page_pricing():
         <div id="msg"></div>
         </div>
         <script>
-        var stripe=Stripe('{embed["pub_key"]}');
-        var elements=stripe.elements({{clientSecret:'{embed["client_secret"]}',appearance:{{theme:'night',variables:{{colorPrimary:'#6366f1',colorBackground:'#0d1525',colorText:'#e2e8f0',colorDanger:'#ef4444',borderRadius:'8px'}}}}}});
-        var paymentElement=elements.create('payment');
-        paymentElement.mount('#payment-element');
+        var stripe, elements;
+        function _fail(m){{var msg=document.getElementById('msg');if(msg)msg.textContent=m;var b=document.getElementById('submit-btn');if(b){{b.disabled=true;b.textContent='Unavailable — reload';}}}}
+        try{{
+            if(typeof Stripe==='undefined'){{throw new Error('Stripe.js did not load — check your connection or ad-blocker, then reload.');}}
+            stripe=Stripe('{embed["pub_key"]}');
+            elements=stripe.elements({{clientSecret:'{embed["client_secret"]}',appearance:{{theme:'night',variables:{{colorPrimary:'#6366f1',colorBackground:'#0d1525',colorText:'#e2e8f0',colorDanger:'#ef4444',borderRadius:'8px'}}}}}});
+            elements.create('payment').mount('#payment-element');
+        }}catch(e){{_fail('Could not load the payment form: '+(e&&e.message?e.message:e));}}
         async function submitPayment(){{
-            var btn=document.getElementById('submit-btn');
-            var msg=document.getElementById('msg');
-            btn.disabled=true;btn.textContent='Processing...';
-            var {{error}}=await stripe.confirmPayment({{
-                elements,confirmParams:{{return_url:'{embed["return_url"]}'}},
-            }});
-            if(error){{msg.textContent=error.message;btn.disabled=false;btn.textContent='🔒 Subscribe Now';}}
+            var btn=document.getElementById('submit-btn');var msg=document.getElementById('msg');
+            if(!stripe||!elements){{_fail('Payment form is not ready — reload the page.');return;}}
+            btn.disabled=true;btn.textContent='Processing...';msg.textContent='';
+            try{{
+                var {{error}}=await stripe.confirmPayment({{elements,confirmParams:{{return_url:'{embed["return_url"]}'}}}});
+                if(error){{msg.textContent=error.message;btn.disabled=false;btn.textContent='🔒 Subscribe Now';}}
+            }}catch(e){{msg.textContent='Payment error: '+(e&&e.message?e.message:e);btn.disabled=false;btn.textContent='🔒 Subscribe Now';}}
         }}
         </script>
         """, height=450, scrolling=False)
@@ -12024,6 +12054,7 @@ if _need is not None and not can_access(page):
         render_lock(_t)
         st.markdown('</div>', unsafe_allow_html=True)
 else:
+    _scroll_to_top_on_change()   # land at the top when the page/category changes
     if page=="landing":      page_landing()
     elif page=="features":     page_features()
     elif page=="login":        page_login()
