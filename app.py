@@ -6674,10 +6674,10 @@ def page_login():
         try: has_secrets=bool(st.secrets.get("owner_email","") or st.secrets.get("owner_pw_hash",""))
         except: pass
 
+        # Demo-account hint ONLY on a non-production instance (no owner secrets). In production
+        # (owner secrets set) show nothing — real users sign in with their own account.
         if not has_secrets:
             st.markdown(f'<div style="background:#080b14;border:1px solid {BORDER};border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;color:#374f6e;"><span style="color:#a5b4fc;font-weight:600;">Demo accounts:</span><br><span style="font-family:\'JetBrains Mono\',monospace;">demo@marketsignalpro.com</span> / <span style="font-family:\'JetBrains Mono\',monospace;">demo123</span><br><span style="font-family:\'JetBrains Mono\',monospace;">premium@marketsignalpro.com</span> / <span style="font-family:\'JetBrains Mono\',monospace;">premium1</span></div>',unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div style="background:#080b14;border:1px solid {BORDER};border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;color:#374f6e;text-align:center;">Use the email and password you set in Streamlit Secrets.</div>',unsafe_allow_html=True)
 
         st.markdown("<br>",unsafe_allow_html=True)
         bc1,bc2=st.columns(2,gap="small")
@@ -11750,8 +11750,8 @@ DATA SOURCES: Polygon.io (whole-market price/volume), SEC EDGAR (insider Form 4 
 
 PLANS
 - Free: market overview, 7 free categories, RSI/MACD signals, watchlist (10 stocks), BUY/AVOID.
-- Premium $29/mo: all 23 categories incl. bear/short, the Market Scanner, squeeze scanner, conviction breakdowns, signal charts, unlimited watchlist, saved scans.
-- Annual $199/yr: everything in Premium + priority support, CSV export, early access.
+- Premium $19/mo: all 23 categories incl. bear/short, the Market Scanner, squeeze scanner, conviction breakdowns, signal charts, unlimited watchlist, saved scans.
+- Annual $149/yr: everything in Premium + priority support, CSV export, early access.
 - Billing is via Stripe (in-page checkout). Cancel anytime in Settings → Subscription.
 
 IMPORTANT: signals are algorithmic and EDUCATIONAL ONLY — never financial advice. If asked for a specific buy/sell call or investment advice, give general educational context, remind them it's not financial advice, and suggest a licensed advisor. For billing/account issues, point them to the contact form above or support@marketsignalpro.com.
@@ -11828,7 +11828,7 @@ except Exception:
 if st.session_state.get("_redirect_url"):
     url = st.session_state.get("_redirect_url")
     sel_plan = st.session_state.get("sel_plan","premium")
-    plan_display = {"premium":"Premium Monthly — $29/mo","annual":"Annual Plan — $199/yr","free":"Free"}.get(sel_plan,"Premium Monthly")
+    plan_display = {"premium":"Premium Monthly — $19/mo","annual":"Annual Plan — $149/yr","free":"Free"}.get(sel_plan,"Premium Monthly")
     render_topbar("pricing")
     st.markdown(f'<div style="font-size:12px;color:#374f6e;padding:0 0 16px;"><span style="color:#4a5e7a;">Pricing</span> <span style="color:#2a3a52;"> › </span> <span style="color:#e2e8f0;font-weight:600;">Secure Checkout</span></div>',unsafe_allow_html=True)
     lc,rc = st.columns([3,2],gap="large")
@@ -11845,18 +11845,11 @@ if st.session_state.get("_redirect_url"):
             <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">What you get immediately:</div>
             <div style="font-size:13px;color:#374f6e;line-height:2.2;">✅&nbsp; All 23 composite signal categories (incl. bear/short)<br>✅&nbsp; Market Scanner + short-squeeze scanner<br>✅&nbsp; Signal charts &amp; conviction breakdowns<br>✅&nbsp; Plain-English insights<br>✅&nbsp; Unlimited watchlist &amp; price alerts</div>
         </div>
-        <style>
-        .sw-ck-btn{{display:block;width:100%;text-align:center;padding:17px;
-            background:linear-gradient(135deg,#4f46e5,#6366f1);
-            color:#fff!important;font-size:15px;font-weight:700;
-            border-radius:10px;text-decoration:none;
-            box-shadow:0 6px 24px rgba(99,102,241,0.5);
-            transition:all 0.2s ease;letter-spacing:0.3px;}}
-        .sw-ck-btn:hover{{background:linear-gradient(135deg,#3730a3,#4f46e5);box-shadow:0 10px 40px rgba(99,102,241,0.7);}}
-        </style>
-        <a class="sw-ck-btn" href="{url}" target="_top">🔒&nbsp; Complete Secure Checkout on Stripe →</a>
-        <div style="text-align:center;margin-top:10px;font-size:11px;color:#2a3a52;">Powered by <strong style="color:#6775ba;">Stripe</strong> · 256-bit SSL · PCI compliant · Card details never touch our servers</div>
         """, unsafe_allow_html=True)
+        # Native link button navigates reliably. A raw <a target="_top"> inside st.markdown renders
+        # but often does NOT navigate on click in Streamlit — that's the "nothing happens" symptom.
+        st.link_button("🔒  Complete Secure Checkout on Stripe →", url, use_container_width=True, type="primary")
+        st.markdown('<div style="text-align:center;margin-top:10px;font-size:11px;color:#2a3a52;">Powered by <strong style="color:#6775ba;">Stripe</strong> · 256-bit SSL · PCI compliant · Card details never touch our servers</div>', unsafe_allow_html=True)
         st.markdown("<br>",unsafe_allow_html=True)
         if st.button("← Change Plan",key="cancel_ck",use_container_width=True):
             st.session_state.pop("_redirect_url",None); nav("pricing")
