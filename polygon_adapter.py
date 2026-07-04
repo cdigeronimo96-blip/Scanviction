@@ -91,6 +91,32 @@ def _iso(d: _dt.date) -> str:
     return d.isoformat()
 
 
+def daily_bars(api_key: str, ticker: str, days: int = 120, adjusted: bool = True) -> list:
+    """Per-ticker daily OHLCV bars for roughly the last `days` calendar days, oldest→newest.
+    Returns a list of {"date","o","h","l","c","v"} dicts (empty list on any failure). Lets the
+    alerts worker compute quotes + technicals from Polygon instead of scraping yfinance/Yahoo."""
+    to_d = _dt.date.today()
+    from_d = to_d - _dt.timedelta(days=int(days) + 10)   # pad for weekends/holidays
+    path = f"/v2/aggs/ticker/{ticker.upper()}/range/1/day/{_iso(from_d)}/{_iso(to_d)}"
+    try:
+        data = _get(api_key, path, {"adjusted": "true" if adjusted else "false",
+                                    "sort": "asc", "limit": 50000})
+    except PolygonError:
+        return []
+    out = []
+    for b in (data.get("results") or []):
+        try:
+            out.append({
+                "date": _dt.datetime.utcfromtimestamp(b["t"] / 1000).date().isoformat(),
+                "o": float(b.get("o", 0)), "h": float(b.get("h", 0)),
+                "l": float(b.get("l", 0)), "c": float(b.get("c", 0)),
+                "v": float(b.get("v", 0)),
+            })
+        except Exception:
+            continue
+    return out
+
+
 def grouped_daily(api_key: str, date_iso: str, adjusted: bool = True) -> dict:
     """One call -> every US ticker's OHLCV for `date_iso` (YYYY-MM-DD).
     Returns {TICKER: {"o","h","l","c","v","vw","n"}}. Empty dict if the market

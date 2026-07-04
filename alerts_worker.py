@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
 MarketSignalPro Alerts Worker v3
-Runs every 15 min via Render cron. Checks standard + composite signals.
+Runs every 15 min via Render cron (optional — the Streamlit app delivers composite
+signals inline; this worker covers user price/RSI/volume alerts + signal outcomes).
 Uses the SHARED storage layer (msp_store) so it reads the SAME users/alerts the
-Streamlit app writes (Postgres via DATABASE_URL, or shared .msp_data files) —
-previously it read its own /tmp files and never saw real users.
+Streamlit app writes (Postgres via DATABASE_URL, or shared .msp_data files).
+
+DATA SOURCE: Polygon (via polygon_adapter). Quotes + technicals are computed from
+~120 daily bars per alerted ticker — the SAME licensed feed the app uses. The legacy
+yfinance/Yahoo path was removed (Yahoo's ToS is a gray area for a paid product).
 """
 import os, json, time, hashlib, logging, traceback
 from datetime import datetime, timedelta
@@ -33,9 +37,12 @@ TG_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 RESEND_KEY= os.environ.get("RESEND_API_KEY", "")
 APP_URL   = os.environ.get("APP_URL", "https://marketsignalpro.streamlit.app")
 EMAIL_FROM= os.environ.get("EMAIL_FROM", "MarketSignalPro <alerts@marketsignalpro.com>")
-SCAN_UNIVERSE = ["NVDA","TSLA","AMD","AAPL","MSTR","GME","AMC","PLTR","META","MSFT",
-    "RIVN","LCID","SOUN","BBAI","ASTS","IONQ","SMCI","ARM","MULN","SPCE","BBIG",
-    "FFIE","ATER","HOOD","NIO","LI","XPEV","MRNA","BNTX","CRWD"]
+POLYGON_KEY = os.environ.get("POLYGON_API_KEY", "")
+try:
+    import polygon_adapter as _poly
+except Exception as _pe:
+    _poly = None
+    log.warning(f"polygon_adapter unavailable ({_pe}); price/technical alerts will no-op")
 
 def load_json(path, default=None):
     if _HAS_STORE:
@@ -73,24 +80,33 @@ def mark_fired(key):
     fired={k:v for k,v in fired.items() if v>cutoff}
     save_json(FIRED_DB,fired)
 
+# ── Quotes + technicals from Polygon (one ~120-bar pull per ticker, cached per run) ──
+_BARS_CACHE = {}
+def _bars(t):
+    """~120 daily bars for a ticker via Polygon; cached for this worker run. [] on failure."""
+    t = (t or "").upper()
+    if not t or not POLYGON_KEY or _poly is None:
+        return []
+    if t not in _BARS_CACHE:
+        try: _BARS_CACHE[t] = _poly.daily_bars(POLYGON_KEY, t, days=120)
+        except Exception: _BARS_CACHE[t] = []
+    return _BARS_CACHE[t]
+
 def get_quote(t):
-    try:
-        import yfinance as yf
-        h=yf.Ticker(t).history(period="2d")
-        if len(h)<1: return None
-        p=float(h["Close"].iloc[-1]); pv=float(h["Close"].iloc[-2]) if len(h)>=2 else p
-        v=int(h["Volume"].iloc[-1]); av=float(h["Volume"].mean())
-        return {"price":round(p,2),"prev":round(pv,2),"pct":round(((p-pv)/pv)*100,2) if pv else 0,
-                "volume":v,"vol_ratio":round(v/av,2) if av>0 else 1,"change":round(p-pv,2)}
-    except: return None
+    bars = _bars(t)
+    if not bars: return None
+    closes=[b["c"] for b in bars]; vols=[b["v"] for b in bars]
+    p=closes[-1]; pv=closes[-2] if len(closes)>=2 else p
+    v=vols[-1]; av=(sum(vols)/len(vols)) if vols else 0
+    return {"price":round(p,2),"prev":round(pv,2),"pct":round(((p-pv)/pv)*100,2) if pv else 0,
+            "volume":int(v),"vol_ratio":round(v/av,2) if av>0 else 1,"change":round(p-pv,2)}
 
 def get_technicals(t):
+    bars=_bars(t)
+    if len(bars)<20: return {}
     try:
-        import yfinance as yf
-        import ta.momentum, ta.trend, ta.volatility
-        h=yf.Ticker(t).history(period="90d")
-        if len(h)<20: return {}
-        c=h["Close"]
+        import pandas as pd, ta.momentum, ta.trend, ta.volatility
+        c=pd.Series([b["c"] for b in bars])
         rsi=ta.momentum.RSIIndicator(c,14).rsi().iloc[-1]
         ma20=c.rolling(20).mean().iloc[-1]; ma50=c.rolling(min(50,len(c))).mean().iloc[-1]
         macd_ind=ta.trend.MACD(c); macd=macd_ind.macd().iloc[-1]; macd_s=macd_ind.macd_signal().iloc[-1]
@@ -101,111 +117,8 @@ def get_technicals(t):
                 "macd":round(float(macd),4),"macd_s":round(float(macd_s),4),
                 "bb_w":round(float(bb_w),4),"bb_avg":round(float(bb_avg),4),
                 "month_ret":round(float(month_ret),2),"price":round(float(c.iloc[-1]),2)}
-    except: return {}
-
-def get_fundamentals(t):
-    try:
-        import yfinance as yf
-        i=yf.Ticker(t).info
-        return {"sf":(i.get("shortPercentOfFloat") or 0),"dtc":(i.get("shortRatio") or 0),"mc":(i.get("marketCap") or 0)}
-    except: return {}
-
-def get_sentiment(t):
-    try:
-        import requests
-        d=requests.get(f"https://api.stocktwits.com/api/2/streams/symbol/{t}.json",timeout=8).json()
-        msgs=d.get("messages",[])
-        bull=sum(1 for m in msgs if m.get("entities",{}).get("sentiment",{}) and m["entities"]["sentiment"].get("basic")=="Bullish")
-        bear=sum(1 for m in msgs if m.get("entities",{}).get("sentiment",{}) and m["entities"]["sentiment"].get("basic")=="Bearish")
-        tot=bull+bear
-        return {"bull":round((bull/tot)*100) if tot else 50,"msgs":len(msgs)}
-    except: return {"bull":50,"msgs":0}
-
-def get_hot_list():
-    try:
-        import requests
-        d=requests.get("https://api.stocktwits.com/api/2/trending/symbols.json",timeout=8).json()
-        return [s["symbol"] for s in d.get("symbols",[])]
-    except: return []
-
-# ── 7 Composite Detectors ──────────────────────────────────────
-
-def detect_squeeze(t,q,tech,fund,sent):
-    sf=fund.get("sf",0)*100; dtc=fund.get("dtc",0)
-    vr=q.get("vol_ratio",1); rsi=tech.get("rsi",50); pct=q.get("pct",0); bull=sent.get("bull",50)
-    if sf>=15 and vr>=1.8 and rsi>=40 and pct>0:
-        conf="🔥 High" if (sf>=20 and vr>=2.5) else "Medium"
-        return True,(f"💥 *SQUEEZE SETUP — {t}*\n\n"
-            f"Short float: *{sf:.1f}%* · DTC: {dtc:.1f}d\n"
-            f"Volume: *{vr:.1f}× average* · RSI: {rsi}\n"
-            f"Price: *${q['price']:,.2f}* ({pct:+.2f}% today)\n"
-            f"Social: {bull}% bullish\nConfidence: {conf}\n\n"
-            f"High short interest + rising volume = squeeze fuel.")
-    return False,""
-
-def detect_hidden_mover(t,q,tech,sent,hot):
-    rsi=tech.get("rsi",50); ma20=tech.get("ma20",0); macd=tech.get("macd",0); macd_s=tech.get("macd_s",0)
-    price=q.get("price",0); pct=q.get("pct",0); vr=q.get("vol_ratio",1); msgs=sent.get("msgs",0)
-    if rsi>50 and price>ma20 and macd>macd_s and vr>=1.3 and t not in hot and msgs<10:
-        return True,(f"💡 *HIDDEN MOVER — {t}*\n\n"
-            f"Price: *${price:,.2f}* ({pct:+.2f}% today)\n"
-            f"RSI: {rsi} · Above MA20 ✅ · MACD bullish ✅\n"
-            f"Volume: {vr:.1f}× avg · Social posts: only {msgs}\n\n"
-            f"Low noise + strong technicals = early discovery.")
-    return False,""
-
-def detect_sentiment_flip(t,q,tech,sent,prev_db):
-    bull_now=sent.get("bull",50); bull_prev=prev_db.get(t,{}).get("bull",bull_now)
-    jump=bull_now-bull_prev; price=q.get("price",0); pct=q.get("pct",0)
-    if jump>=15 and bull_now>=60:
-        return True,(f"🌡️ *SENTIMENT FLIP — {t}*\n\n"
-            f"Bullish: *{bull_now}%* (was {bull_prev}% — jumped +{jump}pts)\n"
-            f"Price: *${price:,.2f}* ({pct:+.2f}% today)\n\n"
-            f"Trader mood sharply reversed upward.")
-    return False,""
-
-def detect_breakout(t,q,tech):
-    price=q.get("price",0); prev=q.get("prev",0); ma20=tech.get("ma20",0)
-    vr=q.get("vol_ratio",1); pct=q.get("pct",0); rsi=tech.get("rsi",50)
-    crossed=(prev<ma20<=price); strong=(price>ma20*1.02 and vr>=2.0 and pct>2)
-    if (crossed or strong) and vr>=1.5 and rsi>45:
-        trig="crossed above 20-day MA" if crossed else "breaking above 20-day MA"
-        return True,(f"⚡ *BREAKOUT — {t}*\n\n"
-            f"Price *{trig}*\nPrice: *${price:,.2f}* ({pct:+.2f}%)\n"
-            f"MA20: ${ma20:,.2f} · Volume: *{vr:.1f}× average* · RSI: {rsi}\n\n"
-            f"High-volume breakouts above MAs often continue.")
-    return False,""
-
-def detect_fallen_angel(t,q,tech,fund):
-    rsi=tech.get("rsi",50); mret=tech.get("month_ret",0); price=q.get("price",0); pct=q.get("pct",0); sf=fund.get("sf",0)*100
-    if rsi<32 and mret<-18:
-        s="🔴 Extreme" if rsi<25 else "⚠️ Significant"
-        return True,(f"📉→📈 *FALLEN ANGEL — {t}*\n\n"
-            f"RSI: *{rsi}* ({s} oversold)\nMonth return: *{mret:.1f}%*\n"
-            f"Price: *${price:,.2f}* ({pct:+.2f}%) · Short float: {sf:.1f}%\n\n"
-            f"Deeply oversold after sharp drop = recovery candidate. High risk.")
-    return False,""
-
-def detect_smart_money(t,q,tech):
-    vr=q.get("vol_ratio",1); price=q.get("price",0); pct=q.get("pct",0)
-    macd=tech.get("macd",0); macd_s=tech.get("macd_s",0); ma20=tech.get("ma20",0); ma50=tech.get("ma50",0); rsi=tech.get("rsi",50)
-    if vr>=3.0 and macd>macd_s and price>ma20 and price>ma50 and pct>0:
-        return True,(f"⚡🧲 *SMART MONEY SIGNAL — {t}*\n\n"
-            f"Volume: *{vr:.1f}× above average* 🔊\nMACD bullish ✅ · Above MA20 & MA50 ✅\n"
-            f"Price: *${price:,.2f}* ({pct:+.2f}%) · RSI: {rsi}\n\n"
-            f"3×+ volume + all indicators aligned = institutional accumulation signal.")
-    return False,""
-
-def detect_vol_squeeze(t,q,tech):
-    bb_w=tech.get("bb_w",1); bb_avg=tech.get("bb_avg",1); vr=q.get("vol_ratio",1)
-    price=q.get("price",0); rsi=tech.get("rsi",50)
-    if bb_avg>0 and bb_w<bb_avg*0.65 and vr>=1.4:
-        bias="upward" if rsi>50 else "unclear"
-        return True,(f"🌪️ *VOLATILITY SQUEEZE — {t}*\n\n"
-            f"Bollinger Bands near 90-day compression low\n"
-            f"Volume building: *{vr:.1f}×* · RSI: {rsi} · Bias: {bias}\n"
-            f"Price: *${price:,.2f}*\n\nCompressed volatility + rising volume = coiled spring. Big move coming.")
-    return False,""
+    except Exception:
+        return {}
 
 # ── Delivery ───────────────────────────────────────────────────
 
@@ -348,16 +261,22 @@ def process_all_alerts():
     MIN_SCORE = int(os.environ.get("ALERT_MIN_SCORE", "0"))
     cutoff = datetime.now() - timedelta(hours=ENTRY_MAX_AGE_H)
 
+    EVENT_CATS = ("🏛️ Insider Buy", "📰 8-K Filing", "📊 Short Interest")
+
     if not subscribers:
         log.info("  No composite subscribers yet")
     elif os.environ.get("WORKER_DELIVERS_SIGNALS", "0").lower() not in ("1", "true", "yes"):
         # The Streamlit app now delivers composite signals INLINE the moment it records them
-        # (app._deliver_new_signals), which is instant and avoids this cron double-sending the
-        # same signals. Set WORKER_DELIVERS_SIGNALS=1 to move delivery back to the cron instead.
+        # (app._deliver_new_signals: events immediately, category entries as one digest), which
+        # is instant and avoids this cron double-sending. Set WORKER_DELIVERS_SIGNALS=1 to move
+        # delivery back to the cron instead.
         log.info("  Composite-signal delivery handled inline by the app; worker skipping "
                  "(set WORKER_DELIVERS_SIGNALS=1 to deliver from the cron)")
     else:
+        # Cron-delivery fallback. Mirror the app's two lanes: EVENT filings immediately (one each);
+        # category ENTRIES batched into a single per-user digest so a new-bar re-score doesn't flood.
         delivered = 0
+        fresh = []
         for ev in recent_events:
             try:
                 trig = datetime.fromisoformat(ev.get("triggered_at", ""))
@@ -365,39 +284,56 @@ def process_all_alerts():
                 continue
             if trig < cutoff:
                 continue
-            cat = ev.get("category", ""); ticker = ev.get("ticker", "")
-            if not cat or not ticker:
+            if not ev.get("category") or not ev.get("ticker"):
                 continue
             if (ev.get("score_at_trigger", 0) or 0) < MIN_SCORE:
                 continue
-            eid = ev.get("id", f"{ticker}_{cat}")
-            price = ev.get("trigger_price", 0) or 0
-            rec = ev.get("recommendation", "") or "WATCH"
-            score = ev.get("score_at_trigger", "?")
-            for email, (user, wanted) in subscribers.items():
-                if wanted != "all" and cat not in wanted:
-                    continue
+            fresh.append(ev)
+
+        DIGEST_MAX = int(os.environ.get("DIGEST_MAX", "12"))
+        for email, (user, wanted) in subscribers.items():
+            channels = []
+            if user.get("push_subscription_ids"): channels.append("push")
+            if user.get("telegram_chat_id"):       channels.append("telegram")
+            channels.append("email")
+
+            mine_events = [e for e in fresh if e["category"] in EVENT_CATS
+                           and (wanted == "all" or e["category"] in wanted)]
+            mine_entries = [e for e in fresh if e["category"] not in EVENT_CATS
+                            and (wanted == "all" or e["category"] in wanted)]
+
+            # Lane 1 — event filings, one message each
+            for ev in mine_events:
+                eid = ev.get("id", f"{ev['ticker']}_{ev['category']}")
                 fkey = fire_key(email, f"sig_{eid}")
                 if already_fired(fkey):
                     continue
-                # Event-driven alerts (insider / 8-K / short interest) read better as a
-                # filing notice than "just entered"; category entries keep the score line.
-                if cat in ("🏛️ Insider Buy", "📰 8-K Filing", "📊 Short Interest"):
-                    msg = (f"📊 *{ticker}* — *{cat}*\n\n"
-                           f"{rec}\nPrice: *${price:,.2f}*\n"
-                           f"Open MarketSignalPro for the full breakdown.")
-                else:
-                    msg = (f"📊 *{ticker}* just entered *{cat}*\n\n"
-                           f"Price: *${price:,.2f}*  ·  Score: *{score}/100*  ·  {rec}\n"
-                           f"Open MarketSignalPro for the full multi-factor breakdown.")
-                channels = []
-                if user.get("push_subscription_ids"): channels.append("push")
-                if user.get("telegram_chat_id"):       channels.append("telegram")
-                channels.append("email")
-                deliver(email, user, f"📊 {cat}: {ticker}", msg, channels)
-                mark_fired(fkey)
+                price = ev.get("trigger_price", 0) or 0
+                rec = ev.get("recommendation", "") or "WATCH"
+                msg = (f"📊 *{ev['ticker']}* — *{ev['category']}*\n\n{rec}\n"
+                       f"Price: *${price:,.2f}*\nOpen MarketSignalPro for the full breakdown.")
+                deliver(email, user, f"📊 {ev['category']}: {ev['ticker']}", msg, channels)
+                mark_fired(fkey); delivered += 1
+
+            # Lane 2 — category entries, one ranked digest
+            undelivered = [e for e in mine_entries
+                           if not already_fired(fire_key(email, f"sig_{e.get('id', e['ticker'])}"))]
+            if undelivered:
+                undelivered.sort(key=lambda e: float(e.get("score_at_trigger", 0) or 0), reverse=True)
+                shown = undelivered[:DIGEST_MAX]
+                lines = [f"• {e['ticker']} · {e['category']} · {e.get('score_at_trigger','?')}/100"
+                         + (f" · {e.get('recommendation','')}" if e.get("recommendation") else "")
+                         for e in shown]
+                more = len(undelivered) - len(shown)
+                digest = (f"📊 *{len(undelivered)} new setup(s)* — MarketSignalPro\n\n"
+                          + "\n".join(lines)
+                          + (f"\n…and {more} more in the app." if more > 0 else "")
+                          + "\n\nOpen MarketSignalPro for the full breakdowns.")
+                deliver(email, user, f"📊 {len(undelivered)} new setups", digest, channels)
+                for e in undelivered:
+                    mark_fired(fire_key(email, f"sig_{e.get('id', e['ticker'])}"))
                 delivered += 1
-        log.info(f"  Delivered {delivered} category-entry notification(s)")
+        log.info(f"  Delivered {delivered} category/event notification(s)")
 
     # ── Update signal outcomes for tracked signal events ──
     try:
@@ -406,12 +342,14 @@ def process_all_alerts():
         from signal_engine import update_signal_outcomes
         def _price_fetch(ticker, days):
             try:
-                import yfinance as _yf
-                t = _yf.Ticker(ticker)
-                hist = t.history(period=f"{max(days,30)}d", auto_adjust=True)
-                if hist.empty: return None
-                df = hist.reset_index()
-                df.columns = [c.lower() for c in df.columns]
+                if _poly is None or not POLYGON_KEY:
+                    return None
+                import pandas as pd
+                bars = _poly.daily_bars(POLYGON_KEY, ticker, days=max(days, 30))
+                if not bars:
+                    return None
+                df = pd.DataFrame(bars).rename(
+                    columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
                 return df
             except Exception:
                 return None

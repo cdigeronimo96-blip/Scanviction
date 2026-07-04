@@ -4329,10 +4329,32 @@ def _tg_send_raw(token, chat_id, text):
     except Exception:
         return False
 
+def _signal_stop_line(tkr, cat, price):
+    """ATR-based suggested-stop line for a signal alert (direction-aware). '' on any failure."""
+    try:
+        _sdir = "short" if category_dir(cat) == "bear" else "long"
+        _wrow = _warm_row_for(tkr)
+        _atr = ((_wrow or {}).get("factors") or {}).get("atr_pct", 0) if _wrow else 0
+        _stop = recommended_stop(price, _atr, _sdir)
+        if _stop:
+            return (f"\n🛑 Suggested stop: <b>${_stop['price']:,.2f}</b> ({_stop['pct']:.1f}% "
+                    f"{'above' if _sdir == 'short' else 'below'})")
+    except Exception:
+        pass
+    return ""
+
 def _deliver_new_signals(added):
-    """Push newly-recorded composite signals to entitled Telegram subscribers, once each.
-    Telegram is a premium channel: a user opts in by connecting a chat id (+ telegram_enabled),
-    and may narrow to specific category_alerts. No-op without a captured token or new signals."""
+    """Push newly-recorded signals to entitled Telegram subscribers, once each, in TWO lanes:
+
+      • EVENT alerts (insider / 8-K / short-interest) are time-sensitive filings → sent
+        IMMEDIATELY, one message each ("look now" layer).
+      • Category/technical ENTRIES are batched into ONE ranked digest per user per cycle.
+        They all land together when a new daily bar re-scores, so individual pings would
+        flood; a single "here are the new setups" summary (top-N by score×edge) reads far
+        better and matches the daily cadence of the underlying signals.
+
+    Telegram is a premium channel (opt-in chat id + telegram_enabled, optional category
+    narrowing via category_alerts). No-op without a captured token or new signals."""
     token = _TG_TOKEN_CAPTURED
     if not token or not added:
         return
@@ -4342,50 +4364,70 @@ def _deliver_new_signals(added):
         users = _ms.read_json(_ms.USERS_DB_PATH, {}) or {}
         delivered = _ms.read_json(_dkey, {}) or {}
         changed = False
-        for ev in added:
-            cat = ev.get("category", ""); tkr = ev.get("ticker", "")
-            if not tkr:
+
+        events  = [e for e in added if e.get("ticker") and e.get("category") in EVENT_ALERT_TYPES]
+        signals = [e for e in added if e.get("ticker") and e.get("category") not in EVENT_ALERT_TYPES]
+        # Strongest first for the digest: score weighted by the category's backtested edge.
+        signals.sort(key=lambda e: (float(e.get("score_at_trigger", 0) or 0)
+                                    * category_edge(e.get("category", ""))), reverse=True)
+        DIGEST_MAX = int(_os.environ.get("DIGEST_MAX", "12"))
+
+        for email, u in users.items():
+            cid = u.get("telegram_chat_id", "")
+            if not cid:
                 continue
-            eid = ev.get("id") or f"{tkr}_{cat}"
-            score = ev.get("score_at_trigger", "?")
-            price = float(ev.get("trigger_price", 0) or 0)
-            rec = ev.get("recommendation", "") or ""
-            is_event = cat in EVENT_ALERT_TYPES
-            # Volatility-based suggested stop (sized by the stock's ATR + the signal's direction).
-            _sdir = "short" if category_dir(cat) == "bear" else "long"
-            _stop = None
-            try:
-                _wrow = _warm_row_for(tkr)
-                _atr = ((_wrow or {}).get("factors") or {}).get("atr_pct", 0) if _wrow else 0
-                _stop = recommended_stop(price, _atr, _sdir)
-            except Exception:
-                _stop = None
-            _stopln = (f"\n🛑 Suggested stop: <b>${_stop['price']:,.2f}</b> ({_stop['pct']:.1f}% "
-                       f"{'above' if _sdir == 'short' else 'below'})") if _stop else ""
-            for email, u in users.items():
-                cid = u.get("telegram_chat_id", "")
-                if not cid:
-                    continue
-                if u.get("role", "free") not in ("premium", "admin", "owner"):
-                    continue   # Telegram alerts are a premium channel
-                prefs = u.get("notif_prefs") or {}
-                if not prefs.get("telegram_enabled", True):
-                    continue
-                wanted = u.get("category_alerts") or []
+            if u.get("role", "free") not in ("premium", "admin", "owner"):
+                continue   # Telegram alerts are a premium channel
+            prefs = u.get("notif_prefs") or {}
+            if not prefs.get("telegram_enabled", True):
+                continue
+            wanted = u.get("category_alerts") or []
+
+            # ── Lane 1: EVENT alerts — immediate, one message each ──
+            for ev in events:
+                cat = ev.get("category", ""); tkr = ev["ticker"]
                 if wanted and cat not in wanted:
-                    continue   # user narrowed to specific categories
+                    continue
+                eid = ev.get("id") or f"{tkr}_{cat}"
                 dk = f"{email}:{eid}"
                 if dk in delivered:
                     continue
-                if is_event:
-                    msg = (f"📊 <b>{tkr}</b> — <b>{cat}</b>\n\n{rec}\n"
-                           f"Price: <b>${price:,.2f}</b>{_stopln}\nOpen MarketSignalPro for the full breakdown.")
-                else:
-                    msg = (f"📊 <b>{tkr}</b> just entered <b>{cat}</b>\n\n"
-                           f"Price: <b>${price:,.2f}</b> · Score: <b>{score}/100</b> · {rec}{_stopln}\n"
-                           f"Open MarketSignalPro for the multi-factor breakdown.")
+                price = float(ev.get("trigger_price", 0) or 0)
+                rec = ev.get("recommendation", "") or ""
+                msg = (f"📊 <b>{tkr}</b> — <b>{cat}</b>\n\n{rec}\n"
+                       f"Price: <b>${price:,.2f}</b>{_signal_stop_line(tkr, cat, price)}\n"
+                       f"Open MarketSignalPro for the full breakdown.")
                 if _tg_send_raw(token, cid, msg):
                     delivered[dk] = time.time(); changed = True
+
+            # ── Lane 2: category ENTRIES — one ranked digest ──
+            mine = []
+            for ev in signals:
+                cat = ev.get("category", "")
+                if wanted and cat not in wanted:
+                    continue
+                eid = ev.get("id") or f"{ev['ticker']}_{cat}"
+                if f"{email}:{eid}" not in delivered:
+                    mine.append(ev)
+            if mine:
+                shown = mine[:DIGEST_MAX]
+                lines = []
+                for ev in shown:
+                    _sc = ev.get("score_at_trigger", "?")
+                    _rec = ev.get("recommendation", "") or ""
+                    lines.append(f"• <b>{ev['ticker']}</b> · {ev.get('category','')} · <b>{_sc}/100</b>"
+                                 + (f" · {_rec}" if _rec else ""))
+                more = len(mine) - len(shown)
+                digest = (f"📊 <b>{len(mine)} new setup{'s' if len(mine) != 1 else ''}</b> — MarketSignalPro\n\n"
+                          + "\n".join(lines)
+                          + (f"\n…and {more} more in the app." if more > 0 else "")
+                          + "\n\nOpen MarketSignalPro for the full multi-factor breakdowns.")
+                if _tg_send_raw(token, cid, digest):
+                    for ev in mine:   # mark ALL delivered (incl. beyond the shown top-N) so no re-send
+                        eid = ev.get("id") or f"{ev['ticker']}_{ev.get('category','')}"
+                        delivered[f"{email}:{eid}"] = time.time()
+                    changed = True
+
         if changed:
             cutoff = time.time() - 7 * 86400   # bound the dedup store to ~7 days
             delivered = {k: v for k, v in delivered.items() if (v or 0) > cutoff}

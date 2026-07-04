@@ -1,5 +1,4 @@
 requests
-yfinance
 pandas
 ta
 # Postgres driver — REQUIRED so the worker shares the app's DATABASE_URL store.
