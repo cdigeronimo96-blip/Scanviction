@@ -13,7 +13,7 @@ into the app's signup, so they're both the SEO moat and a free→paid funnel top
 Usage:
     python seo_generate.py --snapshot .msp_data/universe_snapshot.json --out seo_site \
                            --site-url https://www.scanviction.com \
-                           --app-url  https://marketsignalpro.streamlit.app
+                           --app-url  https://scanviction.com
 Every arg falls back to an env var (MSP_SEO_SNAPSHOT / SEO_OUT / SEO_SITE_URL / APP_URL) then a default.
 """
 import os
@@ -308,7 +308,7 @@ def main(argv=None):
         "MSP_SEO_SNAPSHOT", os.path.join(".msp_data", "universe_snapshot.json")))
     ap.add_argument("--out", default=os.environ.get("SEO_OUT", "seo_site"))
     ap.add_argument("--site-url", default=os.environ.get("SEO_SITE_URL", "https://stocks.scanviction.com"))
-    ap.add_argument("--app-url", default=os.environ.get("APP_URL", "https://marketsignalpro.streamlit.app"))
+    ap.add_argument("--app-url", default=os.environ.get("APP_URL", "https://scanviction.com"))
     ap.add_argument("--google-verification", default=os.environ.get("GOOGLE_SITE_VERIFICATION", ""),
                     help="Google Search Console HTML-tag content token (baked into every page head)")
     a = ap.parse_args(argv)

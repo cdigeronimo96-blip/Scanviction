@@ -65,7 +65,7 @@ jobs:
             --snapshot universe_snapshot.json \
             --out seo_site \
             --site-url https://stocks.scanviction.com \
-            --app-url  https://marketsignalpro.streamlit.app
+            --app-url  https://scanviction.com
 
       # ── Deploy to Netlify (where stocks.scanviction.com lives). ──
       # Secrets to add: NETLIFY_AUTH_TOKEN (Netlify → User settings → Applications → New access token)
