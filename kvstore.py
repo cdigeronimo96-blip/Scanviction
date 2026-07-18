@@ -1,4 +1,4 @@
-"""MarketSignalPro — app.py's key->document storage seam (extracted from app.py).
+"""Scanviction — app.py's key->document storage seam (extracted from app.py).
 
 All of app.py's persistence routes through _read_json / _write_json, keyed by a
 "path" string. When DATABASE_URL is set AND a psycopg driver is importable, each

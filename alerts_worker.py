@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MarketSignalPro Alerts Worker v3
+Scanviction Alerts Worker v3
 Runs every 15 min via Render cron (optional — the Streamlit app delivers composite
 signals inline; this worker covers user price/RSI/volume alerts + signal outcomes).
 Uses the SHARED storage layer (msp_store) so it reads the SAME users/alerts the
@@ -36,7 +36,7 @@ except Exception as _e:
 TG_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 RESEND_KEY= os.environ.get("RESEND_API_KEY", "")
 APP_URL   = os.environ.get("APP_URL", "https://marketsignalpro.streamlit.app")
-EMAIL_FROM= os.environ.get("EMAIL_FROM", "MarketSignalPro <alerts@marketsignalpro.com>")
+EMAIL_FROM= os.environ.get("EMAIL_FROM", "Scanviction <alerts@scanviction.com>")
 POLYGON_KEY = os.environ.get("POLYGON_API_KEY", "")
 try:
     import polygon_adapter as _poly
@@ -137,7 +137,7 @@ def send_email(to, subject, msg):
     try:
         import requests
         html=f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;max-width:560px;margin:0 auto;">
-        <div style="font-size:20px;font-weight:700;margin-bottom:20px;color:#e2e8f0;">Market<span style="color:#f59e0b;">Signal</span>Pro</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:20px;color:#e2e8f0;">Scan<span style="color:#f59e0b;">viction</span></div>
         <div style="background:#0d1525;border:1px solid rgba(37,99,235,0.3);border-radius:12px;padding:24px;margin-bottom:16px;">
         <div style="font-size:11px;color:#2563eb;font-weight:700;letter-spacing:2px;margin-bottom:10px;">ALERT TRIGGERED</div>
         <div style="font-size:13px;color:#d1d9e6;white-space:pre-wrap;line-height:1.8;">{msg.replace("*","").replace("_","")}</div></div>
@@ -185,7 +185,7 @@ def deliver(email, user, subject, msg, channels):
 
     # Telegram (premium only, user-configured)
     if "telegram" in channels and is_prem and tg_id and notif_prefs.get("telegram_enabled", True):
-        full=msg+"\n\n─────────────────\n📊 [Open MarketSignalPro]("+APP_URL+")\n⚠️ _Not financial advice._"
+        full=msg+"\n\n─────────────────\n📊 [Open Scanviction]("+APP_URL+")\n⚠️ _Not financial advice._"
         send_telegram(tg_id, full)
 
     # Push (premium only, user-enabled in browser)
@@ -198,7 +198,7 @@ def deliver(email, user, subject, msg, channels):
 
 def process_all_alerts():
     log.info("="*60)
-    log.info(f"MarketSignalPro Alert Worker — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info(f"Scanviction Alert Worker — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("="*60)
 
     alerts_db=load_json(ALERTS_DB,{}); users_db=load_json(USERS_DB,{})
@@ -232,7 +232,7 @@ def process_all_alerts():
             elif atype=="rsi_overbought" and tech.get("rsi",50)>=threshold: triggered=True; msg=f"📈 {ticker} RSI hit {tech['rsi']} — overbought"
             if triggered:
                 log.info(f"  🔔 {email}/{ticker}: {msg}")
-                full=(f"🔔 *MarketSignalPro Alert*\n\n{msg}\n\nPrice: *${q['price']:,.2f}* ({q['pct']:+.2f}%)\nVolume: {q['vol_ratio']:.1f}× avg")
+                full=(f"🔔 *Scanviction Alert*\n\n{msg}\n\nPrice: *${q['price']:,.2f}* ({q['pct']:+.2f}%)\nVolume: {q['vol_ratio']:.1f}× avg")
                 deliver(email,user,f"⚡ Alert: {ticker}",full,alert.get("channels",["email"]))
                 mark_fired(fkey)
 
@@ -318,7 +318,7 @@ def process_all_alerts():
                 price = ev.get("trigger_price", 0) or 0
                 rec = ev.get("recommendation", "") or "WATCH"
                 msg = (f"📊 *{ev['ticker']}* — *{ev['category']}*\n\n{rec}\n"
-                       f"Price: *${price:,.2f}*\nOpen MarketSignalPro for the full breakdown.")
+                       f"Price: *${price:,.2f}*\nOpen Scanviction for the full breakdown.")
                 deliver(email, user, f"📊 {ev['category']}: {ev['ticker']}", msg, channels)
                 mark_fired(fkey); delivered += 1
 
@@ -332,10 +332,10 @@ def process_all_alerts():
                          + (f" · {e.get('recommendation','')}" if e.get("recommendation") else "")
                          for e in shown]
                 more = len(undelivered) - len(shown)
-                digest = (f"📊 *{len(undelivered)} new setup(s)* — MarketSignalPro\n\n"
+                digest = (f"📊 *{len(undelivered)} new setup(s)* — Scanviction\n\n"
                           + "\n".join(lines)
                           + (f"\n…and {more} more in the app." if more > 0 else "")
-                          + "\n\nOpen MarketSignalPro for the full breakdowns.")
+                          + "\n\nOpen Scanviction for the full breakdowns.")
                 deliver(email, user, f"📊 {len(undelivered)} new setups", digest, channels)
                 for e in undelivered:
                     mark_fired(fire_key(email, f"sig_{e.get('id', e['ticker'])}"))

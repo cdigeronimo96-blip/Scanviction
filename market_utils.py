@@ -1,4 +1,4 @@
-"""MarketSignalPro — US market-hours status + countdown formatting (pure).
+"""Scanviction — US market-hours status + countdown formatting (pure).
 
 Extracted from app.py. No Streamlit, no app state. render_market_timer (the UI banner
 that consumes these) stays in app.py and imports them. Used both there and by the warm

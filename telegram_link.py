@@ -167,11 +167,11 @@ def _process_updates(token, updates):
                     s["completed"][email] = {"chat_id": str(chat), "ts": time.time()}
                     linked.append((email, str(chat)))
                     replies.append((chat,
-                        "✅ <b>MarketSignalPro connected!</b>\n\nYou'll get your signal alerts "
+                        "✅ <b>Scanviction connected!</b>\n\nYou'll get your signal alerts "
                         "right here. Manage which ones in Settings → Notifications."))
             elif text.startswith("/start"):
                 replies.append((chat,
-                    "👋 Welcome to <b>MarketSignalPro</b>.\n\nTo connect, tap <b>Connect "
+                    "👋 Welcome to <b>Scanviction</b>.\n\nTo connect, tap <b>Connect "
                     "Telegram</b> in the app (Settings → Profile) and send the connect code it "
                     f"shows. To link manually instead, your chat ID is <code>{chat}</code>."))
             # else: an ordinary message with no pending code — ignore (offset already advanced)

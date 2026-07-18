@@ -1,4 +1,4 @@
-"""MarketSignalPro — security primitives (password hashing + HTML escaping).
+"""Scanviction — security primitives (password hashing + HTML escaping).
 
 Extracted from app.py so the auth-critical code is isolated, independently
 importable, and unit-testable WITHOUT loading the Streamlit monolith. Pure module:

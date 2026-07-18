@@ -1,5 +1,5 @@
 """
-Polygon.io (a.k.a. Massive) bulk data adapter for MarketSignalPro.
+Polygon.io (a.k.a. Massive) bulk data adapter for Scanviction.
 
 WHY THIS EXISTS
 ---------------
@@ -47,7 +47,7 @@ BASE_URL = os.environ.get("POLYGON_BASE_URL", "https://api.polygon.io").rstrip("
 
 # Hard per-request timeout (connect, read). Load-bearing — never None.
 HTTP_TIMEOUT = (5, 15)
-_UA = {"User-Agent": "MarketSignalPro/1.0 (+polygon-adapter)"}
+_UA = {"User-Agent": "Scanviction/1.0 (+polygon-adapter)"}
 
 # Liquidity filter defaults for the dynamic universe. These prune illiquid OTC
 # noise (and the delisted-penny dead weight that used to hang the warm) for free,

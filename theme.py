@@ -1,4 +1,4 @@
-"""MarketSignalPro — design-system color palette (extracted from app.py).
+"""Scanviction — design-system color palette (extracted from app.py).
 
 Pure constants, no imports. Centralized so app.py and the logic modules (e.g.
 advice.py) share ONE source of truth for the brand colors instead of re-hardcoding

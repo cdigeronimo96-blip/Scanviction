@@ -56,7 +56,7 @@ jobs:
                               try: btn.click()
                               except Exception: pass
                               break
-                  if ("conviction" in low) or ("MarketSignalPro" in body) or ("Top Signals" in body):
+                  if ("conviction" in low) or ("Scanviction" in body) or ("Top Signals" in body):
                       woke = True
                       break
               pg.wait_for_timeout(15000)   # hold the session so the idle timer resets

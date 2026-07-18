@@ -30,8 +30,8 @@ def test_no_default_privileged_credentials(app, monkeypatch):
     monkeypatch.setenv("SEED_DEMO_ACCOUNTS", "0")
     seed = app._load_seed_accounts()
     # showcase accounts only exist when explicitly enabled
-    assert "demo@marketsignalpro.com" not in seed
-    assert "premium@marketsignalpro.com" not in seed
+    assert "demo@scanviction.com" not in seed
+    assert "premium@scanviction.com" not in seed
     # whatever privileged accounts exist must NOT accept the old hardcoded defaults
     for acct in seed.values():
         assert not app.verify_pw("admin_change_me", acct.get("pw", ""))
@@ -41,10 +41,10 @@ def test_no_default_privileged_credentials(app, monkeypatch):
 def test_demo_accounts_gated_on_env(app, monkeypatch):
     monkeypatch.setenv("SEED_DEMO_ACCOUNTS", "1")
     seed = app._load_seed_accounts()
-    assert "demo@marketsignalpro.com" in seed
+    assert "demo@scanviction.com" in seed
     # the demo account is free-tier and its password verifies through verify_pw
-    assert app.verify_pw("demo123", seed["demo@marketsignalpro.com"]["pw"])
-    assert seed["demo@marketsignalpro.com"]["role"] == "free"
+    assert app.verify_pw("demo123", seed["demo@scanviction.com"]["pw"])
+    assert seed["demo@scanviction.com"]["role"] == "free"
 
 
 # ── XSS escaping at unsafe_allow_html sinks ──────────────────────────────────

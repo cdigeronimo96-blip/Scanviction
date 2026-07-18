@@ -1,5 +1,5 @@
 """
-MarketSignalPro — shared scoring & categorization engine
+Scanviction — shared scoring & categorization engine
 ========================================================
 Pure (no Streamlit) factor / score / category logic, imported by BOTH the
 Streamlit app (app.py) and the background alerts worker (alerts_worker.py) so the
@@ -459,7 +459,7 @@ def _category_why(cat, f):
       "🐻 Distribution":          f"Money flowing OUT (CMF {f.get('cmf',0):+.2f}) on rising volume into weakness — distribution (short)",
       "🔻 Overbought Fade":       f"Overbought (RSI {rsi:.0f}) and rolling over near a high — short-the-rip setup",
     }
-    return W.get(cat, "MarketSignalPro composite signal")
+    return W.get(cat, "Scanviction composite signal")
 
 
 def bear_conviction(feat):
@@ -496,7 +496,7 @@ def category_for_feat(feat):
 
 
 def conviction_score(feat):
-    """MarketSignalPro CONVICTION — one proprietary 0-100 number that blends several
+    """Scanviction CONVICTION — one proprietary 0-100 number that blends several
     INDEPENDENT edges, each scored 0-100 then weighted: Technical, Money Flow (CMF),
     Relative Strength (vs the whole market), Trend Strength (ADX), Squeeze Fuel
     (days-to-cover) and Valuation (P/E). Components with no data (P/E or short interest

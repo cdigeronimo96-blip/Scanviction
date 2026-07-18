@@ -1,4 +1,4 @@
-"""MarketSignalPro — recommendation performance & outcome evaluation (pure).
+"""Scanviction — recommendation performance & outcome evaluation (pure).
 
 Extracted from app.py. Pure functions only: no Streamlit, no app state, no network —
 everything operates on values / OHLCV frames passed in by the caller, so it is directly

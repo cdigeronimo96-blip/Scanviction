@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone SEO static-site generator for MarketSignalPro.
+"""Standalone SEO static-site generator for Scanviction.
 
 Reads the slim universe snapshot (written by the app via seo_export.write_snapshot) and emits a
 directory of static, indexable HTML — one page per ticker + one per signal category + a hub index,
@@ -12,7 +12,7 @@ into the app's signup, so they're both the SEO moat and a free→paid funnel top
 
 Usage:
     python seo_generate.py --snapshot .msp_data/universe_snapshot.json --out seo_site \
-                           --site-url https://www.marketsignalpro.com \
+                           --site-url https://www.scanviction.com \
                            --app-url  https://marketsignalpro.streamlit.app
 Every arg falls back to an env var (MSP_SEO_SNAPSHOT / SEO_OUT / SEO_SITE_URL / APP_URL) then a default.
 """
@@ -24,7 +24,7 @@ import html
 import argparse
 from datetime import datetime
 
-BRAND = "MarketSignalPro"
+BRAND = "Scanviction"
 DISCLAIMER = ("Educational information only — not financial, investment, or trading advice. "
               "Signals are algorithmic and may be delayed or wrong. Past performance does not "
               "guarantee future results. Do your own research.")
@@ -119,7 +119,7 @@ def page(title, description, canonical, body, jsonld=None, site_url="", app_url=
 </head>
 <body><div class="wrap">
 <header class="top">
-  <a class="brand" href="{esc(site_url)}/">Market<span>Signal</span>Pro</a>
+  <a class="brand" href="{esc(site_url)}/">Scan<span>viction</span></a>
   <a class="cta" href="{esc(app_url)}/?utm_source=seo&utm_medium=organic">Get free signals →</a>
 </header>
 {body}
@@ -225,7 +225,7 @@ def render_index(rows, cats, date_str, site_url, app_url):
 
 <h2 id="pricing">Plans</h2>
 <div class="card" style="margin:8px 0 16px;">
-  <p style="font-size:14px;color:#cbd5e1;margin:0 0 10px;"><strong>MarketSignalPro</strong> is a subscription
+  <p style="font-size:14px;color:#cbd5e1;margin:0 0 10px;"><strong>Scanviction</strong> is a subscription
   stock-analytics service &mdash; educational technical signals, stock screening, watchlists, and price/volume alerts.</p>
   <div class="grid">
     <div class="tile"><b>Free</b><div class="pill">Core signals + watchlist</div></div>
@@ -303,11 +303,11 @@ def generate(snapshot, out, site_url, app_url):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Generate the MarketSignalPro SEO static site.")
+    ap = argparse.ArgumentParser(description="Generate the Scanviction SEO static site.")
     ap.add_argument("--snapshot", default=os.environ.get(
         "MSP_SEO_SNAPSHOT", os.path.join(".msp_data", "universe_snapshot.json")))
     ap.add_argument("--out", default=os.environ.get("SEO_OUT", "seo_site"))
-    ap.add_argument("--site-url", default=os.environ.get("SEO_SITE_URL", "https://stocks.marketsignalpro.com"))
+    ap.add_argument("--site-url", default=os.environ.get("SEO_SITE_URL", "https://stocks.scanviction.com"))
     ap.add_argument("--app-url", default=os.environ.get("APP_URL", "https://marketsignalpro.streamlit.app"))
     ap.add_argument("--google-verification", default=os.environ.get("GOOGLE_SITE_VERIFICATION", ""),
                     help="Google Search Console HTML-tag content token (baked into every page head)")

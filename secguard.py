@@ -1,4 +1,4 @@
-"""MarketSignalPro — abuse guards: rate limiting, signup honeypot, login lockout, email sanity.
+"""Scanviction — abuse guards: rate limiting, signup honeypot, login lockout, email sanity.
 
 Pure of Streamlit (the caller supplies a client key + optional `now`), so it's unit-testable and
 importable anywhere. State is IN-PROCESS (module dicts) — a solid FIRST layer for a single-replica

@@ -1,4 +1,4 @@
-"""MarketSignalPro — recommendation label + plain-English insight generators (pure).
+"""Scanviction — recommendation label + plain-English insight generators (pure).
 
 Extracted from app.py. Pure of app/session state: maps a score + factor breakdown
 (and optional fundamentals / OHLCV) to a human recommendation label, a set of

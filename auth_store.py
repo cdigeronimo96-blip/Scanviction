@@ -1,4 +1,4 @@
-"""MarketSignalPro — account & session persistence (extracted from app.py).
+"""Scanviction — account & session persistence (extracted from app.py).
 
 Owns the durable auth state: the shared users DB (seed accounts merged over disk),
 per-user alerts, server-side session tokens (random bearer token + expiry, so a hard
@@ -186,6 +186,6 @@ def _load_seed_accounts():
     # when explicitly enabled, so they never exist in production. Set SEED_DEMO_ACCOUNTS=1
     # for local demos/testing.
     if _os.environ.get("SEED_DEMO_ACCOUNTS", "0").strip().lower() in ("1", "true", "yes"):
-        seed["demo@marketsignalpro.com"]    = {"pw":_hp("demo123"), "name":"Demo User",  "role":"free",   "verified":True,"joined":today,"plan":"Free"}
-        seed["premium@marketsignalpro.com"] = {"pw":_hp("premium1"),"name":"Alex Rivera","role":"premium","verified":True,"joined":today,"plan":"Monthly"}
+        seed["demo@scanviction.com"]    = {"pw":_hp("demo123"), "name":"Demo User",  "role":"free",   "verified":True,"joined":today,"plan":"Free"}
+        seed["premium@scanviction.com"] = {"pw":_hp("premium1"),"name":"Alex Rivera","role":"premium","verified":True,"joined":today,"plan":"Monthly"}
     return seed

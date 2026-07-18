@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# MarketSignalPro v7.0 — Premium Fintech SaaS
+# Scanviction v7.0 — Premium Fintech SaaS
 # "I trust this. I understand this. I want more."
 # ═══════════════════════════════════════════════════════════════
 # This file is the Streamlit UI + routing + warm-universe worker. Most logic now
@@ -153,7 +153,7 @@ except ImportError:
 # to the emoji if the asset is missing (e.g. a partial deploy).
 _FAVICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.svg")
 st.set_page_config(
-    page_title="MarketSignalPro | Spot Market Opportunities First",
+    page_title="Scanviction | Spot Market Opportunities First",
     page_icon=(_FAVICON if os.path.exists(_FAVICON) else "📈"), layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -175,7 +175,7 @@ _inject_base_css()
 # ─────────────────────────────────────────────────────────────
 # PROGRESSIVE WEB APP (PWA) — Native app experience
 # ─────────────────────────────────────────────────────────────
-# Embedded SVG icon (no external hosting needed) — MarketSignalPro logo as SVG → base64
+# Embedded SVG icon (no external hosting needed) — Scanviction logo as SVG → base64
 _SW_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#6366f1"/>
@@ -192,8 +192,8 @@ _icon_b64 = _b64.b64encode(_SW_ICON_SVG.encode()).decode()
 _icon_data_uri = f"data:image/svg+xml;base64,{_icon_b64}"
 
 PWA_MANIFEST_JSON = (
-    '{"name":"MarketSignalPro — Premium Stock Intelligence",'
-    '"short_name":"MarketSignalPro",'
+    '{"name":"Scanviction — Premium Stock Intelligence",'
+    '"short_name":"Scanviction",'
     '"description":"Proprietary stock signals, composite categories, and signal track record.",'
     '"start_url":"/",'
     '"display":"standalone",'
@@ -215,7 +215,7 @@ st.markdown(f"""
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MarketSignalPro">
+<meta name="apple-mobile-web-app-title" content="Scanviction">
 <meta name="msapplication-TileColor" content="#6366f1">
 <meta name="msapplication-navbutton-color" content="#6366f1">
 <meta name="format-detection" content="telephone=no">
@@ -224,7 +224,7 @@ st.markdown(f"""
 <!-- Splash screen (visible only when launched as installed app) -->
 <div id="sw-pwa-splash">
     <div id="sw-pwa-splash-logo">SW</div>
-    <div id="sw-pwa-splash-title">MarketSignalPro</div>
+    <div id="sw-pwa-splash-title">Scanviction</div>
     <div id="sw-pwa-splash-tagline">Loading market intelligence…</div>
 </div>
 
@@ -235,7 +235,7 @@ st.markdown(f"""
 <div id="sw-install-banner">
     <div id="sw-install-banner-icon">📲</div>
     <div id="sw-install-banner-text">
-        <strong>Install MarketSignalPro</strong>
+        <strong>Install Scanviction</strong>
         <span>Add to your home screen for instant access</span>
     </div>
     <button id="sw-install-banner-btn">Install</button>
@@ -293,7 +293,7 @@ st.markdown(f"""
         deferredPrompt.prompt();
         const {{ outcome }} = await deferredPrompt.userChoice;
         if (outcome === 'accepted') {{
-            console.log('MarketSignalPro installed!');
+            console.log('Scanviction installed!');
         }} else {{
             localStorage.setItem('sw_install_dismissed', Date.now().toString());
         }}
@@ -318,7 +318,7 @@ st.markdown(f"""
         setTimeout(() => {{
             const banner = document.getElementById('sw-install-banner');
             const text = document.getElementById('sw-install-banner-text');
-            text.innerHTML = '<strong>Install MarketSignalPro</strong><span>Tap Share → Add to Home Screen</span>';
+            text.innerHTML = '<strong>Install Scanviction</strong><span>Tap Share → Add to Home Screen</span>';
             installBtn.textContent = 'Got it';
             installBtn.addEventListener('click', () => {{
                 banner.classList.remove('visible');
@@ -1321,7 +1321,7 @@ def clickable_tile(inner_html, key, label="open"):
 
 
 def brand_logomark(size=26):
-    """The MarketSignalPro brandmark: a rounded indigo→violet badge with a rising
+    """The Scanviction brandmark: a rounded indigo→violet badge with a rising
     'signal' line peaking at a gold spark. Bold + premium; pairs with the wordmark and
     works as an app icon / favicon / loading mark. Drawn inline so it tints with the
     brand palette and needs no asset hosting."""
@@ -2480,7 +2480,7 @@ _restore_page_from_url()
 # ─────────────────────────────────────────────────────────────
 # EXCEL EXPORT
 # ─────────────────────────────────────────────────────────────
-def make_excel(rows: list, sheet_name: str = "MarketSignalPro Data") -> bytes:
+def make_excel(rows: list, sheet_name: str = "Scanviction Data") -> bytes:
     """Build an Excel workbook from a list of dicts. Returns bytes."""
     import io
     try:
@@ -2653,7 +2653,7 @@ def _raw_quote(ticker):
         # getting locked AND avoids the lag of HTTP failures piling up.
         if _td_key and _td_usage_check_and_increment(1):
             r = requests.get(f"https://api.twelvedata.com/quote?symbol={ticker}&apikey={_td_key}",
-                             timeout=6, headers={"User-Agent": "MarketSignalPro/1.0"})
+                             timeout=6, headers={"User-Agent": "Scanviction/1.0"})
             _td_sync_from_headers(r.headers)
             if r.status_code == 200:
                 d = r.json()
@@ -2783,7 +2783,7 @@ def _finnhub_sent(ticker):
                          params={"symbol": ticker, "token": key,
                                  "from": _from.strftime("%Y-%m-%d"),
                                  "to": _to.strftime("%Y-%m-%d")},
-                         timeout=8, headers={"User-Agent": "MarketSignalPro/1.0"})
+                         timeout=8, headers={"User-Agent": "Scanviction/1.0"})
         if r.status_code != 200:
             if r.status_code in (401, 403):  # plan doesn't include it — back off 6h
                 _FH_STATE["social_locked_until"] = time.time() + 21600
@@ -2855,7 +2855,7 @@ def _apewisdom_map():
     try:
         for pg in range(1, APEWISDOM_MAX_PAGES + 1):
             r = requests.get(f"https://apewisdom.io/api/v1.0/filter/all-stocks/page/{pg}",
-                             timeout=10, headers={"User-Agent": "MarketSignalPro/1.0"})
+                             timeout=10, headers={"User-Agent": "Scanviction/1.0"})
             if r.status_code != 200:
                 break
             d = r.json()
@@ -2898,7 +2898,7 @@ def _news_direction(ticker):
         r = requests.get("https://finnhub.io/api/v1/company-news",
                          params={"symbol": ticker, "token": key,
                                  "from": _from.strftime("%Y-%m-%d"), "to": _to.strftime("%Y-%m-%d")},
-                         timeout=8, headers={"User-Agent": "MarketSignalPro/1.0"})
+                         timeout=8, headers={"User-Agent": "Scanviction/1.0"})
         if r.status_code != 200:
             _record_health("finnhub_news", False, err=f"HTTP {r.status_code}")
             return None
@@ -3257,7 +3257,7 @@ def render_scorecard(t, df, info, sent, sc, bd, factors=None):
     top_reasons = sorted(set(reasons), key=lambda x: -x[1])[:3]
     rlist = "".join(f'<li style="margin-bottom:3px;">{lbl}</li>' for lbl, _ in top_reasons) or '<li>Mixed signals — no standout bullish factor</li>'
     klist = "".join(f'<li style="margin-bottom:3px;">{lbl} — <span style="color:#64748b;">{note}</span></li>' for lbl, note in risks[:3]) or '<li>No major red flags detected</li>'
-    # ── MarketSignalPro Conviction Score (the signature blended metric) ──
+    # ── Scanviction Conviction Score (the signature blended metric) ──
     feat_cs = dict(f); feat_cs["sc"] = sc
     feat_cs["dtc"] = info.get("dtc") or 0; feat_cs["pe"] = info.get("pe")
     feat_cs["insider_buys"] = int(info.get("insider_buys", 0) or 0)
@@ -3598,7 +3598,7 @@ def _fmp_screen(api_key, **params):
     q.setdefault("limit", 200)
     try:
         r = requests.get(FMP_SCREENER_URL, params=q, timeout=12,
-                         headers={"User-Agent": "MarketSignalPro/1.0"})
+                         headers={"User-Agent": "Scanviction/1.0"})
         if r.status_code != 200:
             _record_health("fmp", False, err=f"HTTP {r.status_code}")
             return []
@@ -3764,13 +3764,13 @@ def _edgar_contact():
         c = (st.secrets.get("EDGAR_CONTACT") if hasattr(st, "secrets") else None)
     except Exception:
         c = None
-    return (c or _os.environ.get("EDGAR_CONTACT") or "admin@marketsignalpro.com").strip()
+    return (c or _os.environ.get("EDGAR_CONTACT") or "admin@scanviction.com").strip()
 
 if HAS_EDGAR:
     # The adapter captured EDGAR_UA at import (before this block), so set BOTH the
     # env (for any subprocess) and the live module header dict (functions read the
     # module global at call time, so reassigning it takes effect immediately).
-    _ua = f"MarketSignalPro {_edgar_contact()}"
+    _ua = f"Scanviction {_edgar_contact()}"
     _os.environ["EDGAR_UA"] = _ua
     try:
         _edgar.EDGAR_UA = {"User-Agent": _ua}
@@ -4455,7 +4455,7 @@ def _deliver_new_signals(added):
                 if do_tg:
                     tg = (f"📊 <b>{tkr}</b> — <b>{cat}</b>\n\n{rec}\n"
                           f"Price: <b>${price:,.2f}</b>{_signal_stop_line(tkr, cat, price)}\n"
-                          f"Open MarketSignalPro for the full breakdown.")
+                          f"Open Scanviction for the full breakdown.")
                     if _tg_send_raw(token, cid, tg): sent = True
                 if do_email:
                     if _alert_email(email, f"📊 {cat}: {tkr}",
@@ -4488,8 +4488,8 @@ def _deliver_new_signals(added):
                 hd = f"{len(mine)} new setup{'s' if len(mine) != 1 else ''}"
                 sent = False
                 if do_tg:
-                    digest = (f"📊 <b>{hd}</b> — MarketSignalPro\n\n" + "\n".join(tg_lines) + tail
-                              + "\n\nOpen MarketSignalPro for the full multi-factor breakdowns.")
+                    digest = (f"📊 <b>{hd}</b> — Scanviction\n\n" + "\n".join(tg_lines) + tail
+                              + "\n\nOpen Scanviction for the full multi-factor breakdowns.")
                     if _tg_send_raw(token, cid, digest): sent = True
                 if do_email:
                     if _alert_email(email, f"📊 {hd}",
@@ -4761,8 +4761,8 @@ def _alert_email(to, subject, body_lines):
     except Exception: key = ""
     if not key or not to:
         return False
-    try: frm = st.secrets.get("EMAIL_FROM", "MarketSignalPro <noreply@marketsignalpro.com>")
-    except Exception: frm = "MarketSignalPro <noreply@marketsignalpro.com>"
+    try: frm = st.secrets.get("EMAIL_FROM", "Scanviction <noreply@scanviction.com>")
+    except Exception: frm = "Scanviction <noreply@scanviction.com>"
     try: app_url = st.secrets.get("APP_URL", "https://marketsignalpro.streamlit.app")
     except Exception: app_url = "https://marketsignalpro.streamlit.app"
     body = body_lines if isinstance(body_lines, str) else "<br>".join(body_lines)
@@ -4770,11 +4770,11 @@ def _alert_email(to, subject, body_lines):
             f'<div style="max-width:560px;margin:0 auto;background:#0d1525;border:1px solid rgba(99,102,241,.3);'
             f'border-radius:12px;padding:24px;">'
             f'<div style="font-size:18px;font-weight:800;color:#e2e8f0;margin-bottom:14px;">'
-            f'Market<span style="color:#f59e0b;">Signal</span>Pro</div>'
+            f'Scan<span style="color:#f59e0b;">viction</span></div>'
             f'<div style="font-size:14px;color:#d1d9e6;line-height:1.7;">{body}</div>'
             f'<a href="{_esc(app_url)}" style="display:inline-block;margin-top:18px;padding:10px 18px;'
             f'background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:13px;">'
-            f'Open MarketSignalPro &rarr;</a>'
+            f'Open Scanviction &rarr;</a>'
             f'<div style="font-size:11px;color:#2a3a52;margin-top:16px;">Educational signals only. Not financial advice.</div>'
             f'</div></div>')
     try:
@@ -4796,7 +4796,7 @@ def _deliver_user_alert(email, u, tkr, msg, price, pct, channels):
     if ("telegram" in channels and cid and u.get("role", "free") in ("premium", "admin", "owner")
             and prefs.get("telegram_enabled", True) and _TG_TOKEN_CAPTURED):
         _tg_send_raw(_TG_TOKEN_CAPTURED, cid,
-                     f"🔔 <b>MarketSignalPro Alert</b>\n\n{_esc(msg)}\n\nPrice: <b>${price:,.2f}</b> ({pct:+.2f}%)")
+                     f"🔔 <b>Scanviction Alert</b>\n\n{_esc(msg)}\n\nPrice: <b>${price:,.2f}</b> ({pct:+.2f}%)")
 
 def _process_price_alerts():
     """Evaluate user price/%/volume/RSI alerts against the warm universe (per-ticker Polygon
@@ -5046,7 +5046,7 @@ def _refresh_stale_quotes_batched(tickers, max_age_seconds=300):
         return 0
     try:
         url = f"https://api.twelvedata.com/quote?symbol={','.join(stale)}&apikey={td_key}"
-        r = requests.get(url, timeout=8, headers={"User-Agent":"MarketSignalPro/1.0"})
+        r = requests.get(url, timeout=8, headers={"User-Agent":"Scanviction/1.0"})
         _td_sync_from_headers(r.headers)
         if r.status_code != 200:
             _record_health("twelvedata", False, err=f"batch HTTP {r.status_code}")
@@ -5096,7 +5096,7 @@ def _composite_filter(cat_name, row, hot):
     in_hot = row.get("hot", t in hot)
     sf = (info.get("sf", 0) or 0) * 100
     bull = sent.get("bull", 50)
-    include = False; comp = sc; why = "MarketSignalPro composite signal"
+    include = False; comp = sc; why = "Scanviction composite signal"
     if cat_name == "🔥💥 Squeeze + Buzz":
         comp = sf*1.5 + (30 if in_hot else 0) + (bull-50)*0.4 + bd.get("Volume",0)
         include = sf >= 8 and (in_hot or bull >= 60)
@@ -5182,7 +5182,7 @@ def _composite_filter(cat_name, row, hot):
         include = tr_s >= 16 and vs >= 7 and mac >= 9
         why = "Multi-session above-avg volume + holding MAs = institutional interest"
     else:
-        include = True; comp = sc; why = "MarketSignalPro scoring engine"
+        include = True; comp = sc; why = "Scanviction scoring engine"
     return include, comp, why
 
 def get_composite_stocks(cat_name, limit=10):
@@ -5255,7 +5255,7 @@ def _get_composite_stocks_LEGACY(cat_name,limit=10):
             sc,bd,op,risk,conf=compute_scores(df,info,sent); ig=get_insights(df,info)
             if not q: continue
             sf=(info.get("sf",0) or 0)*100; bull=sent.get("bull",50); in_hot=t in hot
-            include=False; comp=sc; why="MarketSignalPro composite signal"
+            include=False; comp=sc; why="Scanviction composite signal"
             if cat_name=="🔥💥 Squeeze + Buzz":
                 comp=sf*1.5+(30 if in_hot else 0)+(bull-50)*0.4+bd.get("Volume",0)
                 include=sf>=8 and (in_hot or bull>=60)
@@ -5338,7 +5338,7 @@ def _get_composite_stocks_LEGACY(cat_name,limit=10):
                 include=tr_s>=16 and vs>=7 and mac>=9
                 why="Multi-session above-avg volume + holding MAs = institutional interest"
             else:
-                include=True; comp=sc; why="MarketSignalPro scoring engine"
+                include=True; comp=sc; why="Scanviction scoring engine"
             if include:
                 results.append({"t":t,"q":q,"sc":sc,"bd":bd,"ig":ig,"op":op,"risk":risk,"conf":conf,
                                  "hot":in_hot,"df":df,"info":info,"sent":sent,"comp":comp,"why":why})
@@ -5660,7 +5660,7 @@ LOGO_HTML = (
     '<div class="msp-logo-click-target" style="gap:8px;">'
     + brand_logomark(22)
     + '<span class="msp-logo-text">'
-      '<span class="msp-logo-market">Market</span><span class="msp-logo-signal">Signal</span><span class="msp-logo-pro">Pro</span>'
+      '<span class="msp-logo-market">Scan</span><span class="msp-logo-signal">viction</span>'
       '</span></div>'
 )
 
@@ -5974,7 +5974,7 @@ def render_topbar(active=""):
     MSP_LOGO = ('<span style="display:inline-flex;align-items:center;gap:9px;cursor:pointer;">'
                 + brand_logomark(26)
                 + '<span style="font-family:\'Inter\',sans-serif;font-size:20px;font-weight:900;letter-spacing:-0.8px;">'
-                  '<span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span><span style="color:#e2e8f0;">Pro</span></span>'
+                  '<span style="color:#e2e8f0;">Scan</span><span style="color:#f59e0b;">viction</span></span>'
                 + '</span>')
 
     if is_authed():
@@ -6217,7 +6217,7 @@ def render_sidebar():
             </div>''',unsafe_allow_html=True)
             if st.button("Log Out",key="sb_logout",use_container_width=True): logout()
         else:
-            st.markdown('<div style="padding:12px 18px;font-size:12px;color:#374f6e;margin-bottom:8px;">Sign in to access MarketSignalPro.</div>',unsafe_allow_html=True)
+            st.markdown('<div style="padding:12px 18px;font-size:12px;color:#374f6e;margin-bottom:8px;">Sign in to access Scanviction.</div>',unsafe_allow_html=True)
             if st.button("🚀 Sign Up Free",key="sb_signup",use_container_width=True,type="primary"): nav("signup")
             if st.button("Login →",key="sb_login",use_container_width=True): nav("login")
 
@@ -6225,7 +6225,7 @@ def render_sidebar():
                 <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.2);letter-spacing:1px;text-transform:uppercase;margin-bottom:7px;">Free Includes</div>
                 <div style="font-size:12px;color:#2a3a52;line-height:2.2;">✅ Live market data<br>✅ 8 composite categories<br>✅ Social sentiment<br>✅ Plain-English insights<br>✅ Watchlist</div>
             </div>""",unsafe_allow_html=True)
-        st.markdown('<div style="padding:8px 18px;font-size:10px;color:rgba(255,255,255,.1);">© 2026 MarketSignalPro</div>',unsafe_allow_html=True)
+        st.markdown('<div style="padding:8px 18px;font-size:10px;color:rgba(255,255,255,.1);">© 2026 Scanviction</div>',unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # FOOTER
@@ -6244,7 +6244,7 @@ def render_footer(force=False):
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:24px;margin-bottom:24px;">
                 <div>
                     <span style="display:inline-flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-.5px;">
-                        {brand_logomark(24)}<span><span style="color:#e2e8f0;">Market</span><span style="color:{GOLD};">Signal</span><span style="color:#e2e8f0;">Pro</span></span>
+                        {brand_logomark(24)}<span><span style="color:#e2e8f0;">Scan</span><span style="color:{GOLD};">viction</span></span>
                     </span>
                     <div style="font-size:12px;color:rgba(255,255,255,.2);margin-top:6px;">Market Intelligence Platform</div>
                 </div>
@@ -6255,8 +6255,8 @@ def render_footer(force=False):
                     <a href="?page=contact" target="_self" style="color:rgba(255,255,255,.4);text-decoration:none;">Contact</a>
                 </div>
             </div>
-            <div class="disc">⚠️ <strong style="color:#4a5e7a;">Risk Disclaimer:</strong> Trading stocks involves substantial risk of financial loss. MarketSignalPro provides algorithmic, educational content only — not financial, investment, legal, or tax advice. All signals may be inaccurate or delayed. Past performance does not guarantee future results. Always consult a licensed financial professional before making investment decisions.</div>
-            <div style="font-size:10px;color:rgba(255,255,255,.1);margin-top:10px;text-align:right;">© 2026 MarketSignalPro. All rights reserved.</div>
+            <div class="disc">⚠️ <strong style="color:#4a5e7a;">Risk Disclaimer:</strong> Trading stocks involves substantial risk of financial loss. Scanviction provides algorithmic, educational content only — not financial, investment, legal, or tax advice. All signals may be inaccurate or delayed. Past performance does not guarantee future results. Always consult a licensed financial professional before making investment decisions.</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.1);margin-top:10px;text-align:right;">© 2026 Scanviction. All rights reserved.</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -6706,7 +6706,7 @@ def page_landing():
     .edge-d{{font-size:13px;color:#5d6b86;line-height:1.65;}}
     </style>
     <div class="edge-head reveal">
-        <div class="edge-eyebrow">Why MarketSignalPro</div>
+        <div class="edge-eyebrow">Why Scanviction</div>
         <div class="edge-h2">An edge built from data most screeners don't touch.</div>
         <div class="edge-sub">Not another red-and-green screener — a whole-market engine that fuses price action with the filings, short interest and money flow that actually move stocks.</div>
     </div>
@@ -6829,7 +6829,7 @@ def page_landing():
     # ── FAQ ──
     st.markdown('<div style="padding:0 48px;"><div class="sec-hd">FAQ</div>',unsafe_allow_html=True)
     for q,a in [
-        ("Is this financial advice?","No. MarketSignalPro is an educational analysis tool that produces algorithmic signals. Nothing here is financial, investment, legal or tax advice. Always do your own research and consult a licensed professional before making investment decisions."),
+        ("Is this financial advice?","No. Scanviction is an educational analysis tool that produces algorithmic signals. Nothing here is financial, investment, legal or tax advice. Always do your own research and consult a licensed professional before making investment decisions."),
         ("What is the Conviction Score?","A single 0-100 number that blends six independent edges - technical strength, money flow, relative strength versus the market, trend strength, short-squeeze fuel and valuation (plus insider buying when it's present). Higher means a stronger, more confident setup, and it makes very different stocks directly comparable."),
         ("What are the signal categories?","20 distinct, non-overlapping setups - momentum, breakouts, volatility squeezes, reversals, capitulation bottoms, short squeezes, insider clusters, quiet accumulation and more. Each stock is assigned to only its single best-fit category, so a flagged name means one clear thing."),
         ("What data and markets do you cover?","The most liquid U.S. stocks (NASDAQ, NYSE, S&P 500, Russell and high-volume small caps), scored on live Polygon market data plus SEC EDGAR filings (insider Form 4 buys and 8-K catalysts), FINRA short interest and short volume, and a FRED-based market-regime read."),
@@ -6891,13 +6891,13 @@ def page_features():
     st.markdown(f"""
     <div style="text-align:center;padding:40px 0 32px;">
         <div style="font-size:11px;font-weight:700;color:{BLUE};letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Full Platform Overview</div>
-        <div style="font-size:38px;font-weight:900;color:#f1f5f9;letter-spacing:-1.5px;margin-bottom:10px;">Everything in MarketSignalPro</div>
+        <div style="font-size:38px;font-weight:900;color:#f1f5f9;letter-spacing:-1.5px;margin-bottom:10px;">Everything in Scanviction</div>
         <div style="font-size:15px;color:#374f6e;max-width:560px;margin:0 auto;">Built for traders who want data-driven clarity — not noise. Every feature is designed to answer one question: <em>should I pay attention to this stock right now?</em></div>
     </div>
     """, unsafe_allow_html=True)
 
     features_data = [
-        ("🎯","Proprietary Composite Scoring","17 unique composite categories combining RSI, MACD, volume, short interest, social sentiment, and Bollinger Bands into single actionable signals. Categories like '🔥💥 Squeeze + Buzz', '🌪️ Volatility Squeeze', and '🎯📊 Triple Lock' are only available on MarketSignalPro. Each category has a specific multi-factor entry criterion that filters our full universe in real time.","All plans"),
+        ("🎯","Proprietary Composite Scoring","17 unique composite categories combining RSI, MACD, volume, short interest, social sentiment, and Bollinger Bands into single actionable signals. Categories like '🔥💥 Squeeze + Buzz', '🌪️ Volatility Squeeze', and '🎯📊 Triple Lock' are only available on Scanviction. Each category has a specific multi-factor entry criterion that filters our full universe in real time.","All plans"),
         ("🟢","BUY / WATCH / AVOID Signals","Every stock gets a clear recommendation based on our scoring engine — STRONG BUY, BUY, SQUEEZE BUY, WATCH, HOLD/WAIT, or AVOID — with plain-English reasoning explaining exactly why the signal was triggered. No jargon. No unexplained scores.","All plans"),
         ("💡","Plain-English Technical Analysis","RSI, MACD, moving average crossovers, Bollinger Bands, and volume spikes all translated into conversational sentences. We explain what a Golden Cross means in terms a beginner understands while still giving experts the data they need.","All plans"),
         ("📡","Live Social Sentiment","Real-time StockTwits data showing bullish/bearish % for any stock, watchlist counts, and trending detection. Our composite categories use this data to find early momentum before price moves.","All plans"),
@@ -6910,7 +6910,7 @@ def page_features():
         ("📉→📈","Deep Stock Reports","Full stock detail pages with 60-day price chart + MA20/MA50 overlaid, volume bar chart vs average, complete plain-English analysis, social sentiment bar, score breakdown, why-flagged section, and related stocks.","Premium (charts)"),
         ("🎪","Email Digest (Coming Q3 2026)","Daily or weekly digest of your top-scored watchlist stocks, new BUY signals, and trending composite category alerts delivered to your inbox. Configurable from account settings.","Premium"),
         ("🛠️","Admin Panel","Full user management (promote/demote roles, delete accounts), API configuration with Twelve Data integration, site analytics with simulated growth charts, data source health monitoring, and security checklist with Streamlit Secrets setup guide.","Admin/Owner"),
-        ("🔑","Ranking Controls","Sort and filter any category by MarketSignalPro Score, % change today, volume ratio, short float, or social sentiment. Drag-and-drop ranking priority controls for power users.","Premium"),
+        ("🔑","Ranking Controls","Sort and filter any category by Scanviction Score, % change today, volume ratio, short float, or social sentiment. Drag-and-drop ranking priority controls for power users.","Premium"),
         ("🔐","Secure Authentication","Passwords stored as SHA-256 hashes. Credentials loaded exclusively from Streamlit Cloud Secrets — never hardcoded. Supports both flat secrets and [accounts] section format.","All plans"),
     ]
 
@@ -6951,7 +6951,7 @@ def page_login():
         # artifact — every form here DOES have a submit button). Scoped to THIS form via the keyed
         # container, and real errors are rendered OUTSIDE the form (below) so they still show.
         st.markdown("<style>.st-key-loginbox [data-testid='stForm'] [data-testid='stAlert']{display:none!important;}</style>", unsafe_allow_html=True)
-        st.markdown(f'<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Welcome Back 👋</div><div style="font-size:13px;color:#374f6e;">Sign in to your MarketSignalPro account</div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align:center;padding:36px 0 24px;"><div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Welcome Back 👋</div><div style="font-size:13px;color:#374f6e;">Sign in to your Scanviction account</div></div>',unsafe_allow_html=True)
         with st.container(key="loginbox"):
             with st.form("lf",clear_on_submit=False):
                 email=st.text_input("Email address",label_visibility="visible")
@@ -6983,7 +6983,7 @@ def page_login():
         # Demo-account hint ONLY on a non-production instance (no owner secrets). In production
         # (owner secrets set) show nothing — real users sign in with their own account.
         if not has_secrets:
-            st.markdown(f'<div style="background:#080b14;border:1px solid {BORDER};border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;color:#374f6e;"><span style="color:#a5b4fc;font-weight:600;">Demo accounts:</span><br><span style="font-family:\'JetBrains Mono\',monospace;">demo@marketsignalpro.com</span> / <span style="font-family:\'JetBrains Mono\',monospace;">demo123</span><br><span style="font-family:\'JetBrains Mono\',monospace;">premium@marketsignalpro.com</span> / <span style="font-family:\'JetBrains Mono\',monospace;">premium1</span></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="background:#080b14;border:1px solid {BORDER};border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;color:#374f6e;"><span style="color:#a5b4fc;font-weight:600;">Demo accounts:</span><br><span style="font-family:\'JetBrains Mono\',monospace;">demo@scanviction.com</span> / <span style="font-family:\'JetBrains Mono\',monospace;">demo123</span><br><span style="font-family:\'JetBrains Mono\',monospace;">premium@scanviction.com</span> / <span style="font-family:\'JetBrains Mono\',monospace;">premium1</span></div>',unsafe_allow_html=True)
 
         st.markdown("<br>",unsafe_allow_html=True)
         bc1,bc2=st.columns(2,gap="small")
@@ -7014,7 +7014,7 @@ def page_signup():
             email=st.text_input("Email",placeholder="you@example.com")
             pw=st.text_input("Password",type="password",placeholder="Min 6 characters")
             pw2=st.text_input("Confirm password",type="password")
-            agree=st.checkbox("I agree to the Terms of Service. I understand MarketSignalPro is for educational purposes only and is not financial advice.")
+            agree=st.checkbox("I agree to the Terms of Service. I understand Scanviction is for educational purposes only and is not financial advice.")
             with st.container(key="su_hpbox"):   # honeypot — invisible to humans
                 _hp_val=st.text_input("Company (leave this blank)",key="su_company",label_visibility="collapsed")
             _submit=st.form_submit_button("Create Free Account →",type="primary",use_container_width=True)
@@ -7051,7 +7051,7 @@ def page_signup():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def _send_telegram(chat_id, message):
-    """Send a Telegram message via the MarketSignalPro bot. Returns (True, None) or (False, error)."""
+    """Send a Telegram message via the Scanviction bot. Returns (True, None) or (False, error)."""
     try:
         bot_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
         if not bot_token or not chat_id:
@@ -7100,18 +7100,18 @@ def _send_push_notification(player_ids, title, message, url=None):
         return False, str(e)
 
 def _email_shell(inner):
-    """Wrap email body content in the branded MarketSignalPro dark shell (logo + footer)."""
+    """Wrap email body content in the branded Scanviction dark shell (logo + footer)."""
     return (
         '<div style="font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
         'background:#07090f;margin:0;padding:0;">'
         '<div style="max-width:520px;margin:0 auto;padding:40px 30px;">'
         '<div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;margin-bottom:22px;">'
-        '<span style="color:#e2e8f0;">Market</span><span style="color:#f59e0b;">Signal</span>'
+        '<span style="color:#e2e8f0;">Scan</span><span style="color:#f59e0b;">viction</span>'
         '<span style="color:#e2e8f0;">Pro</span></div>'
         + inner +
         '<div style="font-size:11px;color:#2a3a52;text-align:center;margin-top:22px;line-height:1.6;">'
         'Educational signals only — not financial advice. Past performance ≠ future results.<br>'
-        '&copy; MarketSignalPro</div></div></div>')
+        '&copy; Scanviction</div></div></div>')
 
 def _verify_email_html(code):
     """Welcoming, on-brand verification email that sells the product + carries the code."""
@@ -7123,7 +7123,7 @@ def _verify_email_html(code):
         '<div style="font-size:25px;font-weight:800;color:#f1f5f9;line-height:1.22;margin-bottom:12px;">'
         'The whole market, ranked by conviction \U0001F680</div>'
         '<div style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:24px;">'
-        "You're in. MarketSignalPro scores ~2,500 of the most liquid U.S. stocks across 20+ signal "
+        "You're in. Scanviction scores ~2,500 of the most liquid U.S. stocks across 20+ signal "
         'categories every session — momentum leaders, breakouts, volatility squeezes, insider '
         'clusters and more — so the strongest setups surface first, in plain English. Confirm your '
         'email and your Top Signals feed goes live.</div>'
@@ -7146,7 +7146,7 @@ def _reset_email_html(email, reset_url):
         '<div style="font-size:24px;font-weight:800;color:#f1f5f9;line-height:1.25;margin-bottom:14px;">'
         'Reset your password \U0001F511</div>'
         '<div style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:10px;">We received a '
-        'request to reset the password for your MarketSignalPro account:</div>'
+        'request to reset the password for your Scanviction account:</div>'
         f'<div style="font-size:14px;font-weight:700;color:#a5b4fc;background:#080b14;border:1px solid '
         f'#1c2440;border-radius:8px;padding:11px 14px;margin-bottom:22px;word-break:break-all;">{_esc(email)}</div>'
         f'<a href="{reset_url}" style="display:block;text-align:center;padding:13px 24px;background:#6366f1;'
@@ -7170,8 +7170,8 @@ def _send_password_reset(email, reset_token):
             html = _reset_email_html(email, reset_url)
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <support@marketsignalpro.com>"),"to":[email],
-                      "subject":"Reset your MarketSignalPro password","html":html},
+                json={"from":st.secrets.get("EMAIL_FROM","Scanviction <support@scanviction.com>"),"to":[email],
+                      "subject":"Reset your Scanviction password","html":html},
                 timeout=10)
             if resp.status_code in (200,201): return True, None
     except Exception: pass
@@ -7185,10 +7185,10 @@ def _send_verification_email(email, code):
             import requests as _r
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <support@marketsignalpro.com>"),"to":[email],
-                      "subject":"Your MarketSignalPro verification code",
+                json={"from":st.secrets.get("EMAIL_FROM","Scanviction <support@scanviction.com>"),"to":[email],
+                      "subject":"Your Scanviction verification code",
                       "html":f"""<div style="font-family:Inter,sans-serif;background:#07090f;padding:40px;color:#e2e8f0;">
-                        <h2>Market<span style="color:#f59e0b;">Signal</span>Pro</h2>
+                        <h2>Scan<span style="color:#f59e0b;">viction</span></h2>
                         <h3>Verify your email</h3>
                         <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:#6366f1;padding:20px;background:#0d1525;border-radius:12px;text-align:center;">{code}</div>
                         <p style="color:#6b7fa0;margin-top:20px;">Expires in 10 minutes.</p>
@@ -7206,8 +7206,8 @@ def _send_verification_email_bg(email, code):
     when no key is configured (so the verify page can still show the code)."""
     try: resend_key = st.secrets.get("RESEND_API_KEY", "")
     except Exception: resend_key = ""
-    try: email_from = st.secrets.get("EMAIL_FROM", "MarketSignalPro <support@marketsignalpro.com>")
-    except Exception: email_from = "MarketSignalPro <support@marketsignalpro.com>"
+    try: email_from = st.secrets.get("EMAIL_FROM", "Scanviction <support@scanviction.com>")
+    except Exception: email_from = "Scanviction <support@scanviction.com>"
     if not resend_key:
         return False, f"DEMO_CODE:{code}"
     html = _verify_email_html(code)
@@ -7217,7 +7217,7 @@ def _send_verification_email_bg(email, code):
             _r.post("https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
                 json={"from": email_from, "to": [email],
-                      "subject": "Welcome to MarketSignalPro — confirm your email", "html": html},
+                      "subject": "Welcome to Scanviction — confirm your email", "html": html},
                 timeout=15)
         except Exception:
             pass
@@ -7225,7 +7225,7 @@ def _send_verification_email_bg(email, code):
     _t.Thread(target=_bg, name="msp-verify-email", daemon=True).start()
     return True, None
 
-SUPPORT_EMAIL = "support@marketsignalpro.com"
+SUPPORT_EMAIL = "support@scanviction.com"
 
 def _send_support_email(name, from_email, subject, message):
     """Deliver a contact-form message to SUPPORT_EMAIL via Resend (reply-to = the
@@ -7246,7 +7246,7 @@ def _send_support_email(name, from_email, subject, message):
                     f'<div style="white-space:pre-wrap;color:#222;line-height:1.6;">{esc(message)}</div></div>')
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-                json={"from": st.secrets.get("EMAIL_FROM", "MarketSignalPro <support@marketsignalpro.com>"),
+                json={"from": st.secrets.get("EMAIL_FROM", "Scanviction <support@scanviction.com>"),
                       "to": [SUPPORT_EMAIL], "reply_to": (from_email or SUPPORT_EMAIL),
                       "subject": f"[Support] {subject or 'New message'}", "html": html},
                 timeout=10)
@@ -7360,7 +7360,7 @@ def _render_onboarding():
     st.markdown(f"""<div class="card" style="border-left:3px solid {GOLD};margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <div style="font-size:14px;font-weight:800;color:#e2e8f0;">🚀 Get started ({done}/3)</div>
-          <div style="font-size:11px;color:#5d6b86;">~1 minute — the quickest tour of how MarketSignalPro works</div>
+          <div style="font-size:11px;color:#5d6b86;">~1 minute — the quickest tour of how Scanviction works</div>
         </div>
         <div style="font-size:12px;color:#6b7fa0;margin-bottom:9px;">We score ~2,500 US stocks every day and rank them by conviction. Here's how to put that to work:</div>
         {_row(s2, "Head to <b>Discover</b>, open a stock, and check its <b>conviction breakdown</b> + <b>% since we flagged it</b>")}
@@ -8700,7 +8700,7 @@ def page_detail():
         sc_bg="#04200d" if sc>=65 else "#1a1000" if sc>=40 else "#200404"
         st.markdown(f"""<div style="background:{sc_bg};border:1px solid {sc_c};border-radius:10px;padding:16px;text-align:center;">
 <div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:800;color:{sc_c};">{sc}</div>
-<div style="font-size:10px;color:{sc_c};text-transform:uppercase;letter-spacing:1px;margin-top:2px;">MarketSignalPro Score</div>
+<div style="font-size:10px;color:{sc_c};text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Scanviction Score</div>
 <div style="font-size:11px;color:#2a3a52;margin-top:4px;">{op}</div>
 </div>""", unsafe_allow_html=True)
 
@@ -8767,7 +8767,7 @@ def page_detail():
                 if _cat in EVENT_ALERT_TYPES:
                     _sub = _rec or "Filing / data event"
                 else:
-                    # score_at_trigger is the composite MarketSignalPro Score (sc) for a category
+                    # score_at_trigger is the composite Scanviction Score (sc) for a category
                     # entry — label it "Score" (matching the header) and contrast it with the LIVE
                     # sc, the SAME metric (NOT the differently-scaled conviction_score). Makes the
                     # "at signal → now" an apples-to-apples decay and the chip read as historical.
@@ -8879,12 +8879,12 @@ def page_detail():
 
     st.markdown(f"""
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div style="font-size:16px;font-weight:800;color:#e2e8f0;">📈 MarketSignalPro Signal Track Record</div>
+        <div style="font-size:16px;font-weight:800;color:#e2e8f0;">📈 Scanviction Signal Track Record</div>
         <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);
               font-size:10px;font-weight:700;padding:4px 12px;border-radius:20px;">Proprietary Data</span>
     </div>
     <div style="font-size:12px;color:#374f6e;margin-bottom:14px;">
-        Every time MarketSignalPro flagged <strong style="color:#818cf8;">{ticker}</strong> via a composite signal,
+        Every time Scanviction flagged <strong style="color:#818cf8;">{ticker}</strong> via a composite signal,
         we tracked what actually happened. Use this to evaluate signal quality.
     </div>
     """, unsafe_allow_html=True)
@@ -8965,7 +8965,7 @@ def page_detail():
     st.markdown(f"""
     <div style="font-size:16px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Signal Performance</div>
     <div style="font-size:12px;color:#374f6e;margin-bottom:14px;">
-        How {ticker} has moved since today's MarketSignalPro signal — the percent return, long or short.
+        How {ticker} has moved since today's Scanviction signal — the percent return, long or short.
         <span style="color:{GOLD};"> Educational only — not financial advice.</span>
     </div>
     """, unsafe_allow_html=True)
@@ -8987,7 +8987,7 @@ def page_detail():
             days_held = (datetime.now() - datetime.fromisoformat(most_recent.get("triggered_at", datetime.now().isoformat()))).days
             signal_date = datetime.fromisoformat(most_recent.get("triggered_at", datetime.now().isoformat())).strftime("%b %d, %Y")
             tracked = (most_recent.get("outcomes") or {}).get("current_pct")
-            st.caption(f"Measured from the MarketSignalPro signal on {signal_date} · Entry ${entry_price:.2f}")
+            st.caption(f"Measured from the Scanviction signal on {signal_date} · Entry ${entry_price:.2f}")
         else:
             entry_price = price
             days_held = 0
@@ -9288,12 +9288,12 @@ def page_signal_track():
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
         <div>
             <div style="font-size:24px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">\U0001F4C9 Signal Track Record</div>
-            <div style="font-size:13px;color:#374f6e;">Every recommendation MarketSignalPro surfaces is logged with its entry price and timestamp,
+            <div style="font-size:13px;color:#374f6e;">Every recommendation Scanviction surfaces is logged with its entry price and timestamp,
             then scored at 1 / 3 / 5 / 10 / 30-day horizons against a +/-3% threshold and vs the S&P 500.</div>
         </div>
         <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);
               font-size:11px;font-weight:700;padding:6px 14px;border-radius:20px;margin-top:4px;">
-            \u2728 Proprietary MarketSignalPro Data
+            \u2728 Proprietary Scanviction Data
         </span>
     </div>
     """, unsafe_allow_html=True)
@@ -9604,7 +9604,7 @@ def page_bi():
     with tabs[4]:
         st.markdown(f"""<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
             <div style="font-size:16px;font-weight:700;color:#e2e8f0;">🎯 Composite Opportunity Matrix</div>
-            <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;">MarketSignalPro Exclusive</span>
+            <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;">Scanviction Exclusive</span>
         </div>
         <div style="font-size:12px;color:#374f6e;margin-bottom:14px;">Signal strength across 10 tickers × 5 signal types. Darker green = stronger signal.</div>""",unsafe_allow_html=True)
         matrix_tickers=["NVDA","TSLA","AMD","AAPL","MSTR","GME","PLTR","META","MSFT","ARM"]
@@ -9677,7 +9677,7 @@ def page_bi():
     # ── Module 7: Risk vs Reward Quadrant ──
     with tabs[6]:
         st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">🌪️ Risk vs Reward Quadrant</div>',unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Stocks plotted by MarketSignalPro score (reward) vs volatility (risk). Top-right = best opportunities.</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">Stocks plotted by Scanviction score (reward) vs volatility (risk). Top-right = best opportunities.</div>',unsafe_allow_html=True)
         if not is_premium():
             st.markdown(f'<div class="card card-gold"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Analytics</div></div>',unsafe_allow_html=True)
             if gold_btn("Upgrade for Risk Analysis","bi_rr_up"): nav("pricing")
@@ -9709,13 +9709,13 @@ def page_bi():
                 fig.add_annotation(x=df_rr["vol"].min()*1.1,y=15,text="😴 LOW/LOW",showarrow=False,font=dict(color="#6b7fa0",size=10))
                 fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=20,t=10,b=20),height=440,
                     xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#94a3b8",title="Volatility (Risk) %"),
-                    yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#94a3b8",title="MarketSignalPro Score (Reward)",range=[0,105]))
+                    yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,0.04)",color="#94a3b8",title="Scanviction Score (Reward)",range=[0,105]))
                 st.plotly_chart(fig,use_container_width=True)
 
     # ── Module 8: Score Distribution ──
     with tabs[7]:
         st.markdown(f'<div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">📊 Score Distribution</div>',unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">How tickers in the MarketSignalPro universe distribute by composite score.</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-bottom:12px;">How tickers in the Scanviction universe distribute by composite score.</div>',unsafe_allow_html=True)
         if not is_premium():
             st.markdown(f'<div class="card card-gold"><div style="font-size:13px;font-weight:700;color:{GOLD};margin-bottom:6px;">👑 Premium Analytics</div></div>',unsafe_allow_html=True)
             if gold_btn("Upgrade for Distribution Analysis","bi_sd_up"): nav("pricing")
@@ -9816,7 +9816,7 @@ def page_bi():
 
     # ── TAB 11: Signal Performance (recommendation lifecycle analytics) ──
     with tabs[10]:
-        st.markdown('<div style="font-size:13px;color:#6b7fa0;margin-bottom:12px;">How MarketSignalPro\'s own recommendations have performed — '
+        st.markdown('<div style="font-size:13px;color:#6b7fa0;margin-bottom:12px;">How Scanviction\'s own recommendations have performed — '
                     'win rate and outcome mix by category, scored against the configurable horizon. Powered by the historical labeling engine.</div>',
                     unsafe_allow_html=True)
         sp_hz = st.radio("Horizon", HORIZONS, index=2, horizontal=True,
@@ -10100,7 +10100,7 @@ def page_watchlist():
                 best_cmp = max(cmp_data, key=lambda x: x["Score"])
                 st.markdown(f"""<div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);
                             border-radius:10px;padding:12px 16px;margin-top:14px;text-align:center;font-size:12px;color:#4ade80;">
-                    🏆 <strong>{best_cmp['Ticker']}</strong> has the highest MarketSignalPro score in this comparison
+                    🏆 <strong>{best_cmp['Ticker']}</strong> has the highest Scanviction score in this comparison
                     ({best_cmp['Score']}/100, {best_cmp['Signal']})
                 </div>""", unsafe_allow_html=True)
             else:
@@ -10666,7 +10666,7 @@ def page_pricing():
         st.markdown(f"""<div style="background:#0e1421;border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:12px;color:#374f6e;">
         ⚙️ <strong style="color:{GOLD};">Payment processing not yet configured.</strong>
         Add <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PRICE_MONTHLY</code>, <code>STRIPE_PRICE_ANNUAL</code>, <code>APP_URL</code> to Streamlit Secrets, then reboot.
-        In the meantime email <span style="color:#a5b4fc;font-weight:600;">support@marketsignalpro.com</span> to upgrade manually.
+        In the meantime email <span style="color:#a5b4fc;font-weight:600;">support@scanviction.com</span> to upgrade manually.
         </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="disc" style="margin-top:14px;">⚠️ Educational platform only. Not financial advice. Trading involves risk.</div>', unsafe_allow_html=True)
@@ -10827,7 +10827,7 @@ def page_settings():
                             const subId = OneSignal.User.PushSubscription.id;
                             // Tag the user with their email for targeting
                             await OneSignal.login("{email}");
-                            status.innerHTML = "✅ Push enabled! Registering with MarketSignalPro...";
+                            status.innerHTML = "✅ Push enabled! Registering with Scanviction...";
                             // Redirect with push_sub_id so the Python backend can save it
                             setTimeout(() => {{
                                 window.location.href = window.location.pathname + "?push_sub_id=" + encodeURIComponent(subId);
@@ -10963,7 +10963,7 @@ def page_settings():
                         # has tapped Start (Telegram refuses the send otherwise), so a successful
                         # test message is proof of a genuine connection. Only persist + show
                         # "connected" when it actually delivers — never save an unverified ID.
-                        ok, info = _send_telegram(clean, "✅ <b>MarketSignalPro Telegram alerts connected!</b>\n\nYou'll get instant alerts here.")
+                        ok, info = _send_telegram(clean, "✅ <b>Scanviction Telegram alerts connected!</b>\n\nYou'll get instant alerts here.")
                         if ok:
                             st.session_state.users_db[email]["telegram_chat_id"] = clean
                             _save_global_db(st.session_state.users_db)
@@ -11170,7 +11170,7 @@ def page_settings():
                             st.error("Chat ID must be a number (not the bot token).")
                         else:
                             # Validate via a real test send — only mark connected if it delivers.
-                            _ok,_info=_send_telegram(_clean,"✅ <b>MarketSignalPro Telegram alerts connected!</b>\n\nYou'll get your signal alerts here.")
+                            _ok,_info=_send_telegram(_clean,"✅ <b>Scanviction Telegram alerts connected!</b>\n\nYou'll get your signal alerts here.")
                             if _ok:
                                 st.session_state.users_db[uemail]["telegram_chat_id"]=_clean
                                 save_user_to_file(uemail, st.session_state.users_db[uemail])
@@ -11330,7 +11330,7 @@ def page_settings():
                         st.error(err)
                 st.markdown(f'<div style="font-size:12px;color:#374f6e;margin-top:8px;line-height:1.7;">The billing portal lets you: update payment method · view invoices · cancel subscription · download receipts</div>',unsafe_allow_html=True)
             else:
-                st.markdown(f'<div style="background:#0e1421;border:1px solid {BORDER};border-radius:7px;padding:12px 14px;font-size:12px;color:#374f6e;">To manage your subscription, email <span style="color:#a5b4fc;font-weight:600;">support@marketsignalpro.com</span></div>',unsafe_allow_html=True)
+                st.markdown(f'<div style="background:#0e1421;border:1px solid {BORDER};border-radius:7px;padding:12px 14px;font-size:12px;color:#374f6e;">To manage your subscription, email <span style="color:#a5b4fc;font-weight:600;">support@scanviction.com</span></div>',unsafe_allow_html=True)
 
         if is_premium():
             st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
@@ -11619,8 +11619,8 @@ def page_admin():
             <div style="font-size:12px;color:#374f6e;line-height:2.0;">
             <strong style="color:#e2e8f0;">1. Create a Stripe account</strong> at <a href="https://stripe.com" target="_blank" style="color:#a5b4fc;">stripe.com</a><br>
             <strong style="color:#e2e8f0;">2. Create Products & Prices</strong> in Stripe Dashboard → Products:<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• MarketSignalPro Premium Monthly → Recurring $19/mo → copy Price ID<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• MarketSignalPro Annual Plan → Recurring $149/yr → copy Price ID<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• Scanviction Premium Monthly → Recurring $19/mo → copy Price ID<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• Scanviction Annual Plan → Recurring $149/yr → copy Price ID<br>
             <strong style="color:#e2e8f0;">3. Get your Secret Key</strong> from Stripe Dashboard → Developers → API Keys<br>
             <strong style="color:#e2e8f0;">4. Add to Streamlit Secrets</strong> (Settings → Secrets in your app dashboard):<br>
             </div>
@@ -11638,7 +11638,7 @@ APP_URL = "https://your-app.streamlit.app"</pre>
         st.markdown(f"""<div class="card card-blue" style="margin-top:8px;">
             <div style="font-size:12px;font-weight:700;color:#a5b4fc;margin-bottom:6px;">⚠️ Webhook Note for Streamlit</div>
             <div style="font-size:12px;color:#374f6e;line-height:1.8;">
-            Streamlit Community Cloud can't receive webhooks directly. MarketSignalPro uses <strong style="color:#e2e8f0;">Checkout Session verification</strong> on the success redirect URL instead. This handles new subscriptions reliably.<br>
+            Streamlit Community Cloud can't receive webhooks directly. Scanviction uses <strong style="color:#e2e8f0;">Checkout Session verification</strong> on the success redirect URL instead. This handles new subscriptions reliably.<br>
             For subscription renewals, cancellations, and failed payments in production, you have two options:<br>
             • <strong style="color:#e2e8f0;">Option A</strong>: Add a lightweight webhook endpoint (Flask/FastAPI on Render.com, free tier) that updates a shared DB<br>
             • <strong style="color:#e2e8f0;">Option B</strong>: Use Stripe's <code style="background:#0e1421;color:#a5b4fc;">payment_behavior: allow_incomplete</code> + manual user verification via the Users tab<br>
@@ -11794,9 +11794,9 @@ def _send_verification_email(email, code):
             import requests as _r
             resp = _r.post("https://api.resend.com/emails",
                 headers={"Authorization":f"Bearer {resend_key}","Content-Type":"application/json"},
-                json={"from":st.secrets.get("EMAIL_FROM","MarketSignalPro <support@marketsignalpro.com>"),
+                json={"from":st.secrets.get("EMAIL_FROM","Scanviction <support@scanviction.com>"),
                       "to":[email],
-                      "subject":"Welcome to MarketSignalPro — confirm your email",
+                      "subject":"Welcome to Scanviction — confirm your email",
                       "html":_verify_email_html(code)})
             if resp.status_code in (200,201): return True,None
             return False, f"Email send failed: {resp.text}"
@@ -11843,7 +11843,7 @@ def page_verify_email():
                         st.session_state.pop(k,None)
                     st.session_state["_signup_success"] = udata.get("name","")
                     track_event("signup_verified", {"email": uemail})
-                    st.success("✅ Email verified! Welcome to MarketSignalPro.")
+                    st.success("✅ Email verified! Welcome to Scanviction.")
                     time.sleep(0.3)
                     nav("dashboard")
                 else:
@@ -11878,7 +11878,7 @@ def _legal_shell(title, updated, body_html, key):
       <h1 style="font-size:28px;font-weight:800;color:#e2e8f0;margin-bottom:2px;">{title}</h1>
       <div style="font-size:12px;color:#5d6b86;margin-bottom:14px;">Last updated: {updated}</div>
       <div style="background:#0e1421;border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px 14px;font-size:12px;color:#94a3b8;margin-bottom:6px;">
-        MarketSignalPro is an <strong>educational software and market-data tool</strong> — <strong>not</strong> investment,
+        Scanviction is an <strong>educational software and market-data tool</strong> — <strong>not</strong> investment,
         financial, legal, or tax advice. We are not a registered investment adviser or broker-dealer.
       </div>
       <div style="font-size:14px;color:#c5cfdd;line-height:1.7;">{body_html}</div>
@@ -11892,8 +11892,8 @@ def page_terms():
     _mail = f'<a href="mailto:{SUPPORT_EMAIL}" style="color:#818cf8;text-decoration:none;">{SUPPORT_EMAIL}</a>'
     body = (
         _lsec(1, "Acceptance of these Terms",
-              'By creating an account or using MarketSignalPro (the "Service"), you agree to these Terms of Service. If you do not agree, do not use the Service.')
-        + _lsec(2, "What MarketSignalPro is — and is not",
+              'By creating an account or using Scanviction (the "Service"), you agree to these Terms of Service. If you do not agree, do not use the Service.')
+        + _lsec(2, "What Scanviction is — and is not",
               'The Service provides algorithmic, <strong>educational</strong> market data, technical-analysis "signals," screening, watchlists, and alerts covering U.S.-listed securities. The same rules-based information is published to all subscribers.',
               'The Service is <strong>not</strong> investment, financial, legal, or tax advice, is <strong>not</strong> tailored to your personal circumstances, and creates no advisory or fiduciary relationship. We do not manage money, hold customer funds, execute trades, or tell any specific person to buy or sell any security. You are solely responsible for your own investment decisions.')
         + _lsec(3, "Eligibility",
@@ -11908,15 +11908,15 @@ def page_terms():
         + _lsec(7, "Acceptable use",
               'You agree not to resell or redistribute the Service or its data; scrape, crawl, or bulk-export content except as expressly permitted; reverse engineer or disrupt the Service; or use it for any unlawful purpose, including trading on material non-public information.')
         + _lsec(8, "Intellectual property",
-              'The Service, its content, scores, and software are owned by MarketSignalPro and protected by law. We grant you a limited, personal, non-transferable license to use the Service for your own individual purposes.')
+              'The Service, its content, scores, and software are owned by Scanviction and protected by law. We grant you a limited, personal, non-transferable license to use the Service for your own individual purposes.')
         + _lsec(9, "Market data",
               'Prices, filings, and third-party inputs (e.g., exchange data, SEC filings, short-interest and sentiment data) are provided by third parties, may be <strong>delayed, incomplete, or inaccurate</strong>, and are used on an as-available basis. We do not guarantee the accuracy, timeliness, or completeness of any data or signal.')
         + _lsec(10, "No warranties",
               'The Service is provided "AS IS" and "AS AVAILABLE," without warranties of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that any signal will be profitable or that the Service will be uninterrupted or error-free.')
         + _lsec(11, "Limitation of liability",
-              'To the maximum extent permitted by law, MarketSignalPro and its operators will not be liable for any trading or investment losses, or for any indirect, incidental, special, or consequential damages. Our total liability for any claim will not exceed the amount you paid us in the 12 months before the claim.')
+              'To the maximum extent permitted by law, Scanviction and its operators will not be liable for any trading or investment losses, or for any indirect, incidental, special, or consequential damages. Our total liability for any claim will not exceed the amount you paid us in the 12 months before the claim.')
         + _lsec(12, "Indemnification",
-              'You agree to indemnify and hold MarketSignalPro harmless from claims arising out of your use of the Service or your violation of these Terms.')
+              'You agree to indemnify and hold Scanviction harmless from claims arising out of your use of the Service or your violation of these Terms.')
         + _lsec(13, "Termination",
               'We may suspend or terminate accounts that violate these Terms or that we reasonably believe create risk. You may stop using the Service and delete your account at any time.')
         + _lsec(14, "Changes to these Terms",
@@ -11972,7 +11972,7 @@ def page_contact():
             <div style="font-size:28px;margin-bottom:10px;">📧</div>
             <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">Email Support</div>
             <div style="font-size:12px;color:#374f6e;margin-bottom:12px;">For account, billing, and general questions</div>
-            <div style="font-size:13px;font-weight:700;color:#a5b4fc;">support@marketsignalpro.com</div>
+            <div style="font-size:13px;font-weight:700;color:#a5b4fc;">support@scanviction.com</div>
             <div style="font-size:11px;color:#2a3a52;margin-top:6px;">Use the form below ↓ · reply within 24h</div>
         </div>''',unsafe_allow_html=True)
     with top2:
@@ -12020,12 +12020,12 @@ def page_contact():
 
     st.markdown("<br>",unsafe_allow_html=True)
     st.markdown('<div class="sec-hd">💬 AI Support Assistant</div>',unsafe_allow_html=True)
-    st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:14px;">Ask anything about MarketSignalPro — features, categories, signals, billing, or how to use the platform.</div>',unsafe_allow_html=True)
+    st.markdown('<div style="font-size:12px;color:#374f6e;margin-bottom:14px;">Ask anything about Scanviction — features, categories, signals, billing, or how to use the platform.</div>',unsafe_allow_html=True)
 
     # Chat history
     if "support_chat" not in st.session_state:
         st.session_state.support_chat = [
-            {"role":"assistant","content":"Hi! I'm the MarketSignalPro support assistant. I can help with questions about the platform, our composite signal categories, billing, features, or anything else. What can I help you with today?"}
+            {"role":"assistant","content":"Hi! I'm the Scanviction support assistant. I can help with questions about the platform, our composite signal categories, billing, features, or anything else. What can I help you with today?"}
         ]
 
     # Display chat
@@ -12052,7 +12052,7 @@ def page_contact():
             with st.spinner(""):
                 try:
                     import requests as _r
-                    sys_prompt = """You are the MarketSignalPro support assistant. MarketSignalPro is a premium stock-signal web app for retail traders.
+                    sys_prompt = """You are the Scanviction support assistant. Scanviction is a premium stock-signal web app for retail traders.
 
 WHAT IT DOES
 - Scans ~2,500 of the most liquid U.S. stocks every session and scores each 0–100 (the "Conviction Score") by blending live price action, SEC insider filings, FINRA short interest and money flow.
@@ -12077,7 +12077,7 @@ PLANS
 - Annual $149/yr: everything in Premium + priority support, CSV export, early access.
 - Billing is via Stripe (in-page checkout). Cancel anytime in Settings → Subscription.
 
-IMPORTANT: signals are algorithmic and EDUCATIONAL ONLY — never financial advice. If asked for a specific buy/sell call or investment advice, give general educational context, remind them it's not financial advice, and suggest a licensed advisor. For billing/account issues, point them to the contact form above or support@marketsignalpro.com.
+IMPORTANT: signals are algorithmic and EDUCATIONAL ONLY — never financial advice. If asked for a specific buy/sell call or investment advice, give general educational context, remind them it's not financial advice, and suggest a licensed advisor. For billing/account issues, point them to the contact form above or support@scanviction.com.
 
 Be helpful, concise and friendly."""
                     msgs = [{"role":m["role"],"content":m["content"]} for m in st.session_state.support_chat]
@@ -12085,7 +12085,7 @@ Be helpful, concise and friendly."""
                     try: anth_key = st.secrets.get("ANTHROPIC_API_KEY","")
                     except: anth_key = ""
                     if not anth_key:
-                        answer = "Support chat requires ANTHROPIC_API_KEY in Streamlit Secrets. In the meantime, email support@marketsignalpro.com — we respond within 24 hours!"
+                        answer = "Support chat requires ANTHROPIC_API_KEY in Streamlit Secrets. In the meantime, email support@scanviction.com — we respond within 24 hours!"
                     else:
                         resp = _r.post("https://api.anthropic.com/v1/messages",
                             headers={"Content-Type":"application/json",
@@ -12097,9 +12097,9 @@ Be helpful, concise and friendly."""
                         if resp.status_code==200:
                             answer = resp.json()["content"][0]["text"]
                         else:
-                            answer = f"I'm having trouble right now (status {resp.status_code}). Please email support@marketsignalpro.com for immediate help."
+                            answer = f"I'm having trouble right now (status {resp.status_code}). Please email support@scanviction.com for immediate help."
                 except Exception as e:
-                    answer = f"Connection issue. Please email support@marketsignalpro.com — we typically respond within 24 hours."
+                    answer = f"Connection issue. Please email support@scanviction.com — we typically respond within 24 hours."
             st.session_state.support_chat.append({"role":"assistant","content":answer})
             st.rerun()
 
@@ -12113,10 +12113,10 @@ Be helpful, concise and friendly."""
     st.markdown('<div class="sec-hd">Common Questions</div>',unsafe_allow_html=True)
     faqs=[
         ("How do I upgrade to Premium?","Go to Pricing in the top nav, select Premium Monthly or Annual, and click the subscribe button. Payment is processed securely via Stripe."),
-        ("What are the composite signal categories?","MarketSignalPro has 23 proprietary categories — including 3 bear/short setups — that combine multiple signals at once (e.g. RSI + short interest + insider buying + money flow) to surface setups not visible through standard TA. Each stock is assigned its single best-fit category."),
-        ("Is this financial advice?","No. MarketSignalPro provides algorithmic, educational signals only. Nothing constitutes financial advice. Always consult a licensed financial advisor."),
+        ("What are the composite signal categories?","Scanviction has 23 proprietary categories — including 3 bear/short setups — that combine multiple signals at once (e.g. RSI + short interest + insider buying + money flow) to surface setups not visible through standard TA. Each stock is assigned its single best-fit category."),
+        ("Is this financial advice?","No. Scanviction provides algorithmic, educational signals only. Nothing constitutes financial advice. Always consult a licensed financial advisor."),
         ("How do I cancel my subscription?","Go to Settings → Subscription → Open Billing Portal. You can cancel anytime with no questions asked."),
-        ("Can I get a refund?","Yes — contact support@marketsignalpro.com within 30 days of your subscription start date."),
+        ("Can I get a refund?","Yes — contact support@scanviction.com within 30 days of your subscription start date."),
     ]
     for q,a in faqs:
         with st.expander(q):
@@ -12188,7 +12188,7 @@ if st.session_state.get("_redirect_url"):
             <div style="font-size:12px;font-weight:700;color:{GREEN};margin-bottom:8px;">After Payment ✓</div>
             <div style="font-size:12px;color:#374f6e;line-height:2.2;">1. Account upgrades instantly<br>2. All premium categories unlock<br>3. Set up watchlist &amp; alerts<br>4. Explore the Market Scanner<br>5. Configure email digests</div>
         </div>
-        <div style="margin-top:12px;text-align:center;font-size:12px;color:#2a3a52;">Questions? <span style="color:#a5b4fc;font-weight:600;">support@marketsignalpro.com</span></div>
+        <div style="margin-top:12px;text-align:center;font-size:12px;color:#2a3a52;">Questions? <span style="color:#a5b4fc;font-weight:600;">support@scanviction.com</span></div>
         """, unsafe_allow_html=True)
     st.stop()
 
@@ -12206,8 +12206,8 @@ if st.session_state.get("_push_registered"):
                     Push Notifications Enabled!
                 </div>
                 <div style="font-size:13px;color:#374f6e;line-height:1.6;">
-                    You'll receive instant push alerts when MarketSignalPro detects new opportunities on stocks you follow.
-                    <br><strong style="color:#e2e8f0;">Pro tip:</strong> On mobile, tap the share icon and "Add to Home Screen" to install MarketSignalPro as an app.
+                    You'll receive instant push alerts when Scanviction detects new opportunities on stocks you follow.
+                    <br><strong style="color:#e2e8f0;">Pro tip:</strong> On mobile, tap the share icon and "Add to Home Screen" to install Scanviction as an app.
                 </div>
             </div>
         </div>
@@ -12223,7 +12223,7 @@ if st.session_state.get("_pay_success"):
                 padding:28px 32px;margin-bottom:20px;text-align:center;">
         <div style="font-size:48px;margin-bottom:12px;">🎉</div>
         <div style="font-size:24px;font-weight:800;color:#4ade80;margin-bottom:8px;">
-            Welcome to MarketSignalPro {plan_name}!
+            Welcome to Scanviction {plan_name}!
         </div>
         <div style="font-size:14px;color:#374f6e;margin-bottom:20px;line-height:1.7;">
             Your account has been upgraded. You now have access to all {plan_name} features.<br>
@@ -12267,7 +12267,7 @@ if st.session_state.get("_pay_error"):
         </div>
         <div style="font-size:13px;color:#374f6e;margin-bottom:8px;">{err}</div>
         <div style="font-size:12px;color:#2a3a52;">
-            Need help? Email <span style="color:#a5b4fc;font-weight:600;">support@marketsignalpro.com</span>
+            Need help? Email <span style="color:#a5b4fc;font-weight:600;">support@scanviction.com</span>
             and we'll sort it out within 24 hours.
         </div>
     </div>
@@ -12294,7 +12294,7 @@ if st.session_state.get("_logged_out"):
     st.toast("👋 You've been logged out. See you next time!", icon="✅")
 if st.session_state.get("_signup_success"):
     name = st.session_state.pop("_signup_success")
-    st.toast(f"🎉 Account created! Welcome to MarketSignalPro, {name}!", icon="🚀")
+    st.toast(f"🎉 Account created! Welcome to Scanviction, {name}!", icon="🚀")
 if st.session_state.get("_login_welcome"):
     name = st.session_state.pop("_login_welcome")
     st.toast(f"👋 Welcome back, {name}!", icon="✅")

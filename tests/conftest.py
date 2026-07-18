@@ -1,4 +1,4 @@
-"""Shared pytest setup for the MarketSignalPro suite.
+"""Shared pytest setup for the Scanviction suite.
 
 Everything here runs BEFORE the test modules import the app's modules, so this is
 where we make the environment hermetic: storage is redirected to a throwaway dir,

@@ -1,4 +1,4 @@
-# Daily build + deploy of the MarketSignalPro SEO static site (see SEO_README.md).
+# Daily build + deploy of the Scanviction SEO static site (see SEO_README.md).
 #
 # ── ONE-TIME SETUP ────────────────────────────────────────────────────────────
 # 1. Create a Cloudflare Pages project (or Netlify site) for the SEO domain.
@@ -64,10 +64,10 @@ jobs:
           python seo_generate.py \
             --snapshot universe_snapshot.json \
             --out seo_site \
-            --site-url https://stocks.marketsignalpro.com \
+            --site-url https://stocks.scanviction.com \
             --app-url  https://marketsignalpro.streamlit.app
 
-      # ── Deploy to Netlify (where stocks.marketsignalpro.com lives). ──
+      # ── Deploy to Netlify (where stocks.scanviction.com lives). ──
       # Secrets to add: NETLIFY_AUTH_TOKEN (Netlify → User settings → Applications → New access token)
       #                 NETLIFY_SITE_ID    (Site → Project configuration → Project ID: 05b6210b-a127-4311-97e8-dc759facd5ff)
       #                 GOOGLE_SITE_VERIFICATION (the Search Console token, so the full site stays verified)

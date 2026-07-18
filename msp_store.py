@@ -1,5 +1,5 @@
 """
-MarketSignalPro — shared storage layer
+Scanviction — shared storage layer
 =======================================
 ONE implementation of durable key→document storage, imported by BOTH the
 Streamlit app (app.py) and the background alerts worker (alerts_worker.py) and

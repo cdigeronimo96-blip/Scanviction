@@ -1,5 +1,5 @@
 """
-SEC EDGAR adapter (FREE, keyless) for MarketSignalPro.
+SEC EDGAR adapter (FREE, keyless) for Scanviction.
 
 Two free signals straight from EDGAR's daily index + Form 4 filings — neither is
 available from Polygon/Massive on the Starter plan:
@@ -19,7 +19,7 @@ import time
 import datetime as _dt
 import requests
 
-EDGAR_UA = {"User-Agent": os.environ.get("EDGAR_UA", "MarketSignalPro admin@marketsignalpro.com")}
+EDGAR_UA = {"User-Agent": os.environ.get("EDGAR_UA", "Scanviction admin@scanviction.com")}
 _BASE = "https://www.sec.gov"
 TIMEOUT = (5, 20)
 

@@ -1,5 +1,5 @@
 """
-FRED macro adapter (FREE, keyless) for MarketSignalPro.
+FRED macro adapter (FREE, keyless) for Scanviction.
 
 Uses FRED's public `fredgraph.csv` download endpoint — no API key required — to read
 a handful of daily macro series and distill them into a single, plain-English MARKET
@@ -16,7 +16,7 @@ import io
 import csv
 import requests
 
-FRED_UA = {"User-Agent": os.environ.get("EDGAR_UA", "MarketSignalPro admin@marketsignalpro.com")}
+FRED_UA = {"User-Agent": os.environ.get("EDGAR_UA", "Scanviction admin@scanviction.com")}
 _BASE = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 TIMEOUT = (5, 20)
 

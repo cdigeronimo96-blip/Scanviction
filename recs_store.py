@@ -1,4 +1,4 @@
-"""MarketSignalPro — recommendation snapshot store (extracted from app.py).
+"""Scanviction — recommendation snapshot store (extracted from app.py).
 
 On-disk store of every recommendation the engine surfaces, keyed by
 "<category>|||<ticker>". The FIRST time a (category, ticker) signal appears we

@@ -1,4 +1,4 @@
-# MarketSignalPro — Render deployment (ALWAYS-ON).
+# Scanviction — Render deployment (ALWAYS-ON).
 #
 # WHY RENDER (vs Streamlit Cloud): Streamlit Cloud hibernates when idle, so the in-process
 # universe worker stops and prices/signals go stale. An always-on service keeps that worker
@@ -21,14 +21,14 @@
 #    Stripe, Resend, Telegram, Anthropic, EMAIL_FROM, APP_URL, …). Streamlit reads
 #    st.secrets from it AND exposes the top-level keys as env vars. NEVER commit secrets.
 # 3. Set APP_URL (in that secrets file) to the new Render URL once it's assigned
-#    (https://marketsignalpro.onrender.com, or your custom domain).
+#    (https://scanviction.onrender.com, or your custom domain).
 # 4. Point the keep-awake GitHub Action (.github/workflows/keep-awake.yml) at the new URL —
 #    Streamlit only starts the in-process worker when a real session connects, so one
 #    headless load after each deploy kicks it off (it then runs continuously on the always-on
 #    process). Render's own health checks hit /_stcore/health and do NOT start a session.
 services:
   - type: web
-    name: marketsignalpro
+    name: scanviction
     runtime: python
     plan: standard                # ALWAYS-ON, 2GB RAM (~$25/mo) — headroom for the 2,500-ticker
                                   # warm. `starter` (512MB, ~$7) OOMs unless you cut POLY_MAX_UNIVERSE.
