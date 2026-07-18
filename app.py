@@ -646,8 +646,10 @@ def render_market_timer():
     glow = "0 0 8px rgba(34,197,94,0.6)" if state == "open" else "none"
     verb_txt = "Closes in" if verb == "closes" else "Opens in"
     cd = _fmt_countdown(int(secs))
+    # Honest price-freshness note so a delayed/close price never looks silently wrong.
+    delay_note = "Prices ~15-min delayed" if state == "open" else "Prices as of last close"
     st.markdown(f"""
-    <div style="display:flex;align-items:center;justify-content:center;gap:14px;
+    <div style="display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;
         font-family:'Inter',-apple-system,sans-serif;padding:11px 18px;margin:0 auto 18px;
         background:linear-gradient(135deg,#0d1525,#0a0f1a);border:1px solid rgba(255,255,255,0.08);
         border-radius:12px;max-width:560px;">
@@ -659,6 +661,8 @@ def render_market_timer():
       <span style="font-size:13px;color:#6b7fa0;">{verb_txt}
         <span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:#a5b4fc;margin-left:4px;">{cd}</span>
       </span>
+      <span style="width:1px;height:16px;background:rgba(255,255,255,0.1);"></span>
+      <span style="font-size:11px;color:#4a5e7a;">{delay_note}</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -3354,9 +3358,19 @@ import threading as _threading
 FAST_TTL = 1800      # price refresh window: 30 minutes
 MOD_TTL  = 3600      # sentiment: 1 hour
 SLOW_TTL = 21600     # fundamentals + ohlcv: 6 hours (these rarely change intraday)
-UNIVERSE_REFRESH        = int(_os.environ.get("UNIVERSE_REFRESH", "3600"))   # FULL re-score cadence (heavy; daily-bar technicals only move on a new bar)
+UNIVERSE_REFRESH        = int(_os.environ.get("UNIVERSE_REFRESH", "3600"))   # FULL re-score cadence off-hours
 UNIVERSE_REFRESH_CLOSED = 14400  # every 4 hours when market is closed
 UNIVERSE_REFRESH_WEEKEND= 0      # 0 = skip entirely on weekends (no point — market shut)
+# ── Intraday signals (spread-out firing) ──────────────────────────────────────
+# When ON, the warm APPENDS today's (delayed) snapshot as a synthetic "today bar" to each
+# ticker's daily history before scoring, and re-scores on the faster INTRADAY_RESCORE cadence
+# DURING MARKET HOURS. So a stock that breaks out at 11am enters its category at ~11:15 (15-min
+# delayed on Starter) instead of every entry batching at the once-a-day EOD re-score. The daily
+# history is cached (_POLY_STATE), so an intraday re-score is scoring-only — no history re-fetch.
+# NOTE: needs an ALWAYS-ON host to actually run continuously — on hibernating Streamlit Cloud the
+# worker only ticks while someone has the app open.
+INTRADAY_SIGNALS = _os.environ.get("INTRADAY_SIGNALS", "1").strip().lower() not in ("0", "false", "no", "")
+INTRADAY_RESCORE = int(_os.environ.get("INTRADAY_RESCORE", "900"))   # market-hours re-score cadence (s)
 # FAST price refresh: re-pull just the Polygon snapshot (one cheap call) and update
 # the displayed prices on already-scored rows every few minutes, WITHOUT the
 # expensive full re-score. This is what makes Discover feel live intraday. The
@@ -4088,6 +4102,33 @@ def _poly_history_frames(key, universe, latest_date, latest_grouped):
         frames[sym].reverse()
     return frames
 
+def _intraday_bar(t, snap, latest_date):
+    """Today's forming (delayed) bar for ticker `t` from the snapshot, matching the frame
+    schema ({datetime,open,high,low,close,volume}), so it can be appended to the daily history
+    and make technicals/categories reflect today's intraday move. Returns None when intraday
+    signals are off, the market is closed, the daily bars already cover today, or data is stale.
+    Volume is today's PARTIAL day volume (so volume signals firm up as the session progresses)."""
+    if not INTRADAY_SIGNALS or not snap:
+        return None
+    try:
+        if market_status().get("state") != "open":   # regular hours only
+            return None
+    except Exception:
+        return None
+    today = datetime.now().strftime("%Y-%m-%d")
+    if today <= (latest_date or ""):
+        return None   # grouped daily already includes today → don't double-count
+    s = snap.get(t)
+    if not s or s.get("price") is None:
+        return None
+    try:
+        px = float(s["price"])
+        o = float(s.get("open") or px); hi = float(s.get("high") or px); lo = float(s.get("low") or px)
+        return {"datetime": today, "open": o, "high": max(hi, px), "low": min(lo, px),
+                "close": px, "volume": float(s.get("volume") or 0)}
+    except Exception:
+        return None
+
 def _build_universe_raw_polygon(key):
     """Build + score the whole-market liquid universe from Polygon bulk data.
     Returns (rows, hot) in the SAME row contract as the legacy scan, so every
@@ -4169,6 +4210,13 @@ def _build_universe_raw_polygon(key):
             continue
         try:
             df = pd.DataFrame(recs)
+            # Append today's (delayed) forming bar so technicals + categories reflect the intraday
+            # move → entries fire through the day, not all at once at EOD. No-op off-hours / when
+            # intraday signals are off. Appends to the DF (not the cached `recs`) so the shared
+            # per-day frame cache is never mutated.
+            _ib = _intraday_bar(t, snap, latest_date)
+            if _ib is not None:
+                df = pd.concat([df, pd.DataFrame([_ib])], ignore_index=True)
             q = _poly_quote(t, snap, df)
             sent = _poly_bulk_sent(t, buzz, sent_dir)
             # Real fundamentals on the bulk row: days-to-cover (FINRA short interest)
@@ -4833,13 +4881,18 @@ def _universe_worker():
     last_full = 0.0   # wall-clock of the last FULL re-score
     while True:
         cycle_start = time.time()
-        # Decide this cycle: a FULL re-score (heavy, daily-bar driven) is due on
-        # cold start, on a force-refresh, or every UNIVERSE_REFRESH seconds.
-        # Otherwise just do the cheap snapshot price refresh.
+        # Decide this cycle: a FULL re-score is due on cold start, on a force-refresh, or every
+        # re-score interval. DURING MARKET HOURS with intraday signals on, that interval drops to
+        # INTRADAY_RESCORE and the re-score appends today's forming bar (see _intraday_bar) — so
+        # category entries spread out through the session. Off-hours it's the slower UNIVERSE_REFRESH
+        # and cycles just do the cheap snapshot price refresh.
+        try: _mkt_now = market_status().get("state", "open")
+        except Exception: _mkt_now = "open"
+        _rescore_every = INTRADAY_RESCORE if (INTRADAY_SIGNALS and _mkt_now == "open") else UNIVERSE_REFRESH
         with _UNIVERSE_LOCK:
             _forced = _UNIVERSE_CACHE.get("force", False)
             _have_rows = bool(_UNIVERSE_CACHE.get("rows"))
-        full_due = _forced or (not _have_rows) or (cycle_start - last_full >= UNIVERSE_REFRESH)
+        full_due = _forced or (not _have_rows) or (cycle_start - last_full >= _rescore_every)
         try:
             if full_due:
                 with _UNIVERSE_LOCK:
