@@ -10725,6 +10725,14 @@ def page_settings():
     db_user=st.session_state.users_db.get(st.session_state.user["email"],{}) if is_authed() else {}
     email=st.session_state.user["email"] if is_authed() else ""
 
+    # Resolve the LIVE Telegram bot name once (from the configured token) so every label reads the
+    # real bot — not a stale hardcoded one. bot_username() does one getMe then caches (module global).
+    try:
+        import telegram_link as _tgl_name
+        _tg_bot_name = _tgl_name.bot_username(st.secrets.get("TELEGRAM_BOT_TOKEN","") or "") or "Scanvictionbot"
+    except Exception:
+        _tg_bot_name = "Scanvictionbot"
+
     _base_tabs = ["👤 Profile","🔐 Security","🔔 Alerts","📨 Notifications","📧 Email Digest","📊 Subscription"]
     # System tab is normally owner/admin-only. ?diag=1 in the URL also reveals
     # it to any logged-in user — useful for owner-recovery / first-deploy
@@ -10908,7 +10916,7 @@ def page_settings():
                 _auto = _tglink.pop_completed_link(email)   # listener already linked it? finish silently
                 if _auto:
                     _tg_apply(_auto)
-                _bot = _tglink.bot_username(_tg_token) or "StockWinsAlertsBot"
+                _bot = _tg_bot_name
                 if not st.session_state.get("tg_link_deep"):
                     try: _tok, _deep = _tglink.make_link_token(email, _bot)
                     except Exception: _tok, _deep = "", f"https://t.me/{_bot}"
@@ -10945,7 +10953,7 @@ def page_settings():
             with st.form("tg_setup"):
                 tg_id = st.text_input("Telegram Chat ID", value=current_tg_id,
                                         placeholder="e.g. 1234567890",
-                                        help="The number @StockWinsAlertsBot replied with")
+                                        help=f"The number @{_tg_bot_name} replied with")
                 tg_c1, tg_c2 = st.columns(2)
                 with tg_c1:
                     tg_save = st.form_submit_button(
@@ -10957,7 +10965,7 @@ def page_settings():
                 if tg_save:
                     clean = "".join(c for c in tg_id if c.isdigit() or c == "-")
                     if not clean:
-                        st.error("Chat ID must be a number (the ID @StockWinsAlertsBot replies with) — not the bot token.")
+                        st.error(f"Chat ID must be a number (the ID @{_tg_bot_name} replies with) — not the bot token.")
                     else:
                         # VALIDATE before saving. A chat_id only works if it's real AND the user
                         # has tapped Start (Telegram refuses the send otherwise), so a successful
@@ -10972,7 +10980,7 @@ def page_settings():
                             st.success("✅ Connected — a test message just hit your Telegram.")
                             time.sleep(1); st.rerun()
                         else:
-                            st.error(f"That Chat ID didn't work, so it was NOT saved. Tap **Start** in @StockWinsAlertsBot, then paste the number it replies with (not the bot token). [{info}]")
+                            st.error(f"That Chat ID didn't work, so it was NOT saved. Tap **Start** in @{_tg_bot_name}, then paste the number it replies with (not the bot token). [{info}]")
                 if tg_remove:
                     st.session_state.users_db[email]["telegram_chat_id"] = ""
                     _save_global_db(st.session_state.users_db)
@@ -11160,7 +11168,7 @@ def page_settings():
                 if current_tg:
                     st.markdown(f'<div style="font-size:12px;color:#4ade80;margin-bottom:8px;">✅ Telegram connected (Chat ID: {current_tg})</div>',unsafe_allow_html=True)
                 else:
-                    st.markdown(f'<div style="font-size:12px;color:#374f6e;line-height:1.8;margin-bottom:8px;">1. Open Telegram → search <strong style="color:#e2e8f0;">@StockWinsAlertsBot</strong><br>2. Send /start to get your Chat ID<br>3. Paste it below</div>',unsafe_allow_html=True)
+                    st.markdown(f'<div style="font-size:12px;color:#374f6e;line-height:1.8;margin-bottom:8px;">1. Open Telegram → search <strong style="color:#e2e8f0;">@{_tg_bot_name}</strong><br>2. Send /start to get your Chat ID<br>3. Paste it below</div>',unsafe_allow_html=True)
                 with st.form("tg_form"):
                     tg_id=st.text_input("Your Telegram Chat ID",value=current_tg,placeholder="1234567890",label_visibility="visible",help="Your numeric Chat ID — NOT the bot token. Easiest: use the one-tap connect in Settings → Profile.")
                     if st.form_submit_button("Save Telegram Connection",type="primary"):
@@ -11177,7 +11185,7 @@ def page_settings():
                                 _save_global_db(st.session_state.users_db)
                                 st.success("✅ Telegram connected — test message sent!"); st.rerun()
                             else:
-                                st.error(f"That Chat ID didn't work, so it was NOT saved. Tap Start in @StockWinsAlertsBot and paste the number it replies with. [{_info}]")
+                                st.error(f"That Chat ID didn't work, so it was NOT saved. Tap Start in @{_tg_bot_name} and paste the number it replies with. [{_info}]")
 
         if not is_premium():
             st.markdown(f'<div class="card card-gold" style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:{GOLD};margin-bottom:4px;">👑 Premium Alert Channels</div><div style="font-size:12px;color:#374f6e;">Upgrade to Premium for instant Telegram alerts and real-time browser push notifications on composite category signals.</div></div>',unsafe_allow_html=True)
@@ -11210,7 +11218,7 @@ def page_settings():
                                   help="Browser/mobile push via OneSignal — enable on the Profile tab first")
         with nc2:
             tg_disabled = not bool(db_user.get("telegram_chat_id",""))
-            tg_help = "Connect Telegram in Profile tab first" if tg_disabled else "Push messages via @StockWinsAlertsBot"
+            tg_help = "Connect Telegram in Profile tab first" if tg_disabled else f"Push messages via @{_tg_bot_name}"
             new_telegram = st.toggle("✈️ Telegram alerts",
                                        value=notif_prefs.get("telegram_enabled", False),
                                        key="np_telegram", disabled=tg_disabled, help=tg_help)
@@ -11219,7 +11227,7 @@ def page_settings():
                                     value=notif_prefs.get("email_enabled", True),
                                     key="np_email")
         if tg_disabled:
-            st.caption("⚠️ Connect Telegram in the Profile tab to enable @StockWinsAlertsBot alerts.")
+            st.caption(f"⚠️ Connect Telegram in the Profile tab to enable @{_tg_bot_name} alerts.")
 
         st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
 
