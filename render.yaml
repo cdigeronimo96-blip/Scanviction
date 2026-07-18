@@ -15,11 +15,12 @@
 # ── ONE-TIME SETUP ────────────────────────────────────────────────────────────
 # 1. Render dashboard → New → Blueprint → connect the GitHub repo (this render.yaml
 #    provisions the service).
-# 2. On the service → Environment → **Secret Files** → add a file named:
-#         .streamlit/secrets.toml
+# 2. On the service → Environment → **Secret Files** → add a file named exactly:
+#         secrets.toml            (flat — Render rejects "/" in secret-file names)
 #    and paste the SAME content as your Streamlit Cloud secrets (Polygon, DATABASE_URL,
-#    Stripe, Resend, Telegram, Anthropic, EMAIL_FROM, APP_URL, …). Streamlit reads
-#    st.secrets from it AND exposes the top-level keys as env vars. NEVER commit secrets.
+#    Stripe, Resend, Telegram, Anthropic, EMAIL_FROM, APP_URL, …). The startCommand below
+#    copies /etc/secrets/secrets.toml -> .streamlit/secrets.toml on boot so st.secrets finds
+#    it. NEVER commit secrets.
 # 3. Set APP_URL (in that secrets file) to the new Render URL once it's assigned
 #    (https://scanviction.onrender.com, or your custom domain).
 # 4. Point the keep-awake GitHub Action (.github/workflows/keep-awake.yml) at the new URL —
@@ -34,7 +35,10 @@ services:
                                   # warm. `starter` (512MB, ~$7) OOMs unless you cut POLY_MAX_UNIVERSE.
                                   # Do NOT use free — it spins down (hibernation).
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
+    # Render Secret Files can't contain a "/" in the name, so the secrets file is added as a
+    # flat `secrets.toml` (mounted at /etc/secrets/secrets.toml). Copy it into .streamlit/ on
+    # boot so st.secrets finds it, then launch Streamlit.
+    startCommand: mkdir -p .streamlit && cp /etc/secrets/secrets.toml .streamlit/secrets.toml && streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
     healthCheckPath: /_stcore/health   # if Render marks it unhealthy, try /healthz
     autoDeploy: true              # redeploy on push to the connected branch
     envVars:
