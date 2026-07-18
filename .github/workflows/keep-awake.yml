@@ -29,10 +29,16 @@ jobs:
           python -m playwright install --with-deps chromium
 
       - name: Load the app (wake it + hold a real session)
+        # Point this at your live app. On Render (always-on) this load is what STARTS the
+        # in-process worker after a deploy (Streamlit only runs the script on a real session).
+        # Set a repo Variable named APP_URL to switch targets without editing this file.
+        env:
+          KEEP_AWAKE_URL: ${{ vars.APP_URL || 'https://marketsignalpro.streamlit.app' }}
         run: |
           python - <<'PY'
+          import os
           from playwright.sync_api import sync_playwright
-          URL = "https://marketsignalpro.streamlit.app"
+          URL = os.environ.get("KEEP_AWAKE_URL", "https://marketsignalpro.streamlit.app")
           with sync_playwright() as p:
               b = p.chromium.launch()
               pg = b.new_page()
