@@ -1,0 +1,38 @@
+# Secrets — NEVER commit
+.streamlit/secrets.toml
+*.key
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local app state / data caches
+.msp_data/
+support_messages.jsonl
+
+# Snapshots / archives
+*.zip
+
+# Editor / backups
+*.bak
+*.bak-*
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# generated SEO static site
+seo_site/
+static/universe_snapshot.json
+universe_snapshot_starter.json
+# universe_snapshot.json IS tracked — it's the SEO Action's build input (Streamlit static serving is
+# auth-gated so CI can't fetch it live). Re-commit a fresh one to refresh the SEO data.

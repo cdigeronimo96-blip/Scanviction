@@ -21,3 +21,9 @@ psycopg[binary]>=3.1
 stripe>=9.0
 # bcrypt — REQUIRED for salted, slow password hashing (replaces legacy sha256).
 bcrypt>=4.0
+# websocket-client — used by self_kick.py (Render sidecar) to open a real local
+# Streamlit session at boot so the scan worker starts without any visitor.
+websocket-client>=1.6
+# pywebpush — native (self-hosted) Web Push with VAPID keys. Replaces OneSignal:
+# no external service, no SDK script, pushes sent straight from our alert pipeline.
+pywebpush>=1.14

@@ -1,0 +1,224 @@
+/* MarketSignalPro — static global base stylesheet (extracted from app.py).
+   Injected once at startup by _inject_base_css(). Static only: interpolated
+   CSS (the Premium Design System block, which uses theme colors) stays in app.py. */
+
+/* ===== Sidebar removal (top navbar is the only nav) ===== */
+/* Sidebar fully removed — navigation is the top navbar */
+[data-testid="stSidebar"],
+[data-testid="stSidebarNav"],
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"]{ display:none !important; }
+/* Reclaim the space it occupied */
+[data-testid="stAppViewContainer"] > section.main,
+[data-testid="stMain"]{ margin-left:0 !important; width:100% !important; }
+
+/* ===== Native-app polish + PWA splash/offline/install chrome ===== */
+/* ════════════════════════════════════════════════════════════
+   NATIVE-APP POLISH — animations, safe areas, momentum scroll
+════════════════════════════════════════════════════════════ */
+
+/* Respect iOS notch / Android nav bar */
+html, body {
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Smooth iOS-style momentum scrolling everywhere */
+* {
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Hide tap-highlight + selection styling for app feel */
+* {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+}
+input, textarea, [contenteditable], .sw-allow-select {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+}
+
+/* Disable pull-to-refresh on standalone PWAs (annoying on charts) */
+@media (display-mode: standalone) {
+    body { overscroll-behavior-y: contain; }
+}
+
+/* Native-style button press animation */
+button, [role="button"], .stButton button {
+    transition: transform 0.08s ease-out, opacity 0.15s ease-out !important;
+}
+button:active, [role="button"]:active, .stButton button:active {
+    transform: scale(0.97) !important;
+    opacity: 0.85 !important;
+}
+
+/* NOTE: a page-enter fade animation used to live here. Removed because every
+   Streamlit rerun replayed it, making any brief double-paint during load
+   visibly fade in as "stacked duplicate boxes." Without the animation, the
+   final layout is identical and transient re-renders are imperceptible. */
+
+/* Card hover/press = native feel */
+.card, .sr, .stat {
+    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.15s ease-out,
+                border-color 0.15s ease-out !important;
+}
+.card:active, .sr:active {
+    transform: scale(0.99) !important;
+}
+
+/* Smooth modal/dialog entry */
+[data-testid="stModal"], [data-testid="stDialog"] {
+    animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes modalSlideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Custom install banner */
+#sw-install-banner {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%) translateY(120%);
+    background: linear-gradient(135deg, #4f46e5, #6366f1);
+    color: #fff;
+    padding: 14px 18px;
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(99,102,241,0.45);
+    font-family: 'Inter', sans-serif;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 92vw;
+    width: 360px;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid rgba(255,255,255,0.15);
+}
+#sw-install-banner.visible {
+    transform: translateX(-50%) translateY(0);
+}
+#sw-install-banner-icon {
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+#sw-install-banner-text {
+    flex: 1;
+    line-height: 1.4;
+}
+#sw-install-banner-text strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+#sw-install-banner-text span {
+    font-size: 11px;
+    opacity: 0.85;
+}
+#sw-install-banner button {
+    background: #fff;
+    color: #4f46e5;
+    border: none;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+#sw-install-banner-close {
+    background: transparent !important;
+    color: rgba(255,255,255,0.7) !important;
+    font-size: 18px !important;
+    padding: 0 6px !important;
+    margin-left: -8px;
+}
+
+/* Offline banner */
+#sw-offline-banner {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: linear-gradient(135deg, #b45309, #f59e0b);
+    color: #fff;
+    padding: 8px 16px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    z-index: 999998;
+    transform: translateY(-100%);
+    transition: transform 0.3s ease-out;
+}
+#sw-offline-banner.visible {
+    transform: translateY(0);
+}
+
+/* iOS standalone: hide install banner, add safe area top */
+@media (display-mode: standalone) {
+    #sw-install-banner { display: none !important; }
+}
+
+/* PWA splash-style loading on first paint */
+#sw-pwa-splash {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(180deg, #07090f 0%, #0d1525 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000000;
+    opacity: 1;
+    transition: opacity 0.5s ease-out;
+    pointer-events: none;
+}
+#sw-pwa-splash.hidden { opacity: 0; }
+#sw-pwa-splash-logo {
+    width: 84px; height: 84px;
+    background: linear-gradient(135deg, #4f46e5, #6366f1);
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 32px;
+    font-weight: 900;
+    color: #fff;
+    box-shadow: 0 10px 40px rgba(99,102,241,0.4);
+    animation: splashPulse 1.4s ease-in-out infinite;
+}
+@keyframes splashPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+#sw-pwa-splash-title {
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 18px;
+    letter-spacing: 0.5px;
+}
+#sw-pwa-splash-tagline {
+    color: #4a5e7a;
+    font-size: 11px;
+    margin-top: 4px;
+    font-family: 'Inter', sans-serif;
+}
+
+/* Only show splash when app launched in standalone mode (installed) */
+@media not (display-mode: standalone) {
+    #sw-pwa-splash { display: none; }
+}
