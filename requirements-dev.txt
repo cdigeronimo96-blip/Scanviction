@@ -1,4 +1,0 @@
-# Dev/test-only dependencies (not needed to run the app).
-#   pip install -r requirements-dev.txt
-#   pytest
-pytest>=8.0
