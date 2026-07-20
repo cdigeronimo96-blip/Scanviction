@@ -113,3 +113,22 @@ never have activated on your service:**
 3. Backup: set the GitHub repo **Variable** `APP_URL` to your Render URL so the keep-awake
    Action (now actually on GitHub) opens a real browser session every 10 minutes as an
    external warm-up.
+
+*(Verified from the live Render logs after deploy: `[self-kick] session kicked — worker
+running` every ~10 min and `[polygon] warm: scored 2497/2505 tickers` every cycle — the
+scanner runs continuously with no visitors. The only cold window left is the ~2-3 minutes
+right after each deploy while the first market-wide warm completes.)*
+
+## 10. Follow-up: dashboard teaser winners-only + Streamlit deprecation
+
+- The dashboard's "Today's Top Signals" 3-card teaser was a third surface calling the
+  ranking directly and still showed losers — it now uses the same winners-only filter as
+  the Discover board and the landing hero.
+- The `st.components.v1.html is deprecated` log warning: all five remaining uses (Stripe
+  checkout, OneSignal + native Web Push subscribe, two scroll-to-top helpers) REQUIRE the
+  deprecated API's same-origin srcdoc iframe — the replacement (`st.iframe`, data: URL =
+  opaque origin) breaks Stripe.js, the OneSignal SDK, service-worker registration and
+  parent-page scrolling alike. They are all annotated in code, and `requirements.txt` now
+  pins `streamlit>=1.40,<1.60` so a future Streamlit release can't remove the API out from
+  under the payment path mid-deploy. Bump the ceiling deliberately, after testing checkout
+  + push + scroll on the new version.

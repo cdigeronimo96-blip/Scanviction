@@ -2395,6 +2395,10 @@ def _scroll_to_top_on_change():
         if st.session_state.get("_view_key") == key:
             return
         st.session_state["_view_key"] = key
+        # KEPT on components.html (deprecated) deliberately: the script must reach
+        # window.parent to scroll the app page, which needs the srcdoc iframe's
+        # same-origin. st.iframe (data: URL) is opaque-origin and can't do this.
+        # See the pinned streamlit ceiling in requirements.txt.
         components.html(
             "<script>try{var w=window.parent||window;var d=w.document;"
             "var el=d.querySelector('section.main')||d.querySelector('[data-testid=\"stMain\"]')"
@@ -7665,8 +7669,12 @@ def page_dashboard():
         .cv-perf-age{color:#4a5e7a;}
         </style>""", unsafe_allow_html=True)
         st.markdown('<div class="hts-lbl">Today\'s Top Signals</div>', unsafe_allow_html=True)
-        _htop = _top_signals(_hgrouped, 3)
-        _hsnaps = _discover_lock_and_load_snaps(_htop)
+        # Same winners-only rule as the Discover board: pull a deep pool, then drop any
+        # pick that's underwater in its own called direction (longs must be flat/green
+        # since signal; shorts count a DECLINE as the win and stay, badged SHORT).
+        _hpool = _top_signals(_hgrouped, 18)
+        _hsnaps = _discover_lock_and_load_snaps(_hpool)
+        _htop = _winning_top_signals(_hpool, _hsnaps, 3)
         _render_conviction_grid(_htop, "home_ts", _hsnaps)
         _hc1, _hc2, _hc3 = st.columns([1, 1.6, 1])
         with _hc2:
@@ -8394,7 +8402,11 @@ def _scroll_to_top():
     GUARANTEED to execute — st.html-injected <script> tags are not reliably run by the
     browser (innerHTML-inserted scripts don't execute), which is why drill-ins kept
     landing mid-page. The retry tail runs out to ~2.6s so the reset still wins after
-    the category's content (quote refresh + cards) finishes streaming in."""
+    the category's content (quote refresh + cards) finishes streaming in.
+
+    KEPT on components.html (deprecated) deliberately: reaching window.parent requires
+    the srcdoc iframe's same-origin; st.iframe (data: URL) is opaque-origin and can't.
+    See the pinned streamlit ceiling in requirements.txt."""
     components.html("""
     <script>
     const go = () => { try {

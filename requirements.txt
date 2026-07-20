@@ -1,4 +1,11 @@
-streamlit>=1.40
+# Upper bound is DELIBERATE: five embeds (Stripe checkout, OneSignal + native Web Push
+# subscribe, and the two scroll-to-top helpers) require st.components.v1.html's
+# same-origin srcdoc iframe. Streamlit warns it will be REMOVED after 2026-06-01, and
+# its replacement (st.iframe, data: URL = opaque origin) breaks all five — parent-page
+# access, Stripe.js, the OneSignal SDK and service-worker registration all need the
+# page's real origin. Verified working on 1.59. Bump the ceiling only after testing
+# checkout + push + scroll on the new version.
+streamlit>=1.40,<1.60
 pandas
 numpy
 plotly
