@@ -12,6 +12,16 @@
 #    `standard` (2GB, ~$25/mo). `starter` is only 512MB and will likely OOM on the full
 #    universe — use it ONLY if you also cut POLY_MAX_UNIVERSE to ~800-1000. ◄◄
 #
+# ►► IMPORTANT — IF THE SERVICE WAS CREATED MANUALLY (not via Blueprint): Render IGNORES
+#    this file's startCommand, so self_kick.py never launches and the scanner sits idle
+#    until a real visitor opens the site ("nothing scans until someone clicks a category").
+#    Fix: Render dashboard → your service → Settings → Start Command → paste EXACTLY the
+#    startCommand below. Verify in the service logs: you must see
+#        [self-kick] server healthy on :<port> — kicking a session to start the scan worker
+#        [self-kick] session kicked — worker running
+#    within ~1 minute of every deploy/restart. No [self-kick] lines = the startCommand
+#    isn't being used. ◄◄
+#
 # ── ONE-TIME SETUP ────────────────────────────────────────────────────────────
 # 1. Render dashboard → New → Blueprint → connect the GitHub repo (this render.yaml
 #    provisions the service).

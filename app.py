@@ -78,9 +78,10 @@ from scoring import (
     COMPOSITE_DIR, category_dir, bear_conviction, category_edge,
 )
 
-# Optional full-page auto-refresh (opt-in toggle on Discover). A FULL rerun
-# re-applies all page CSS, so it can't collapse the layout the way a fragment-only
-# rerun (run_every) did. Guarded so the app works if the package isn't installed.
+# Optional page auto-refresh helper. NO LONGER used on Discover — its periodic
+# refresh is now a fragment-scoped run_every (updates the body in place, no
+# full-page rerun, no flash). Kept as a guarded import for any page that still
+# wants a timed full reload.
 try:
     from streamlit_autorefresh import st_autorefresh
     HAS_AUTOREFRESH = True
@@ -5542,17 +5543,20 @@ def render_sr(s, cat_key="", show_why=False, cat_name="", snap=None):
         snap = get_recommendation_snapshot(cat_name, t)
     if snap:
         entry = snap.get("entry_price", 0)
-        perf = compute_performance(entry, price, 1000.0)
-        age = _humanize_age(snap.get("triggered_at", 0))
-        if perf:
-            pcol = GREEN if perf["pct"] >= 0 else RED
-            sign = "+" if perf["pct"] >= 0 else ""
-            gsign = "+" if perf["gain"] >= 0 else "−"
+        disp, is_short = _since_signal_pct(cat_name or s.get("primary_cat", ""), entry, price)
+        ts = snap.get("triggered_at", 0)
+        stamp = _signal_stamp(ts)
+        age = _humanize_age(ts)
+        when = f"{stamp} ({age})" if stamp else f"Signal {age}"
+        if disp is not None:
+            pcol = GREEN if disp >= 0 else RED
+            sign = "+" if disp >= 0 else ""
+            lbl = "% since (short)" if is_short else "% since"
             perf_html = (
                 '<div style="display:flex;gap:14px;align-items:center;margin-top:8px;'
                 'padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);flex-wrap:wrap;">'
-                f'<div style="font-size:10px;color:#4a5e7a;">Signal {age} @ ${entry:,.2f}</div>'
-                f'<div style="font-size:11px;font-weight:700;color:{pcol};font-family:\'JetBrains Mono\',monospace;">{sign}{perf["pct"]:.2f}% since</div>'
+                f'<div style="font-size:10px;color:#4a5e7a;">Signaled {when} @ ${entry:,.2f}</div>'
+                f'<div style="font-size:11px;font-weight:700;color:{pcol};font-family:\'JetBrains Mono\',monospace;">{sign}{disp:.2f}{lbl}</div>'
                 '</div>'
             )
 
@@ -5622,12 +5626,15 @@ def render_cat(cat,limit=10,show_why=False):
         if _last_cat != cat:
             st.session_state["_last_refreshed_cat"] = cat
             try:
-                _refresh_stale_quotes_batched([s.get("t") for s in stocks if s.get("t")], max_age_seconds=600)
-                # Re-pull post-refresh so the cards show the new prices
-                if is_comp:
-                    stocks=get_composite_stocks(cat,limit)
-                else:
-                    stocks=get_standard_stocks(cat,limit)
+                _n_refreshed = _refresh_stale_quotes_batched([s.get("t") for s in stocks if s.get("t")], max_age_seconds=600)
+                # Re-pull ONLY when something was actually refreshed — with the worker
+                # keeping quotes fresh this is usually 0, and skipping the second
+                # scoring pass shaves the category-open time.
+                if _n_refreshed:
+                    if is_comp:
+                        stocks=get_composite_stocks(cat,limit)
+                    else:
+                        stocks=get_standard_stocks(cat,limit)
             except Exception:
                 pass
     if not stocks:
@@ -6677,14 +6684,23 @@ def page_landing():
             if dtc >= 3: return f" · {dtc:.1f} days to cover"
             return ""
         _live_rows = []
+        _snaps = {}
         try:
             _warm = build_scored_universe()          # instant (cache-served, non-blocking)
             if _warm:
                 _ranked = _top_signals({"_": _warm}, n=24)   # pull extra, then filter + diversify
+                _snaps = _hero_snaps(_ranked)                # snapshots up-front → winners-only filter
                 _cat_seen = {}
                 for r in _ranked:
                     if ((r.get("q") or {}).get("price", 0) or 0) < HERO_MIN_PRICE:
                         continue                                  # skip penny names on the hero
+                    # Winners only (same rule as the Discover board): drop a pick that's
+                    # underwater in its own called direction; keep fresh/no-snapshot picks.
+                    _d, _ = _since_signal_pct(r.get("primary_cat", ""),
+                                              (_snaps.get(r.get("t")) or {}).get("entry_price", 0),
+                                              (r.get("q") or {}).get("price", 0))
+                    if _d is not None and _d < 0:
+                        continue
                     _c = r.get("primary_cat", "")
                     if _cat_seen.get(_c, 0) >= 2:
                         continue                                  # max 2 per category for variety
@@ -6696,7 +6712,6 @@ def page_landing():
                     _live_rows = _ranked[:6]
         except Exception:
             _live_rows = []
-        _snaps = _hero_snaps(_live_rows) if _live_rows else {}
         _sigs = []
         for r in _live_rows:
             q = r.get("q") or {}; price = q.get("price", 0) or 0; pct = q.get("pct", 0) or 0
@@ -6705,16 +6720,17 @@ def page_landing():
             col = (("#fb7185" if conv >= 70 else "#fb923c" if conv >= 45 else "#94a3b8") if _bear
                    else ("#34d399" if conv >= 70 else "#f59e0b" if conv >= 45 else "#94a3b8"))
             ar = "▲" if pct >= 0 else "▼"
-            # TRUE % since signal from the locked entry snapshot (never fabricated; blank if no snap)
+            # TRUE % since signal from the locked entry snapshot (never fabricated; blank if
+            # no snap). Shorts are measured as shorts — a decline shows positive/green.
             _perf = None
             _snap = _snaps.get(r.get("t"))
             if _snap:
-                _entry = _snap.get("entry_price", 0) or 0
-                if _entry > 0 and price > 0:
-                    _since = (price - _entry) / _entry * 100.0
+                _since, _is_short = _since_signal_pct(cat, _snap.get("entry_price", 0), price)
+                if _since is not None:
                     _sign = "+" if _since >= 0 else ""
+                    _lbl = "% since (short)" if _is_short else "% since"
                     _perf = (f"Signaled {_humanize_age(_snap.get('triggered_at', 0))}",
-                             f"{_sign}{_since:.1f}% since", "#34d399" if _since >= 0 else "#fb7185")
+                             f"{_sign}{_since:.1f}{_lbl}", "#34d399" if _since >= 0 else "#fb7185")
             _sigs.append((r.get("t", ""), f"${price:,.2f}", f"{ar}{abs(pct):.1f}%", conv, col, cat, _hero_sub(r), _perf))
         _is_live = bool(_sigs)
         _cards = "".join(_sigcard(*s) for s in _sigs)
@@ -8020,25 +8036,82 @@ def _lock_svg(size=13):
     return _svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', size)
 
 
+def _winning_top_signals(pool, snaps, n=6):
+    """The board shows WINNERS only: longs in the green since their signal, and shorts
+    whose stock has FALLEN since the signal (a short's win — the card carries the SHORT
+    badge and its %-since is measured as the short's return). A pick that's underwater
+    in its own called direction is dropped. Fresh signals with no locked snapshot yet
+    (or no price) aren't losers — they backfill remaining slots, newest-conviction
+    first, so the board never sits empty on a slow day."""
+    winners, fresh = [], []
+    for r in pool:
+        snap = snaps.get(r.get("t"))
+        disp, _ = _since_signal_pct(r.get("primary_cat", ""),
+                                    (snap or {}).get("entry_price", 0),
+                                    (r.get("q") or {}).get("price", 0))
+        if disp is None:
+            fresh.append(r)
+        elif disp >= 0:
+            winners.append(r)
+    out = winners[:n]
+    for r in fresh:
+        if len(out) >= n:
+            break
+        out.append(r)
+    return out
+
+
+def _signal_stamp(ts):
+    """Absolute ET timestamp of a signal from an epoch float: 'Jul 19, 9:45am ET'.
+    The cards used to show only a relative age ('1d ago') — this is the actual
+    when-it-was-recommended timestamp. Blank on any failure."""
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromtimestamp(float(ts), ZoneInfo("America/New_York"))
+        hr = dt.hour % 12 or 12
+        return f"{dt.strftime('%b')} {dt.day}, {hr}:{dt.strftime('%M')}{dt.strftime('%p').lower()} ET"
+    except Exception:
+        return ""
+
+
+def _since_signal_pct(cat, entry, price):
+    """Signed %-since-signal in the SIGNAL'S OWN direction: for a bear/short category a
+    price DECLINE is a positive return (that's the trade the signal called). Returns
+    (display_pct, is_short) or (None, False) when it can't be computed."""
+    try:
+        entry = float(entry or 0); price = float(price or 0)
+        if entry <= 0 or price <= 0:
+            return None, False
+        pct = (price - entry) / entry * 100.0
+        if category_dir(cat or "") == "bear":
+            return -pct, True
+        return pct, False
+    except Exception:
+        return None, False
+
+
 def _perf_since_html(r, snap):
-    """Percent-since-signal ONLY (no dollar figure). The entry price + timestamp lock
-    the first time a signal surfaces (see record_recommendations_bulk), so the % keeps
-    accumulating as the live price moves. Empty until a snapshot exists."""
+    """Percent-since-signal + the actual signal timestamp. The entry price + timestamp
+    lock the first time a signal surfaces (see record_recommendations_bulk), so the %
+    keeps accumulating as the live price moves. For short signals the % is measured as
+    the SHORT's return (a decline shows green/positive, labeled 'short'). Empty until
+    a snapshot exists."""
     if not snap:
         return ""
     try:
-        entry = snap.get("entry_price", 0) or 0
         price = (r.get("q") or {}).get("price", 0) or 0
-        if entry <= 0 or price <= 0:
+        disp, is_short = _since_signal_pct(r.get("primary_cat", ""), snap.get("entry_price", 0), price)
+        if disp is None:
             return ""
-        perf = compute_performance(entry, price, 1000.0)
-        if not perf:
-            return ""
-        age = _humanize_age(snap.get("triggered_at", 0))
-        pcol = GREEN if perf["pct"] >= 0 else RED
-        sign = "+" if perf["pct"] >= 0 else ""
-        return (f'<div class="cv-perf"><span class="cv-perf-age">Signaled {age}</span>'
-                f'<span style="color:{pcol};font-weight:700;font-family:JetBrains Mono,monospace;">{sign}{perf["pct"]:.2f}% since</span></div>')
+        ts = snap.get("triggered_at", 0)
+        stamp = _signal_stamp(ts)
+        age = _humanize_age(ts)
+        when = f"{stamp} · {age}" if stamp else f"Signaled {age}"
+        pcol = GREEN if disp >= 0 else RED
+        sign = "+" if disp >= 0 else ""
+        lbl = "% since (short)" if is_short else "% since"
+        return (f'<div class="cv-perf"><span class="cv-perf-age" title="When this signal was flagged">{when}</span>'
+                f'<span style="color:{pcol};font-weight:700;font-family:JetBrains Mono,monospace;">{sign}{disp:.2f}{lbl}</span></div>')
     except Exception:
         return ""
 
@@ -8315,21 +8388,25 @@ def _render_category_grid(cats, grouped, key_prefix, standard=False):
 def _scroll_to_top():
     """Scroll the Streamlit main view back to the top. Used as a one-shot on category
     drill-in (the drill-in is an in-place fragment rerun, so the browser otherwise keeps
-    the old scroll offset and leaves you mid-page). Tries the main scroll container(s) and
-    the window, with a couple of delayed retries so it lands after the content settles."""
-    # st.html renders inline (not in an iframe), so window.parent IS the app window;
-    # the same-document selectors below still resolve to the main scroll containers.
-    st.html("""
+    the old scroll offset and leaves you mid-page).
+
+    Rendered via components.html (a same-origin iframe) because scripts there are
+    GUARANTEED to execute — st.html-injected <script> tags are not reliably run by the
+    browser (innerHTML-inserted scripts don't execute), which is why drill-ins kept
+    landing mid-page. The retry tail runs out to ~2.6s so the reset still wins after
+    the category's content (quote refresh + cards) finishes streaming in."""
+    components.html("""
     <script>
     const go = () => { try {
         const d = window.parent.document;
         const sel = 'section.main,[data-testid="stMain"],[data-testid="stAppViewContainer"],[data-testid="stMainBlockContainer"]';
         d.querySelectorAll(sel).forEach(e => { try { e.scrollTo(0, 0); } catch(_) { try { e.scrollTop = 0; } catch(__){} } });
         try { window.parent.scrollTo(0, 0); } catch(_) {}
+        try { const se = d.scrollingElement; if (se) se.scrollTop = 0; } catch(_) {}
     } catch(_) {} };
-    go(); setTimeout(go, 60); setTimeout(go, 200); setTimeout(go, 450);
+    go(); [60, 200, 450, 900, 1600, 2600].forEach(t => setTimeout(go, t));
     </script>
-    """, unsafe_allow_javascript=True)
+    """, height=0)
 
 
 def _render_discover_category(sel):
@@ -8408,8 +8485,12 @@ def _discover_lock_and_load_snaps(top):
     return snaps
 
 
-@st.fragment
 def _discover_body():
+    # NOTE: not decorated — page_discover wraps this in st.fragment(run_every=…) at
+    # call time so the auto-refresh cadence can follow market hours. The periodic
+    # rerun is FRAGMENT-scoped: only this body re-renders in place, the page chrome
+    # (topbar/CSS, outside the fragment) is untouched — that's what killed the
+    # full-page flash the old streamlit_autorefresh full rerun caused every 2 min.
     st.markdown('<div class="page-wrap pw-narrow">',unsafe_allow_html=True)
 
     sel = st.session_state.get("discover_cat", DISCOVER_HOME)
@@ -8453,9 +8534,12 @@ def _discover_body():
     _render_regime_guidance(rg)
 
     st.markdown('<div class="disc-section-label">Today\'s Board · Top Signals</div>', unsafe_allow_html=True)
-    st.markdown('<div class="disc-sub">Every setup in the market, ranked by our blended Conviction Score — browse the full board any time. (Your daily brief pings just what\'s new.) Tap any card for the full breakdown.</div>', unsafe_allow_html=True)
-    top = _top_signals(grouped, 6)
-    snaps = _discover_lock_and_load_snaps(top)
+    st.markdown('<div class="disc-sub">The market\'s current winners, ranked by our blended Conviction Score — longs in the green since their signal, shorts labeled and measured as shorts, plus today\'s freshest setups. (Your daily brief pings just what\'s new.) Tap any card for the full breakdown.</div>', unsafe_allow_html=True)
+    # Pull a deep pool, lock/load its snapshots, then keep only the picks that are
+    # WORKING (or brand-new) — a long that's down since signal doesn't belong on the board.
+    pool = _top_signals(grouped, 24)
+    snaps = _discover_lock_and_load_snaps(pool)
+    top = _winning_top_signals(pool, snaps, 6)
     _render_conviction_grid(top, "ts", snaps)
 
     # ── Browse by signal (6 themed groups) ──
@@ -8497,15 +8581,14 @@ def page_discover():
     except Exception:
         pass
     # ── Automatic price refresh (no toggle — a live product should just be live) ──
-    # Full-page refresh (re-applies all CSS, so it can't collapse the layout).
-    # Every 2 min during market hours; a slow 10-min tick off-hours keeps the page
-    # cheap while still picking up pre/after-market snapshot moves.
-    if HAS_AUTOREFRESH:
-        try:
-            _mkt_open = market_status().get("state") == "open"
-        except Exception:
-            _mkt_open = True
-        st_autorefresh(interval=120000 if _mkt_open else 600000, key="disc_ar_tick")
+    # FRAGMENT-scoped (see _discover_body): stats/prices update in place with no
+    # full-page rerun, so there's no screen flash. Every 2 min during market hours;
+    # a slow 10-min tick off-hours still picks up pre/after-market snapshot moves.
+    try:
+        _mkt_open = market_status().get("state") == "open"
+    except Exception:
+        _mkt_open = True
+    _disc_refresh_secs = 120 if _mkt_open else 600
     st.markdown(f"""<style>
     .disc-section-label{{font-size:11px;font-weight:800;color:#4a5e7a;letter-spacing:2.5px;
         text-transform:uppercase;margin:22px 0 6px;text-align:center;}}
@@ -8607,11 +8690,121 @@ def page_discover():
     [data-testid="stMainBlockContainer"] .stButton>button{{
         white-space:nowrap !important;overflow:hidden !important;text-overflow:ellipsis !important;}}
     </style>""", unsafe_allow_html=True)
-    _discover_body()
+    # Wrap the body as an auto-refreshing FRAGMENT: data updates re-render only the
+    # body, in place — no full-page rerun, no flash. Cadence follows market hours.
+    st.fragment(run_every=_disc_refresh_secs)(_discover_body)()
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: STOCK DETAIL
 # ─────────────────────────────────────────────────────────────
+def _signal_perf_box(ticker, ticker_signals, price_hint):
+    """The '{Long|Short} since signal' card. page_detail renders this as an
+    auto-refreshing FRAGMENT: on each tick it re-reads the ticker's warm-row quote —
+    which the scan worker refreshes in place every few minutes — so 'Current' and the
+    return keep tracking the live scan while you sit on the page, with no full-page
+    rerun (no flash).
+
+    Direction is DERIVED from the signal itself — a bearish/short category
+    (Breakdown, Distribution, Overbought Fade, …) measures a short's return;
+    everything else measures long. No user choice: the signal defines the trade.
+
+    Entry anchor: the most recent signal-engine event for this ticker; when none
+    exists yet (e.g. the worker was down when the pick first surfaced) it falls back
+    to the LOCKED Discover snapshot (recs store), so this card shows the same
+    entry/timestamp as the '% since' on the cards instead of claiming 'no prior
+    signal' while the card right above said 'Signaled 1d ago'."""
+    # Freshest price: warm row first (live-refreshed), click-time hint as fallback.
+    price = price_hint or 0
+    _wr = _warm_row_for(ticker)
+    if _wr and ((_wr.get("q") or {}).get("price") or 0) > 0:
+        price = _wr["q"]["price"]
+
+    _dir_cat = (ticker_signals[0].get("category", "") or "") if ticker_signals else ""
+    if not _dir_cat and _wr:
+        _dir_cat = _wr.get("primary_cat") or ""
+    try:
+        # category_dir returns "bear"/"bull" — the old comparison against "short"
+        # could never be true, so every signal displayed as LONG. Fixed.
+        dir_key = "short" if category_dir(_dir_cat) == "bear" else "long"
+    except Exception:
+        dir_key = "long"
+    direction = "Short (Short-Sell)" if dir_key == "short" else "Long (Buy)"
+    st.markdown(f'<div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;'
+                f'color:{"#fb7185" if dir_key=="short" else "#4ade80"};background:{"rgba(251,113,133,.1)" if dir_key=="short" else "rgba(34,197,94,.1)"};'
+                f'border:1px solid {"rgba(251,113,133,.3)" if dir_key=="short" else "rgba(34,197,94,.3)"};border-radius:20px;'
+                f'padding:4px 12px;margin-bottom:10px;">{"📉 SHORT position" if dir_key=="short" else "📈 LONG position"}'
+                f'<span style="color:#4a5e7a;font-weight:600;">· set by the signal type</span></div>',
+                unsafe_allow_html=True)
+
+    # ── Resolve the entry anchor: signal event → locked Discover snapshot → today ──
+    entry_price = None; sig_ts = None; tracked = None
+    if ticker_signals:
+        most_recent = ticker_signals[0]
+        entry_price = most_recent.get("trigger_price", price) or price
+        tracked = (most_recent.get("outcomes") or {}).get("current_pct")
+        try: sig_ts = datetime.fromisoformat(most_recent.get("triggered_at", "")).timestamp()
+        except Exception: sig_ts = None
+    else:
+        snap = None
+        try:
+            if _dir_cat:
+                snap = get_recommendation_snapshot(_dir_cat, ticker)
+            if not snap:
+                snap = get_recommendation_snapshot("__universe__", ticker)
+        except Exception:
+            snap = None
+        if snap and (snap.get("entry_price") or 0) > 0:
+            entry_price = snap["entry_price"]
+            sig_ts = snap.get("triggered_at")
+    if entry_price:
+        _stamp = _signal_stamp(sig_ts) if sig_ts else ""
+        _when = _stamp or "an earlier scan"
+        st.caption(f"Measured from the Scanviction signal on {_when} · Entry ${entry_price:.2f}")
+    else:
+        entry_price = price
+        st.caption(f"Measured from today's price (signal just flagged — tracking starts now)")
+    # Held: exact age from the signal timestamp — hours/minutes on day one instead
+    # of a flat '0d'.
+    if sig_ts:
+        _secs = max(0, time.time() - float(sig_ts))
+        held_str = (f"{int(_secs//86400)}d" if _secs >= 86400
+                    else f"{int(_secs//3600)}h" if _secs >= 3600 else f"{max(1, int(_secs//60))}m")
+    else:
+        held_str = "0d"
+
+    # LONG return since entry. Normally from the live price — but if a TRACKED snapshot
+    # (outcomes.current_pct) exists and the live quote disagrees with it by a lot, the
+    # live quote is unreliable (stale / bad data / demo-seed entry) so we fall back to
+    # the tracked return. This keeps this card CONSISTENT with the Track Record above
+    # instead of showing a nonsensical figure (e.g. -61% on a freshly-flagged signal).
+    live_ret = ((price - entry_price) / entry_price * 100) if entry_price else 0.0
+    if tracked is not None and abs(live_ret - float(tracked)) > 12:
+        long_ret = float(tracked)
+    else:
+        long_ret = live_ret
+    cur_price = price
+    ret_pct = long_ret if dir_key == "long" else -long_ret
+    pos = ret_pct >= 0
+    pcol = "#4ade80" if pos else "#f87171"
+    pbg = "rgba(34,197,94,0.08)" if pos else "rgba(239,68,68,0.08)"
+    st.markdown(f"""
+    <div style="background:{pbg};border:1px solid {pcol}44;border-radius:12px;padding:18px 20px;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">{direction} since signal</div>
+        <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:center;">
+            <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Return since signal</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:900;color:{pcol};">{'+' if pos else ''}{ret_pct:.2f}%</div></div>
+            <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Entry</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#818cf8;">${entry_price:.2f}</div></div>
+            <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Current</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#e2e8f0;">${cur_price:.2f}</div></div>
+            <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Held</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#e2e8f0;">{held_str}</div></div>
+        </div>
+        <div style="font-size:10px;color:#374f6e;margin-top:10px;">Price auto-updates with the scan — every few minutes during market hours.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 def _warm_index():
     """{ticker: row} over the warm universe, CACHED per-warm in session_state (keyed by
     the universe build time). Turns repeated per-ticker lookups (every detail open / demo
@@ -8878,14 +9071,18 @@ def page_detail():
     # fall back to a per-ticker live fetch (less reliable for off-scan tickers) when the
     # name genuinely isn't in the scan.
     q=data.get("q"); df=data.get("df"); info=data.get("info"); sent=data.get("sent")
-    _wr = None
-    if not q or df is None or not info:
-        _wr=_warm_row_for(ticker)
-        if _wr:
-            q = q or _wr.get("q")
-            if df is None: df=_wr.get("df")
-            info = info or _wr.get("info")
-            sent = sent or _wr.get("sent")
+    # ALWAYS look up the warm row (not only when the payload is missing pieces): the
+    # click-time payload's quote is a snapshot frozen at the moment the card was
+    # clicked, while the warm row's quote keeps being refreshed in place by the scan
+    # worker every few minutes. Preferring the warm quote is what makes the price on
+    # this page (and the Signal Performance "Current") track the 15-minute scan
+    # instead of staying stuck at the click-time number.
+    _wr=_warm_row_for(ticker)
+    if _wr:
+        if _wr.get("q"): q = _wr["q"]
+        if df is None: df=_wr.get("df")
+        info = info or _wr.get("info")
+        sent = sent or _wr.get("sent")
     # Anything still missing needs a slow per-ticker network fetch (cold OHLCV / .info /
     # sentiment). Show a spinner so a cold open feels responsive instead of a frozen stale
     # page. A WARM open fills everything above, so this block is a no-op and the spinner never
@@ -9252,76 +9449,14 @@ def page_detail():
         if st.button("Sign In", key="det_pnl_login", use_container_width=True, type="primary"):
             nav("login")
     else:
-        # Direction is DERIVED from the signal itself — a bearish/short category
-        # (Breakdown, Distribution, Overbought Fade, …) measures a short's return;
-        # everything else measures long. No user choice: the signal defines the trade.
-        _dir_cat = (ticker_signals[0].get("category", "") or "") if ticker_signals else ""
-        if not _dir_cat:
-            try:
-                _dir_cat = next((r.get("primary_cat") or "" for r in build_scored_universe()
-                                 if r.get("t") == ticker), "")
-            except Exception:
-                _dir_cat = ""
+        # Auto-refreshing fragment: the box re-reads the warm quote in place every
+        # couple of minutes during market hours — Current price + return stay live
+        # while the user sits on the page, without a full-page rerun (no flash).
         try:
-            dir_key = "short" if category_dir(_dir_cat) == "short" else "long"
+            _open_now = market_status().get("state") == "open"
         except Exception:
-            dir_key = "long"
-        direction = "Short (Short-Sell)" if dir_key == "short" else "Long (Buy)"
-        st.markdown(f'<div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;'
-                    f'color:{"#fb7185" if dir_key=="short" else "#4ade80"};background:{"rgba(251,113,133,.1)" if dir_key=="short" else "rgba(34,197,94,.1)"};'
-                    f'border:1px solid {"rgba(251,113,133,.3)" if dir_key=="short" else "rgba(34,197,94,.3)"};border-radius:20px;'
-                    f'padding:4px 12px;margin-bottom:10px;">{"📉 SHORT position" if dir_key=="short" else "📈 LONG position"}'
-                    f'<span style="color:#4a5e7a;font-weight:600;">· set by the signal type</span></div>',
-                    unsafe_allow_html=True)
-
-        # Entry = most recent signal trigger for this ticker, else today's price.
-        tracked = None
-        if ticker_signals:
-            most_recent = ticker_signals[0]
-            entry_price = most_recent.get("trigger_price", price) or price
-            days_held = (datetime.now() - datetime.fromisoformat(most_recent.get("triggered_at", datetime.now().isoformat()))).days
-            signal_date = datetime.fromisoformat(most_recent.get("triggered_at", datetime.now().isoformat())).strftime("%b %d, %Y")
-            tracked = (most_recent.get("outcomes") or {}).get("current_pct")
-            st.caption(f"Measured from the Scanviction signal on {signal_date} · Entry ${entry_price:.2f}")
-        else:
-            entry_price = price
-            days_held = 0
-            st.caption(f"Measured from today's price (no prior signal for {ticker})")
-
-        # LONG return since entry. Normally from the live price — but if a TRACKED snapshot
-        # (outcomes.current_pct) exists and the live quote disagrees with it by a lot, the
-        # live quote is unreliable (stale / bad data / demo-seed entry) so we fall back to
-        # the tracked return. This keeps this card CONSISTENT with the Track Record above
-        # instead of showing a nonsensical figure (e.g. -61% on a freshly-flagged signal).
-        live_ret = ((price - entry_price) / entry_price * 100) if entry_price else 0.0
-        # Demo entries are anchored to live prices, so normally live_ret == the tracked
-        # outcome. The guard is a safety net: if a stale entry / bad quote makes the live
-        # return wildly disagree with the tracked snapshot, fall back to the tracked
-        # return — but ALWAYS show the real current price so it matches the rest of the page.
-        if tracked is not None and abs(live_ret - float(tracked)) > 12:
-            long_ret = float(tracked)
-        else:
-            long_ret = live_ret
-        cur_price = price
-        ret_pct = long_ret if dir_key == "long" else -long_ret
-        pos = ret_pct >= 0
-        pcol = "#4ade80" if pos else "#f87171"
-        pbg = "rgba(34,197,94,0.08)" if pos else "rgba(239,68,68,0.08)"
-        st.markdown(f"""
-        <div style="background:{pbg};border:1px solid {pcol}44;border-radius:12px;padding:18px 20px;margin-bottom:12px;">
-            <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">{direction} since signal</div>
-            <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:center;">
-                <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Return since signal</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:900;color:{pcol};">{'+' if pos else ''}{ret_pct:.2f}%</div></div>
-                <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Entry</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#818cf8;">${entry_price:.2f}</div></div>
-                <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Current</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#e2e8f0;">${cur_price:.2f}</div></div>
-                <div><div style="font-size:11px;color:#374f6e;margin-bottom:2px;">Held</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#e2e8f0;">{days_held}d</div></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            _open_now = True
+        st.fragment(run_every=120 if _open_now else 600)(_signal_perf_box)(ticker, ticker_signals, price)
 
     # Why flagged
     st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
@@ -9553,6 +9688,21 @@ def page_signals():
                 detail_html = f'<span style="color:#a5b4fc;font-weight:600;">{rec}</span>' if rec else ""
                 score_html = "" if is_evt else f'<span style="color:{sc_c};font-weight:700;">Score {sc}</span>'
                 sec_html = f'<span style="color:#374f6e;">{sec}</span>' if (sec and not is_evt) else ""
+                # % since the signal (same figure as Discover / category cards): live warm
+                # price vs the trigger price, measured in the signal's own direction
+                # (shorts show a decline as a positive, labeled short).
+                since_html = ""
+                try:
+                    _cur = ((_warm_index().get(t) or {}).get("q") or {}).get("price", 0) or 0
+                    _d, _sh = _since_signal_pct(cat, price, _cur)
+                    if _d is not None:
+                        _scol = GREEN if _d >= 0 else RED
+                        _ssign = "+" if _d >= 0 else ""
+                        _slbl = "% since (short)" if _sh else "% since"
+                        since_html = (f'<span style="font-family:JetBrains Mono,monospace;font-weight:700;'
+                                      f'color:{_scol};">{_ssign}{_d:.2f}{_slbl}</span>')
+                except Exception:
+                    pass
                 st.markdown(f'<div class="sr" style="padding:11px 14px;">'
                             f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
                             f'<span class="sr-tick">{t}</span>'
@@ -9560,7 +9710,7 @@ def page_signals():
                             f'<span style="font-size:10px;color:#4a5e7a;">{age}</span></div>'
                             f'<div style="display:flex;gap:16px;margin-top:5px;font-size:12px;flex-wrap:wrap;align-items:center;">'
                             f'<span style="font-family:JetBrains Mono,monospace;color:#e2e8f0;font-weight:700;">${price:,.2f}</span>'
-                            f'{score_html}{detail_html}{sec_html}</div>'
+                            f'{since_html}{score_html}{detail_html}{sec_html}</div>'
                             f'</div>', unsafe_allow_html=True)
         with cb:
             st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)

@@ -21,6 +21,9 @@ support_messages.jsonl
 # Snapshots / archives
 *.zip
 
+# Claude Code local (machine-specific) settings
+.claude/settings.local.json
+
 # Editor / backups
 *.bak
 *.bak-*

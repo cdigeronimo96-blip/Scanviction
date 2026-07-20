@@ -1,0 +1,86 @@
+# Daily build + deploy of the Scanviction SEO static site (see SEO_README.md).
+#
+# ── ONE-TIME SETUP ────────────────────────────────────────────────────────────
+# 1. Create a Cloudflare Pages project (or Netlify site) for the SEO domain.
+# 2. Add these repo secrets (Settings → Secrets and variables → Actions):
+#      CF_API_TOKEN        Cloudflare API token with "Pages: Edit"
+#      CF_ACCOUNT_ID       your Cloudflare account id
+#      SEO_SNAPSHOT_URL    (optional) a URL that returns universe_snapshot.json
+#    ...OR skip the token and just commit universe_snapshot.json to the repo root.
+# 3. Point a subdomain (e.g. www. or stocks.) at the Pages project.
+#
+# ── SNAPSHOT SOURCE ───────────────────────────────────────────────────────────
+# The app writes .msp_data/universe_snapshot.json on each warm (seo_export.py). That
+# lives on the app server, which this Action can't read directly, so pick one:
+#   • Easiest: periodically commit universe_snapshot.json to the repo root.
+#   • Or: expose it at SEO_SNAPSHOT_URL (object storage / a small endpoint) and this
+#     Action curls it below.
+name: build-seo
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"   # ~after US market close, weekdays (UTC)
+  workflow_dispatch: {}         # manual "Run workflow" button
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Job-level env so `secrets` can be referenced in step `if:` conditions (secrets context is
+    # not allowed directly in step `if:`). Missing secrets resolve to '' and the step is skipped.
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      GOOGLE_SITE_VERIFICATION: ${{ secrets.GOOGLE_SITE_VERIFICATION }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Build input = the committed universe_snapshot.json. SEO_SNAPSHOT_URL is an OPTIONAL override
+      # (Streamlit static files are auth-gated, so it usually won't work) — it fetches to a temp file
+      # and only replaces the committed one if it's valid JSON, so a failed fetch never clobbers it.
+      - name: Prepare snapshot
+        env:
+          SEO_SNAPSHOT_URL: ${{ secrets.SEO_SNAPSHOT_URL }}
+        run: |
+          if [ -n "$SEO_SNAPSHOT_URL" ]; then
+            if curl -fsSL "$SEO_SNAPSHOT_URL" -o snap.tmp && python -c "import json;json.load(open('snap.tmp'))" 2>/dev/null; then
+              mv snap.tmp universe_snapshot.json
+              echo "Using fresh snapshot from SEO_SNAPSHOT_URL."
+            else
+              rm -f snap.tmp
+              echo "::warning::SEO_SNAPSHOT_URL unreachable/invalid — using the committed universe_snapshot.json."
+            fi
+          fi
+          if [ ! -f universe_snapshot.json ]; then
+            echo "::error::universe_snapshot.json not found. Commit it to the repo (regenerate locally: run the app to warm, then copy .msp_data/universe_snapshot.json to the repo root)."; exit 1
+          fi
+          python -c "import json;d=json.load(open('universe_snapshot.json'));print('snapshot rows:',d.get('count'))"
+
+      # GOOGLE_SITE_VERIFICATION comes from the job env → the generator bakes it into every page.
+      - name: Generate the static site (full universe; keeps the Search Console verification)
+        run: |
+          python seo_generate.py \
+            --snapshot universe_snapshot.json \
+            --out seo_site \
+            --site-url https://stocks.scanviction.com \
+            --app-url  https://scanviction.com
+
+      # ── Deploy to Netlify (where stocks.scanviction.com lives). ──
+      # Secrets to add: NETLIFY_AUTH_TOKEN (Netlify → User settings → Applications → New access token)
+      #                 NETLIFY_SITE_ID    (Site → Project configuration → Project ID: 05b6210b-a127-4311-97e8-dc759facd5ff)
+      #                 GOOGLE_SITE_VERIFICATION (the Search Console token, so the full site stays verified)
+      # netlify-cli reads NETLIFY_AUTH_TOKEN + NETLIFY_SITE_ID from the job env automatically.
+      - name: Deploy to Netlify
+        if: ${{ env.NETLIFY_AUTH_TOKEN != '' }}
+        run: |
+          npm install -g netlify-cli
+          netlify deploy --prod --dir=seo_site --site="$NETLIFY_SITE_ID" --auth="$NETLIFY_AUTH_TOKEN"
+
+      - name: Upload site as artifact (fallback when no Netlify token yet)
+        if: ${{ env.NETLIFY_AUTH_TOKEN == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: seo_site
+          path: seo_site

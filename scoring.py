@@ -48,7 +48,7 @@ COMPOSITE_CATS = {
     "💥 Volatility Expansion":  ("A large move on 2×+ volume with volatility spiking — range expansion, momentum igniting now", "premium"),
     "🔥 Short Squeeze":         ("High days-to-cover from real FINRA short interest, with upward momentum — genuine squeeze fuel (not a technical proxy)", "premium"),
     "⚡🧲 Smart-Money Squeeze":  ("Heavily shorted (high days-to-cover) AND big money quietly accumulating (positive Chaikin money flow) WITH momentum — a squeeze that smart money is already behind. Three independent data sources at once.", "premium"),
-    "🎪 Catalyst / Gap":        ("Gapped 3.5%+ on heavy volume — a likely news or event catalyst in play", "premium"),
+    "🎪 Catalyst / Gap":        ("Gapped 3.5%+ on heavy volume — scored on the catalyst's quality: confirmed news (SEC 8-K), whether the gap is holding or fading, and whether the volume is sustained", "premium"),
     # ── Bearish / short setups (direction = bear; for short-sellers & hedgers) ──
     "📉 Breakdown":             ("Breaking to a fresh 60-day LOW on heavy volume, below both moving averages — a bearish breakdown / short setup", "premium"),
     "🐻 Distribution":          ("Volume rising while price falls and money flows OUT (negative Chaikin money flow) — institutional distribution, a short setup", "premium"),
@@ -211,8 +211,8 @@ def compute_factors(df, ind=None):
          "near_high": False, "new_high": False, "pct_from_high": 0.0,
          "drawdown": 0.0, "range_pos": 0.5, "atr_pct": 0.0, "bb_squeeze": 0.0,
          "vol_trend": 1.0, "up_days": 0, "above_ma20": False, "above_ma50": False,
-         "ma20_slope": 0.0, "gap": 0.0, "dist_ma20": 0.0, "rel_strength": None,
-         "mfi": 50.0, "cmf": 0.0, "adx": 0.0, "obv_slope": 0.0}
+         "ma20_slope": 0.0, "gap": 0.0, "gap_hold": 0.0, "dist_ma20": 0.0,
+         "rel_strength": None, "mfi": 50.0, "cmf": 0.0, "adx": 0.0, "obv_slope": 0.0}
     try:
         if df is None or len(df) < 20:
             return f
@@ -291,6 +291,10 @@ def compute_factors(df, ind=None):
         if "open" in df.columns and n>=2:
             o = float(df["open"].iloc[-1]); pc = float(close.iloc[-2])
             f["gap"] = (o-pc)/pc*100 if pc else 0.0
+            # How the session traded AFTER the gap: % move from today's open. A gap-up
+            # that keeps climbing (gap_hold > 0) is being *justified* by buyers; one that
+            # bleeds back below its open is fading. (Mirror-signed for gap-downs.)
+            f["gap_hold"] = (price-o)/o*100 if o else 0.0
     except Exception:
         pass
     return f
@@ -316,7 +320,7 @@ def _feat_from_row(row):
     for k, d in (("rsi",50.0),("roc5",0.0),("roc10",0.0),("roc20",0.0),("accel",0.0),
                  ("trend_align",0),("macd_state",0),("vol_ratio",1.0),("vol_trend",1.0),
                  ("atr_pct",0.0),("bb_squeeze",0.0),("dist_ma20",0.0),("ma20_slope",0.0),
-                 ("drawdown",0.0),("range_pos",0.5),("up_days",0),("gap",0.0),("dtc",0.0),
+                 ("drawdown",0.0),("range_pos",0.5),("up_days",0),("gap",0.0),("gap_hold",0.0),("dtc",0.0),
                  ("mfi",50.0),("cmf",0.0),("adx",0.0),("obv_slope",0.0),("svr",0.0),
                  ("insider_buys",0),("insider_value",0.0)):
         f.setdefault(k, d)
@@ -367,11 +371,27 @@ COMPOSITE_FIT = {
   "⚡🧲 Smart-Money Squeeze": lambda f: (
       _cl(f["dtc"],0,15)*4 + _cl(f["cmf"],0,0.4)*55 + _cl(f["roc10"],0,20) + _cl(f["svr"]-45,0,25)*0.4
       if (f["dtc"]>=5 and f["cmf"]>0.08 and f["roc10"]>0) else 0),
+  # Social spike TODAY: chatter volume (msgs) AND a rising buzz trend, confirmed by real
+  # trading volume. Weighted so a genuinely viral name OUTSCORES the generic technical
+  # categories it inevitably also matches (it used to lose the single-best-fit argmax to
+  # them almost every time, so the category sat permanently empty).
   "🎭 Social Catalyst": lambda f: (
-      _cl(f["msgs"],0,300)*0.18 + f["vol_bd"]*1.5 + (20 if f["in_hot"] else 0) + _cl(f["buzz"],0,100)*0.3
-      if ((f["msgs"]>=SENT_MIN_MSGS or f["in_hot"]) and f["vol_ratio"]>=1.3) else 0),
+      _cl(f["msgs"],0,300)*0.25 + _cl(f["buzz"],0,200)*0.35 + (25 if f["in_hot"] else 0)
+      + _cl(f["vol_ratio"]-1,0,5)*8
+      if ((f["msgs"]>=SENT_MIN_MSGS or f["in_hot"]) and f["vol_ratio"]>=1.3
+          and (f["buzz"]>=25 or f["in_hot"] or f["msgs"]>=60)) else 0),
+  # Catalyst/Gap is scored on the EVENT's quality, not just its size: gap magnitude,
+  # volume surge since the catalyst, whether that volume is HOLDING across sessions
+  # (vol_trend), a confirmed news catalyst (fresh SEC 8-K), whether the gap is being
+  # JUSTIFIED intraday (holding beyond its open vs fading back through it), and whether
+  # money flow (CMF) agrees with the gap's direction.
   "🎪 Catalyst / Gap": lambda f: (
-      _cl(abs(f["gap"]),0,25)*4 + _cl(f["vol_ratio"],0,8)*8 + (12 if f["has_8k"] else 0)
+      _cl(abs(f["gap"]),0,25)*3                               # size of the gap (event magnitude)
+      + _cl(f["vol_ratio"],0,8)*6                             # volume since the catalyst
+      + _cl((f["vol_trend"]-1.0)*25,0,20)                     # volume held over the period
+      + (14 if f["has_8k"] else 0)                            # confirmed news (fresh SEC 8-K)
+      + (10 if (f["gap"]>=0)==(f["gap_hold"]>=0) else -8)     # gap holding = justified; fading = penalized
+      + (6 if (f["cmf"]>0)==(f["gap"]>0) else 0)              # money flow agrees with the move
       if (abs(f["gap"])>=3.5 and f["vol_ratio"]>=1.5) else 0),
   "💎 Value Momentum": lambda f: (
       (25-(f["pe"] or 99)) + f["trend_align"]*7 + _cl(f["roc20"],0,15)
@@ -434,6 +454,13 @@ COMPOSITE_FIT = {
 def _category_why(cat, f):
     rsi=f.get("rsi",50); roc20=f.get("roc20",0); roc5=f.get("roc5",0); vr=f.get("vol_ratio",1)
     rs=f.get("rel_strength"); dd=f.get("drawdown",0); vt=f.get("vol_trend",1); pe=f.get("pe")
+    # Catalyst/Gap: name the news, whether the gap is holding (justified) or fading,
+    # and whether volume is staying elevated — the factors the fit actually scores.
+    _gap = f.get("gap",0); _held = (_gap>=0) == (f.get("gap_hold",0)>=0)
+    _cg = (f"Gapped {_gap:+.0f}% on {vr:.1f}× volume"
+           + (" with a fresh SEC 8-K (confirmed news)" if f.get("has_8k") else " — likely news/event")
+           + (", gap holding" if _held else ", gap fading")
+           + (" and volume staying elevated" if vt >= 1.15 else ""))
     W = {
       "🌊 Momentum Leaders":     f"Up {roc20:+.0f}% over 20d, above both MAs, RSI {rsi:.0f} — healthy sustained trend",
       "⚡ Momentum Surge":        f"Accelerating ({roc5:+.0f}% in 5d) with a fresh MACD upturn",
@@ -447,8 +474,8 @@ def _category_why(cat, f):
       "💥 Volatility Expansion":  f"{vr:.1f}× volume on a {roc5:+.0f}% move — range expanding",
       "🔥 Short Squeeze":         f"{f.get('dtc',0):.1f} days-to-cover (real FINRA short interest) with upward momentum — genuine squeeze fuel",
       "⚡🧲 Smart-Money Squeeze":  f"{f.get('dtc',0):.1f}-day cover + money flowing IN (CMF {f.get('cmf',0):+.2f}) on momentum — squeeze with smart money behind it",
-      "🎭 Social Catalyst":       f"Social chatter elevated with {vr:.1f}× volume — catalyst in play",
-      "🎪 Catalyst / Gap":        (f"Gapped {f.get('gap',0):+.0f}% on {vr:.1f}× volume with a fresh SEC 8-K — confirmed news/event" if f.get("has_8k") else f"Gapped {f.get('gap',0):+.0f}% on {vr:.1f}× volume — likely news/event"),
+      "🎭 Social Catalyst":       f"{int(f.get('msgs',0))} mentions ({f.get('buzz',0):+.0f}% buzz trend) with {vr:.1f}× volume — social catalyst in play",
+      "🎪 Catalyst / Gap":        _cg,
       "💎 Value Momentum":        f"Low P/E ({(pe or 0):.0f}×) with a rising trend — value meets momentum",
       "🏅 Quality Momentum":      f"P/E {(pe or 0):.0f}× and up {roc20:+.0f}% on a confirmed trend (ADX {f.get('adx',0):.0f}) with money flowing in — quality that's moving",
       "🩸 Capitulation Bottom":   f"Down {dd:.0f}% and RSI {rsi:.0f} (deeply oversold) on a {vr:.1f}× volume washout — sellers flushing out",
