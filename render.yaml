@@ -53,7 +53,10 @@ services:
     # scan worker when a session connects — this makes the service fully self-warming:
     # the scanner starts within seconds of every deploy/restart, with NO dependency on
     # visitors or the GitHub keep-awake action.
-    startCommand: mkdir -p .streamlit && cp /etc/secrets/secrets.toml .streamlit/secrets.toml && (python self_kick.py &) && streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
+    # self_kick runs under a shell supervisor loop: if the process ever dies (OOM kill,
+    # unexpected crash), it restarts in 30s instead of leaving the scanner with no
+    # watchdog until the next deploy.
+    startCommand: mkdir -p .streamlit && cp /etc/secrets/secrets.toml .streamlit/secrets.toml && (while true; do python self_kick.py; echo "[self-kick] process exited - restarting in 30s"; sleep 30; done &) && streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
     healthCheckPath: /_stcore/health   # if Render marks it unhealthy, try /healthz
     autoDeploy: true              # redeploy on push to the connected branch
     envVars:

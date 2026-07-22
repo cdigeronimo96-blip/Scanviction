@@ -100,9 +100,12 @@ def main():
     if os.environ.get("SELF_KICK_DISABLE") == "1":
         _log("disabled via SELF_KICK_DISABLE=1")
         return
-    if not _wait_for_server():
-        _log(f"server never became healthy on port {PORT}; giving up")
-        return
+    # NEVER give up waiting for the server. The old code exited after one
+    # BOOT_TIMEOUT window ("giving up") — so a single slow boot silently killed
+    # the watchdog until the NEXT DEPLOY, and the scanner sat idle until a real
+    # visitor arrived (the "didn't run today until I logged in" failure mode).
+    while not _wait_for_server():
+        _log(f"server not healthy on :{PORT} after {BOOT_TIMEOUT}s — still waiting (will not give up)")
     _log(f"server healthy on :{PORT} — kicking a session to start the scan worker")
     while True:
         try:
@@ -114,5 +117,21 @@ def main():
         time.sleep(INTERVAL)
 
 
+def run_forever():
+    """Outer supervisor: main() should never return, but if ANY unexpected error
+    escapes (protobuf import change after an upgrade, transient OSError, …) the
+    watchdog must survive — log, pause, restart. The scanner's liveness depends
+    on this process staying alive for the whole life of the container."""
+    while True:
+        try:
+            main()
+            if os.environ.get("SELF_KICK_DISABLE") == "1":
+                return
+            _log("main() returned unexpectedly — restarting in 60s")
+        except Exception as e:
+            _log(f"crashed: {type(e).__name__}: {e} — restarting in 60s")
+        time.sleep(60)
+
+
 if __name__ == "__main__":
-    main()
+    run_forever()

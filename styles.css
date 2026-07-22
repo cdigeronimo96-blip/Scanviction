@@ -46,6 +46,11 @@ input, textarea, [contenteditable], .sw-allow-select {
     body { overscroll-behavior-y: contain; }
 }
 
+/* Edge (Windows) injects its own password-reveal eye INSIDE every password input,
+   duplicating Streamlit's built-in reveal toggle beside the field — two eyeballs on
+   the reset/login forms. Suppress the browser-native one; Streamlit's stays. */
+input::-ms-reveal, input::-ms-clear { display: none !important; }
+
 /* Native-style button press animation */
 button, [role="button"], .stButton button {
     transition: transform 0.08s ease-out, opacity 0.15s ease-out !important;

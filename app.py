@@ -3762,6 +3762,13 @@ _POLYGON_KEY_CAPTURED = ""
 # Telegram bot token captured on the main thread too, so the worker thread can DELIVER
 # freshly-recorded signals to subscribers inline (see _deliver_new_signals).
 _TG_TOKEN_CAPTURED = ""
+# Email (Resend) config captured the same way: _alert_email used to read st.secrets
+# directly, which is only reliable on the main thread — from the worker thread a
+# failed read silently returned "" and EMAIL ALERTS NEVER SENT, with no error
+# anywhere. Captured at router startup (script context) like the tokens above.
+_RESEND_KEY_CAPTURED = ""
+_EMAIL_FROM_CAPTURED = ""
+_APP_URL_CAPTURED = ""
 
 def _effective_universe_tickers():
     """Tickers to pre-score. With an FMP key, this is the market-wide candidate
@@ -4285,9 +4292,15 @@ def _build_universe_raw_polygon(key):
     #    deadline — if the long tail can't finish, the most-liquid names are done.
     rows = []
     deadline = time.time() + POLY_WARM_DEADLINE
-    for t in universe:
+    for _ti, t in enumerate(universe):
         if time.time() > deadline:
             break
+        # GIL relief: this tight pandas loop runs ~45s in a background thread of the
+        # SAME process serving web requests — without yields it starves the server
+        # and pages intermittently time out during every re-score. A tiny sleep
+        # every 25 tickers hands the GIL back (~0.5s total added per warm).
+        if _ti and _ti % 25 == 0:
+            time.sleep(0.005)
         recs = frames.get(t)
         if not recs or len(recs) < 14:
             continue
@@ -4457,14 +4470,24 @@ def recommended_stop(price, atr_pct, direction="long"):
 # (user, signal) send exactly once. The cron's own composite delivery is gated OFF by default
 # (alerts_worker: WORKER_DELIVERS_SIGNALS) so the two never double-send.
 def _tg_send_raw(token, chat_id, text):
-    """Thread-safe Telegram send (no st.secrets / session needed). True on HTTP 200."""
+    """Thread-safe Telegram send (no st.secrets / session needed). True on HTTP 200.
+    Failures are recorded to Data Health ('telegram_alerts') — a rejected send
+    (blocked bot, bad chat id, HTML parse error) used to vanish without a trace."""
     try:
         import requests as _rq
         r = _rq.post(f"https://api.telegram.org/bot{token}/sendMessage",
                      json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                            "disable_web_page_preview": True}, timeout=10)
-        return r.status_code == 200
-    except Exception:
+        ok = r.status_code == 200
+        try:
+            _record_health("telegram_alerts", ok,
+                           err=None if ok else f"HTTP {r.status_code}: {r.text[:120]}")
+        except Exception:
+            pass
+        return ok
+    except Exception as e:
+        try: _record_health("telegram_alerts", False, err=f"{type(e).__name__}: {str(e)[:120]}")
+        except Exception: pass
         return False
 
 def _signal_stop_line(tkr, cat, price):
@@ -4614,8 +4637,23 @@ def _deliver_new_signals(added):
             cutoff = time.time() - 7 * 86400   # bound the dedup store to ~7 days
             delivered = {k: v for k, v in delivered.items() if (v or 0) > cutoff}
             _ms.write_json(_dkey, delivered)
-    except Exception:
-        pass
+        # Cycle summary → Data Health, so "are notifications going out?" is
+        # answerable from Admin instead of guesswork.
+        try:
+            _record_health("alerts", True,
+                           err=f"{len(added)} new event(s), {len(users)} user(s) checked, "
+                               f"tg={'on' if token else 'OFF'}, email={'on' if _RESEND_KEY_CAPTURED else 'key?'}")
+        except Exception:
+            pass
+    except Exception as e:
+        # This used to be a bare pass — ONE unexpected error silently killed ALL
+        # Telegram/email/push delivery with nothing in any log.
+        try:
+            _record_health("alerts", False, err=f"{type(e).__name__}: {str(e)[:140]}")
+            import traceback as _tb
+            sys.stderr.write(f"[deliver_signals] {_tb.format_exc()}\n")
+        except Exception:
+            pass
 
 # ── Market-regime gate on signal generation ────────────────────────────────────
 # Backtest finding: the signal is strong in trending tape and goes quiet in chop / stress. So in a
@@ -4903,14 +4941,22 @@ def _alert_email(to, subject, body_lines):
     """Send an alert/digest email via Resend. `body_lines` is a list of already-safe HTML
     lines (or a string). No-op (returns False) without RESEND_API_KEY. Runs in-process so
     email alerts work on Streamlit Cloud WITHOUT the external cron worker."""
-    try: key = st.secrets.get("RESEND_API_KEY", "") or ""
-    except Exception: key = ""
+    # Captured-on-main-thread values FIRST — this often runs on the worker thread,
+    # where a st.secrets read can fail and silently disable all email alerts.
+    key = _RESEND_KEY_CAPTURED
+    if not key:
+        try: key = st.secrets.get("RESEND_API_KEY", "") or ""
+        except Exception: key = ""
     if not key or not to:
         return False
-    try: frm = st.secrets.get("EMAIL_FROM", "Scanviction <noreply@scanviction.com>")
-    except Exception: frm = "Scanviction <noreply@scanviction.com>"
-    try: app_url = st.secrets.get("APP_URL", "https://marketsignalpro.streamlit.app")
-    except Exception: app_url = "https://marketsignalpro.streamlit.app"
+    frm = _EMAIL_FROM_CAPTURED
+    if not frm:
+        try: frm = st.secrets.get("EMAIL_FROM", "Scanviction <noreply@scanviction.com>")
+        except Exception: frm = "Scanviction <noreply@scanviction.com>"
+    app_url = _APP_URL_CAPTURED
+    if not app_url:
+        try: app_url = st.secrets.get("APP_URL", "https://scanviction.com")
+        except Exception: app_url = "https://scanviction.com"
     body = body_lines if isinstance(body_lines, str) else "<br>".join(body_lines)
     html = (f'<div style="font-family:Inter,Arial,sans-serif;background:#07090f;padding:32px;">'
             f'<div style="max-width:560px;margin:0 auto;background:#0d1525;border:1px solid rgba(99,102,241,.3);'
@@ -4927,8 +4973,14 @@ def _alert_email(to, subject, body_lines):
         resp = requests.post("https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json={"from": frm, "to": [to], "subject": subject, "html": html}, timeout=12)
-        return resp.status_code in (200, 201)
-    except Exception:
+        ok = resp.status_code in (200, 201)
+        # Surface delivery outcomes in Admin → Data Health instead of failing silently.
+        try: _record_health("email_alerts", ok, err=None if ok else f"HTTP {resp.status_code}: {resp.text[:120]}")
+        except Exception: pass
+        return ok
+    except Exception as e:
+        try: _record_health("email_alerts", False, err=f"{type(e).__name__}: {str(e)[:120]}")
+        except Exception: pass
         return False
 
 def _deliver_user_alert(email, u, tkr, msg, price, pct, channels):
@@ -5035,6 +5087,12 @@ def _universe_worker():
     last_full = 0.0   # wall-clock of the last FULL re-score
     while True:
         cycle_start = time.time()
+        # Liveness heartbeat: ensure_universe_worker uses this to tell a RUNNING
+        # worker from a HUNG one (thread alive but stuck in a network call). It's
+        # refreshed here and every second of the sleep loop below, so any gap
+        # longer than _WORKER_STALL_SECS means the thread is genuinely stuck.
+        with _UNIVERSE_LOCK:
+            _UNIVERSE_CACHE["worker_beat"] = cycle_start
         # Decide this cycle: a FULL re-score is due on cold start, on a force-refresh, or every
         # re-score interval. DURING MARKET HOURS with intraday signals on, that interval drops to
         # INTRADAY_RESCORE and the re-score appends today's forming bar (see _intraday_bar) — so
@@ -5101,17 +5159,27 @@ def _universe_worker():
                     _sleep_for = min(_sleep_for, max(int(_ms.get("seconds", 0)) + 5, 30))
             except Exception:
                 pass
-        # Sleep in short slices so a force-refresh is picked up quickly.
+        # Sleep in short slices so a force-refresh is picked up quickly (and keep
+        # the liveness heartbeat fresh — a long off-hours sleep must not read as a
+        # stall to the watchdog in ensure_universe_worker).
         slept = 0
         while slept < _sleep_for:
             time.sleep(1)
             slept += 1
             with _UNIVERSE_LOCK:
+                _UNIVERSE_CACHE["worker_beat"] = time.time()
                 if _UNIVERSE_CACHE.get("force"):
                     break
 
+# A worker heartbeat older than this = the thread is HUNG (stuck network call /
+# deadlock), not just sleeping — the sleep loop refreshes the beat every second,
+# and even the heaviest full warm finishes well inside this window.
+_WORKER_STALL_SECS = int(_os.environ.get("MSP_WORKER_STALL_SECS", "1800"))
+
 def ensure_universe_worker():
-    """Start the background refresh thread once per PROCESS (survives reruns)."""
+    """Start the background refresh thread once per PROCESS (survives reruns) —
+    and REVIVE it if it's dead or hung. Called on every session script run, so
+    any visit / self-kick / keep-awake ping doubles as a watchdog check."""
     if _os.environ.get("MSP_DISABLE_WORKER") == "1":
         return   # tests / tooling import app without spinning up the live scanner
     # Telegram getUpdates listener: ONE background consumer that answers /start instantly
@@ -5123,10 +5191,24 @@ def ensure_universe_worker():
     except Exception:
         pass
     with _WORKER_LOCK:
-        for _th in _threading.enumerate():
-            if _th.name == "msp-universe":
+        alive = any(_th.name.startswith("msp-universe") for _th in _threading.enumerate())
+        if alive:
+            # Thread exists — but is it actually MAKING PROGRESS? A hung thread
+            # (stuck in a no-timeout network call) can't be killed, but we can
+            # start a replacement so scanning and alert delivery resume. The old
+            # name-only check meant a hung worker silently stopped all scans and
+            # notifications until the next full restart.
+            with _UNIVERSE_LOCK:
+                beat = _UNIVERSE_CACHE.get("worker_beat", 0) or 0
+            if not beat or (time.time() - beat) <= _WORKER_STALL_SECS:
                 return
-        th = _threading.Thread(target=_universe_worker, name="msp-universe", daemon=True)
+            with _UNIVERSE_LOCK:   # reset so each session doesn't spawn another
+                _UNIVERSE_CACHE["worker_beat"] = time.time()
+            _record_health("worker", False, err=f"stalled >{_WORKER_STALL_SECS}s — starting replacement thread")
+            try: sys.stderr.write("[msp] universe worker STALLED — starting replacement thread\n")
+            except Exception: pass
+        th = _threading.Thread(target=_universe_worker,
+                               name=f"msp-universe-{int(time.time())}", daemon=True)
         th.start()
     try: sys.stderr.write("[msp] universe worker thread started\n")
     except Exception: pass
@@ -8497,12 +8579,17 @@ def _discover_lock_and_load_snaps(top):
     return snaps
 
 
+@st.fragment(run_every=120)
 def _discover_body():
-    # NOTE: not decorated — page_discover wraps this in st.fragment(run_every=…) at
-    # call time so the auto-refresh cadence can follow market hours. The periodic
-    # rerun is FRAGMENT-scoped: only this body re-renders in place, the page chrome
-    # (topbar/CSS, outside the fragment) is untouched — that's what killed the
-    # full-page flash the old streamlit_autorefresh full rerun caused every 2 min.
+    # Auto-refreshing fragment (FIXED 120s cadence): only this body re-renders, in
+    # place — the page chrome (topbar/CSS, outside the fragment) is untouched, which
+    # is what killed the full-page flash the old streamlit_autorefresh rerun caused.
+    # STATIC decoration is deliberate: wrapping dynamically at call time
+    # (st.fragment(run_every=x)(fn)()) mints a NEW fragment identity every script
+    # run, and the previous identity's scheduled auto-rerun could still fire and
+    # APPEND a second copy of the board — the "duplicate Top Signals" bug. A fixed
+    # cadence is the price of a stable identity; off-hours reruns are cheap (they
+    # re-read the warm cache).
     st.markdown('<div class="page-wrap pw-narrow">',unsafe_allow_html=True)
 
     sel = st.session_state.get("discover_cat", DISCOVER_HOME)
@@ -8593,14 +8680,8 @@ def page_discover():
     except Exception:
         pass
     # ── Automatic price refresh (no toggle — a live product should just be live) ──
-    # FRAGMENT-scoped (see _discover_body): stats/prices update in place with no
-    # full-page rerun, so there's no screen flash. Every 2 min during market hours;
-    # a slow 10-min tick off-hours still picks up pre/after-market snapshot moves.
-    try:
-        _mkt_open = market_status().get("state") == "open"
-    except Exception:
-        _mkt_open = True
-    _disc_refresh_secs = 120 if _mkt_open else 600
+    # FRAGMENT-scoped (see _discover_body's decorator): stats/prices update in place
+    # every 2 minutes with no full-page rerun, so there's no screen flash.
     st.markdown(f"""<style>
     .disc-section-label{{font-size:11px;font-weight:800;color:#4a5e7a;letter-spacing:2.5px;
         text-transform:uppercase;margin:22px 0 6px;text-align:center;}}
@@ -8702,16 +8783,17 @@ def page_discover():
     [data-testid="stMainBlockContainer"] .stButton>button{{
         white-space:nowrap !important;overflow:hidden !important;text-overflow:ellipsis !important;}}
     </style>""", unsafe_allow_html=True)
-    # Wrap the body as an auto-refreshing FRAGMENT: data updates re-render only the
-    # body, in place — no full-page rerun, no flash. Cadence follows market hours.
-    st.fragment(run_every=_disc_refresh_secs)(_discover_body)()
+    _discover_body()
 
 # ─────────────────────────────────────────────────────────────
 # PAGE: STOCK DETAIL
 # ─────────────────────────────────────────────────────────────
+@st.fragment(run_every=120)
 def _signal_perf_box(ticker, ticker_signals, price_hint):
-    """The '{Long|Short} since signal' card. page_detail renders this as an
-    auto-refreshing FRAGMENT: on each tick it re-reads the ticker's warm-row quote —
+    """The '{Long|Short} since signal' card. An auto-refreshing FRAGMENT (fixed 120s;
+    statically decorated — a dynamic st.fragment(...)(fn) wrap mints a new fragment
+    identity every run, whose orphaned timers duplicated content elsewhere).
+    On each tick it re-reads the ticker's warm-row quote —
     which the scan worker refreshes in place every few minutes — so 'Current' and the
     return keep tracking the live scan while you sit on the page, with no full-page
     rerun (no flash).
@@ -9461,14 +9543,10 @@ def page_detail():
         if st.button("Sign In", key="det_pnl_login", use_container_width=True, type="primary"):
             nav("login")
     else:
-        # Auto-refreshing fragment: the box re-reads the warm quote in place every
-        # couple of minutes during market hours — Current price + return stay live
-        # while the user sits on the page, without a full-page rerun (no flash).
-        try:
-            _open_now = market_status().get("state") == "open"
-        except Exception:
-            _open_now = True
-        st.fragment(run_every=120 if _open_now else 600)(_signal_perf_box)(ticker, ticker_signals, price)
+        # Auto-refreshing fragment (statically decorated, fixed 120s): the box
+        # re-reads the warm quote in place — Current price + return stay live while
+        # the user sits on the page, without a full-page rerun (no flash).
+        _signal_perf_box(ticker, ticker_signals, price)
 
     # Why flagged
     st.markdown('<div class="div-line"></div>',unsafe_allow_html=True)
@@ -12792,6 +12870,14 @@ try:
     _POLYGON_KEY_CAPTURED = get_polygon_key()
     try: _TG_TOKEN_CAPTURED = st.secrets.get("TELEGRAM_BOT_TOKEN", "") or ""
     except Exception: _TG_TOKEN_CAPTURED = ""
+    # Email config for the worker thread (see _alert_email — st.secrets reads are
+    # only reliable here on the main thread).
+    try: _RESEND_KEY_CAPTURED = st.secrets.get("RESEND_API_KEY", "") or ""
+    except Exception: _RESEND_KEY_CAPTURED = ""
+    try: _EMAIL_FROM_CAPTURED = st.secrets.get("EMAIL_FROM", "") or ""
+    except Exception: _EMAIL_FROM_CAPTURED = ""
+    try: _APP_URL_CAPTURED = st.secrets.get("APP_URL", "") or ""
+    except Exception: _APP_URL_CAPTURED = ""
     ensure_universe_worker()
 except Exception:
     pass
