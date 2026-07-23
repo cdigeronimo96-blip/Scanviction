@@ -15,6 +15,24 @@ import hashlib, time, random, math, sys, os, threading
 import secrets as _secrets
 from datetime import datetime, timedelta
 
+# ── Secrets → environment bridge (MUST run before any storage import below) ──
+# On Render every credential lives in the secrets.toml Secret File (st.secrets) —
+# but kvstore / msp_store / analytics_store read DATABASE_URL (and friends) from
+# os.environ AT IMPORT TIME. Streamlit does NOT export secrets as env vars, so
+# unless DATABASE_URL was ALSO set as a dashboard env var, the DB URL silently
+# never reached the storage layer: it fell back to JSON files on the container's
+# EPHEMERAL disk, and every deploy wiped all accounts, sessions and history
+# ("the site stopped saving my account"). Env vars set in the dashboard still
+# win — this only fills the gap when the value exists solely in the secret file.
+for _bridge_key in ("DATABASE_URL", "STORAGE_DUAL_WRITE", "MSP_DATA_DIR"):
+    if not os.environ.get(_bridge_key):
+        try:
+            _bridge_val = st.secrets.get(_bridge_key, "") or ""
+        except Exception:
+            _bridge_val = ""
+        if _bridge_val:
+            os.environ[_bridge_key] = str(_bridge_val)
+
 # Security primitives (password hashing + HTML escaping) live in security.py so the
 # auth-critical code is isolated and unit-testable without importing this monolith.
 # (verify_pw handles bcrypt + legacy sha256; _esc escapes user text for HTML sinks.)
