@@ -152,6 +152,13 @@ def _get_global_db() -> dict:
         if email in merged:
             # Merge per-user dicts so we don't lose seed fields
             merged[email] = {**merged[email], **user_data}
+            # For PRIVILEGED seed accounts (owner/admin), the SECRET FILE is the
+            # source of truth for the credential and role — rotating owner_pw_hash
+            # in secrets must actually rotate the login. Without this, a stale disk/
+            # DB record's old "pw" silently overrode the new hash forever.
+            if seed[email].get("role") in ("owner", "admin"):
+                merged[email]["pw"] = seed[email]["pw"]
+                merged[email]["role"] = seed[email]["role"]
         else:
             merged[email] = user_data
     _GLOBAL_USERS_DB = merged

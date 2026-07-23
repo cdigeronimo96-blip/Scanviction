@@ -2246,6 +2246,14 @@ def login(email, pw):
     # Always reload users_db from disk first (in case signups happened in other tabs)
     st.session_state.users_db = _get_global_db()
     db=st.session_state.users_db
+    # Tolerant email match: strip pasted whitespace, and fall back to a
+    # case-insensitive lookup — "Chris@x.com" and a trailing space both used to
+    # fail as "Invalid email or password" against a stored "chris@x.com".
+    email = (email or "").strip()
+    if email not in db:
+        _m = next((k for k in db if isinstance(k, str) and k.strip().lower() == email.lower()), None)
+        if _m:
+            email = _m
     if email in db and verify_pw(pw, db[email].get("pw","")):
         # Lazy migration: transparently upgrade any legacy sha256 hash to bcrypt on a
         # successful login (so old accounts get the stronger hash without a reset).
